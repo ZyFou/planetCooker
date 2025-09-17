@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Procedural Planet Studio</title>
+  </head>
+  <body>
+    <div id="app">
+      <header id="header">
+        <h1>Procedural Planet Studio</h1>
+        <div class="header-actions">
+          <!-- <button id="export-fbx">Export FBX</button> -->
+          <button id="randomize-seed">Randomize Seed</button>
+          <button id="surprise-me">Surprise Me</button>
+          <!-- <button id="copy-share">Copy Share Code</button> -->
+        </div>
+      </header>
+      <main id="main">
+        <section id="info">
+          <div class="stat">
+            <span class="label">Seed</span>
+            <span id="seed-display" class="value">-</span>
+          </div>
+          <div class="stat">
+            <span class="label">Gravity</span>
+            <span id="gravity-display" class="value">-</span>
+          </div>
+          <div class="stat">
+            <span class="label">System Age</span>
+            <span id="time-display" class="value">0y</span>
+          </div>
+          <div class="stat">
+            <span class="label">Stable Moons</span>
+            <span id="orbit-stability" class="value">-</span>
+          </div>
+          <div class="stat">
+            <!-- <span class="label">Share Code</span> -->
+            <div class="share-row">
+              <!-- <span id="share-display" class="value"></span> -->
+              <!-- <button id="copy-share-inline" class="copy-inline" title="Copy share code">Copy</button> -->
+            </div>
+          </div>
+          <div id="controls"></div>
+          <p class="hint">Use the sliders on the left to tweak the planet. Press H to hide/show the panel.</p>
+        </section>
+        <section id="scene">
+          <!-- <div id="loading" hidden>
+            <div class="spinner"></div>
+            <div class="loading-text">Generating...</div>
+          </div> -->
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
