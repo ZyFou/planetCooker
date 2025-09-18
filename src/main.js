@@ -27,6 +27,8 @@ const controlSearchEmpty = document.getElementById("control-search-empty");
 const controlSearchBar = document.getElementById("control-search-bar");
 const infoPanel = document.getElementById("info");
 const debugPanel = document.getElementById("debug-panel");
+const mobileToggleButton = document.getElementById("toggle-controls");
+const panelScrim = document.getElementById("panel-scrim");
 const importShareButton = document.getElementById("import-share");
 const importShareContainer = document.getElementById("import-share-container");
 const importShareInput = document.getElementById("import-share-input");
@@ -38,6 +40,8 @@ const debugPlanetSpeedDisplay = document.getElementById("debug-planet-speed");
 const debugFpsDisplay = document.getElementById("debug-fps");
 const debugMoonSpeedList = document.getElementById("debug-moon-speed-list");
 const loadingOverlay = document.getElementById("loading");
+const mobileToggleButton = document.getElementById("toggle-controls");
+const panelScrim = document.getElementById("panel-scrim");
 if (!sceneContainer) {
   throw new Error("Missing scene container element");
 }
@@ -1123,6 +1127,9 @@ document.addEventListener("keydown", (event) => {
       gui.hide();
     }
   }
+  if (event.key === "Escape") {
+    closeMobilePanel();
+  }
 });
 //#endregion
 
@@ -1153,6 +1160,7 @@ async function initializeApp() {
     updateSeedDisplay();
     updateGravityDisplay();
   }
+  setupMobilePanelToggle();
 }
 
 // Start the app
@@ -2355,6 +2363,41 @@ function onWindowResize() {
   if (starField?.material?.uniforms?.uPixelRatio) {
     starField.material.uniforms.uPixelRatio.value = pixelRatio;
   }
+  // Close panel when switching to desktop layout
+  if (window.innerWidth > 960) {
+    closeMobilePanel(true);
+  }
+}
+//#endregion
+//#region Mobile panel toggle
+function isMobileLayout() {
+  return window.innerWidth <= 960;
+}
+
+function openMobilePanel() {
+  if (!isMobileLayout()) return;
+  infoPanel?.classList.add("open");
+  if (panelScrim) panelScrim.hidden = false;
+  if (mobileToggleButton) mobileToggleButton.setAttribute("aria-expanded", "true");
+}
+
+function closeMobilePanel(force = false) {
+  if (!isMobileLayout() && !force) return;
+  infoPanel?.classList.remove("open");
+  if (panelScrim) panelScrim.hidden = true;
+  if (mobileToggleButton) mobileToggleButton.setAttribute("aria-expanded", "false");
+}
+
+function setupMobilePanelToggle() {
+  mobileToggleButton?.addEventListener("click", () => {
+    if (infoPanel?.classList.contains("open")) {
+      closeMobilePanel();
+    } else {
+      openMobilePanel();
+    }
+  });
+
+  panelScrim?.addEventListener("click", () => closeMobilePanel());
 }
 //#endregion
 //#region Dirty flags & share codes
