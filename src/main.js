@@ -32,6 +32,7 @@ const importShareCancel = document.getElementById("import-share-cancel");
 const debugPlanetToggle = document.getElementById("debug-planet-vector");
 const debugMoonToggle = document.getElementById("debug-moon-vectors");
 const debugPlanetSpeedDisplay = document.getElementById("debug-planet-speed");
+const debugFpsDisplay = document.getElementById("debug-fps");
 const debugMoonSpeedList = document.getElementById("debug-moon-speed-list");
 const loadingOverlay = document.getElementById("loading");
 if (!sceneContainer) {
@@ -526,6 +527,7 @@ let lastFrameTime = performance.now();
 let isApplyingPreset = false;
 let guiVisible = true;
 let sunPulsePhase = 0;
+let cloudTexOffsetX = 0;
 
 const { registerFolder, unregisterFolder, applyControlSearch } = initControlSearch({
   controlsContainer,
