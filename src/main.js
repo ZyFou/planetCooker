@@ -3486,12 +3486,17 @@ function stepMoonPhysics(dt) {
           const impactRadius = moonRadius * radiusScale;
 
           // Strength scales with momentum and incidence (less depth for very oblique hits)
-          const momentumScale = Math.cbrt(Math.max(1e-6, mass)) * (0.6 + (params.impactSpeedMul || 0.55) * Math.min(3, speed));
+          const momentumScale = Math.pow(Math.max(1e-6, mass), 0.45) * (0.6 + (params.impactSpeedMul || 0.55) * Math.min(3, speed));
+          const sizeFactor = THREE.MathUtils.clamp(
+            0.8 + Math.pow(Math.max(0.05, moonRadius), 0.92) * 3.6,
+            0.9,
+            5.2
+          );
           const normalHitScale = 0.5 + 0.5 * Math.max(0, Math.cos(incidence));
           const impactStrength = THREE.MathUtils.clamp(
-            (params.impactStrengthMul || 1) * strength * (params.impactMassMul || 1) * momentumScale * normalHitScale,
-            0.2,
-            3.5
+            (params.impactStrengthMul || 1) * strength * (params.impactMassMul || 1) * momentumScale * normalHitScale * sizeFactor,
+            0.3,
+            5.5
           );
 
           applyImpactDeformation(impactPoint, impactRadius, {
