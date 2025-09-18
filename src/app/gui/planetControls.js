@@ -3,6 +3,7 @@ export function setupPlanetControls({
   gui,
   params,
   presets,
+  starPresets = {},
   guiControllers,
   registerFolder,
   scheduleShareUpdate,
@@ -19,10 +20,13 @@ export function setupPlanetControls({
   updateGravityDisplay,
   initMoonPhysics,
   getIsApplyingPreset,
-  onPresetChange
+  getIsApplyingStarPreset,
+  onPresetChange,
+  onStarPresetChange
 }) {
   // Build grouped preset UI: base presets + Real Worlds
   const presetNames = Object.keys(presets);
+  const shouldSkipStarUpdate = () => (getIsApplyingPreset?.() || getIsApplyingStarPreset?.());
   const presetFolder = registerFolder(gui.addFolder("Presets"), { close: true });
   const presetController = presetFolder.add(params, "preset", presetNames).name("Preset");
   guiControllers.preset = presetController;
@@ -238,9 +242,20 @@ export function setupPlanetControls({
 
   const sunFolder = registerFolder(environmentFolder.addFolder("Star"), { close: true });
 
+  const starPresetNames = Object.keys(starPresets);
+  if (starPresetNames.length) {
+    const starPresetController = sunFolder.add(params, "sunPreset", starPresetNames).name("Star Preset");
+    guiControllers.sunPreset = starPresetController;
+    starPresetController.onChange((value) => {
+      if (shouldSkipStarUpdate()) return;
+      onStarPresetChange?.(value);
+    });
+  }
+
   guiControllers.sunColor = sunFolder.addColor(params, "sunColor")
     .name("Color")
     .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
       updateSun();
       scheduleShareUpdate();
     });
@@ -248,6 +263,7 @@ export function setupPlanetControls({
   guiControllers.sunIntensity = sunFolder.add(params, "sunIntensity", 0.2, 4, 0.05)
     .name("Intensity")
     .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
       updateSun();
       scheduleShareUpdate();
     });
@@ -255,6 +271,7 @@ export function setupPlanetControls({
   guiControllers.sunDistance = sunFolder.add(params, "sunDistance", 10, 160, 1)
     .name("Distance")
     .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
       updateSun();
       scheduleShareUpdate();
     });
@@ -262,6 +279,7 @@ export function setupPlanetControls({
   guiControllers.sunSize = sunFolder.add(params, "sunSize", 0.5, 4, 0.05)
     .name("Core Size")
     .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
       updateSun();
       scheduleShareUpdate();
     });
@@ -269,6 +287,7 @@ export function setupPlanetControls({
   guiControllers.sunHaloSize = sunFolder.add(params, "sunHaloSize", 2, 18, 0.1)
     .name("Halo Radius")
     .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
       updateSun();
       scheduleShareUpdate();
     });
@@ -276,6 +295,7 @@ export function setupPlanetControls({
   guiControllers.sunGlowStrength = sunFolder.add(params, "sunGlowStrength", 0.1, 3.5, 0.05)
     .name("Glow Strength")
     .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
       updateSun();
       scheduleShareUpdate();
     });
@@ -283,6 +303,56 @@ export function setupPlanetControls({
   guiControllers.sunPulseSpeed = sunFolder.add(params, "sunPulseSpeed", 0, 2.5, 0.05)
     .name("Pulse Speed")
     .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.sunNoiseScale = sunFolder.add(params, "sunNoiseScale", 0.3, 4, 0.05)
+    .name("Noise Scale")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.sunParticleCount = sunFolder.add(params, "sunParticleCount", 0, 600, 10)
+    .name("Particle Count")
+    .onFinishChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      params.sunParticleCount = Math.round(params.sunParticleCount);
+      updateSun();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.sunParticleSpeed = sunFolder.add(params, "sunParticleSpeed", 0, 2, 0.01)
+    .name("Particle Speed")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.sunParticleSize = sunFolder.add(params, "sunParticleSize", 0.02, 0.3, 0.01)
+    .name("Particle Size")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.sunParticleLifetime = sunFolder.add(params, "sunParticleLifetime", 0.5, 8, 0.1)
+    .name("Particle Lifetime")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.sunParticleColor = sunFolder.addColor(params, "sunParticleColor")
+    .name("Particle Color")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
       updateSun();
       scheduleShareUpdate();
     });

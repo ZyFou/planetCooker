@@ -167,38 +167,156 @@ sunLight.position.set(0, 0, 0);
 sunLight.target = planetRoot;
 sunGroup.add(sunLight);
 
-const sunCoreGeometry = new THREE.SphereGeometry(1.2, 48, 48);
-const sunCoreMaterial = new THREE.MeshBasicMaterial({ color: 0xffd27f, toneMapped: false });
+const starCoreUniforms = {
+  uColorCore: { value: new THREE.Color(0xffd27f) },
+  uColorEdge: { value: new THREE.Color(0xffa060) },
+  uTime: { value: 0 },
+  uNoiseScale: { value: 1.6 },
+  uNoiseStrength: { value: 0.4 },
+  uPulse: { value: 0 }
+};
+
+const starCoronaUniforms = {
+  uColor: { value: new THREE.Color(0xffa060) },
+  uTime: { value: 0 },
+  uNoiseScale: { value: 1.2 },
+  uNoiseStrength: { value: 0.5 },
+  uPulse: { value: 0 }
+};
+
+const starCoreVertexShader = `
+  varying vec3 vPosition;
+  varying vec3 vNormal;
+  void main() {
+    vPosition = position;
+    vNormal = normal;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const starCoreFragmentShader = `
+  varying vec3 vPosition;
+  varying vec3 vNormal;
+  uniform vec3 uColorCore;
+  uniform vec3 uColorEdge;
+  uniform float uTime;
+  uniform float uNoiseScale;
+  uniform float uNoiseStrength;
+  uniform float uPulse;
+
+  float hash(vec3 p) {
+    return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+  }
+
+  float fbm(vec3 p) {
+    float value = 0.0;
+    float amplitude = 0.55;
+    float frequency = 1.0;
+    for (int i = 0; i < 4; i++) {
+      float h = hash(p * frequency + uTime * 0.6);
+      value += amplitude * (h * 2.0 - 1.0);
+      frequency *= 1.9;
+      amplitude *= 0.55;
+      p += vec3(17.0, 9.0, 23.0);
+    }
+    return value;
+  }
+
+  void main() {
+    float r = length(vPosition);
+    float base = pow(smoothstep(1.0, 0.0, r), 1.6);
+    float turbulence = fbm(normalize(vNormal) * uNoiseScale + uTime * 0.25);
+    float intensity = base + uNoiseStrength * turbulence + uPulse;
+    intensity = clamp(intensity, 0.0, 1.4);
+    vec3 color = mix(uColorEdge, uColorCore, clamp(intensity, 0.0, 1.0));
+    gl_FragColor = vec4(color, clamp(intensity, 0.2, 1.0));
+  }
+`;
+
+const starCoronaVertexShader = `
+  varying vec3 vPosition;
+  void main() {
+    vPosition = position;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const starCoronaFragmentShader = `
+  varying vec3 vPosition;
+  uniform vec3 uColor;
+  uniform float uTime;
+  uniform float uNoiseScale;
+  uniform float uNoiseStrength;
+  uniform float uPulse;
+
+  float hash(vec3 p) {
+    return fract(sin(dot(p, vec3(4.898, 7.23, 3.17))) * 43758.5453);
+  }
+
+  float turbulence(vec3 p) {
+    float sum = 0.0;
+    float scale = 1.0;
+    for (int i = 0; i < 3; i++) {
+      sum += abs(hash(p * scale + uTime * 0.4) * 2.0 - 1.0) / scale;
+      scale *= 2.2;
+    }
+    return sum;
+  }
+
+  void main() {
+    float radius = length(vPosition);
+    float rim = smoothstep(1.0, 0.2, radius);
+    float t = turbulence(normalize(vPosition) * uNoiseScale) * uNoiseStrength;
+    float alpha = clamp(rim * (0.65 + t + uPulse), 0.0, 1.0);
+    if (alpha <= 0.001) discard;
+    vec3 color = uColor * (0.6 + 0.4 * rim);
+    gl_FragColor = vec4(color, alpha);
+  }
+`;
+
+const sunCoreGeometry = new THREE.IcosahedronGeometry(1, 4);
+const sunCoreMaterial = new THREE.ShaderMaterial({
+  uniforms: starCoreUniforms,
+  vertexShader: starCoreVertexShader,
+  fragmentShader: starCoreFragmentShader,
+  transparent: true,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+  toneMapped: false
+});
 const sunVisual = new THREE.Mesh(sunCoreGeometry, sunCoreMaterial);
-sunVisual.layers.set(1);
 sunVisual.frustumCulled = false;
 sunGroup.add(sunVisual);
 
-const sunGlowTexture = createSunTexture({ inner: 0.08, outer: 0.52, innerAlpha: 1, outerAlpha: 0 });
-const sunGlowMaterial = new THREE.SpriteMaterial({
-  map: sunGlowTexture,
-  color: new THREE.Color(0xffd27f),
-  blending: THREE.AdditiveBlending,
+const sunCoronaGeometry = new THREE.IcosahedronGeometry(1.2, 3);
+const sunCoronaMaterial = new THREE.ShaderMaterial({
+  uniforms: starCoronaUniforms,
+  vertexShader: starCoronaVertexShader,
+  fragmentShader: starCoronaFragmentShader,
   transparent: true,
   depthWrite: false,
-  depthTest: true
+  blending: THREE.AdditiveBlending,
+  toneMapped: false
 });
-const sunGlow = new THREE.Sprite(sunGlowMaterial);
-sunGlow.renderOrder = 2;
-sunGroup.add(sunGlow);
+const sunCorona = new THREE.Mesh(sunCoronaGeometry, sunCoronaMaterial);
+sunCorona.frustumCulled = false;
+sunGroup.add(sunCorona);
 
-const sunHaloTexture = createSunTexture({ inner: 0.35, outer: 1, innerAlpha: 0.4, outerAlpha: 0 });
-const sunHaloMaterial = new THREE.SpriteMaterial({
-  map: sunHaloTexture,
-  color: new THREE.Color(0xffd27f),
-  blending: THREE.AdditiveBlending,
-  transparent: true,
-  depthWrite: false,
-  depthTest: true
-});
-const sunHalo = new THREE.Sprite(sunHaloMaterial);
-sunHalo.renderOrder = 1;
-sunGroup.add(sunHalo);
+let starParticleState = {
+  points: null,
+  geometry: null,
+  material: null,
+  texture: null,
+  positions: null,
+  velocities: null,
+  life: null,
+  maxLife: null,
+  rng: null,
+  count: 0,
+  speed: 0.6,
+  baseLifetime: 3.5,
+  color: "#ffd27f"
+};
 
 let starField = null;
 // Active particle explosions
@@ -253,6 +371,7 @@ const params = {
   rotationSpeed: 0.12,
   simulationSpeed: 0.12,
   gravity: 9.81,
+  sunPreset: "Sol",
   sunColor: "#ffd27f",
   sunIntensity: 1.6,
   sunDistance: 48,
@@ -260,6 +379,12 @@ const params = {
   sunHaloSize: 6.5,
   sunGlowStrength: 1.4,
   sunPulseSpeed: 0.5,
+  sunNoiseScale: 1.6,
+  sunParticleCount: 240,
+  sunParticleSpeed: 0.65,
+  sunParticleSize: 0.15,
+  sunParticleColor: "#ffbf7a",
+  sunParticleLifetime: 4.2,
   moonCount: 1,
   moonMassScale: 1,
   starCount: 2200,
@@ -746,6 +871,84 @@ const presets = {
   }
 };
 
+const starPresets = {
+  Sol: {
+    sunColor: "#ffd27f",
+    sunIntensity: 1.6,
+    sunDistance: 48,
+    sunSize: 1.1,
+    sunHaloSize: 5.4,
+    sunGlowStrength: 1.3,
+    sunPulseSpeed: 0.6,
+    sunNoiseScale: 1.45,
+    sunParticleCount: 240,
+    sunParticleSpeed: 0.65,
+    sunParticleSize: 0.14,
+    sunParticleColor: "#ffbf7a",
+    sunParticleLifetime: 4.2
+  },
+  "Red Dwarf": {
+    sunColor: "#ff7750",
+    sunIntensity: 0.9,
+    sunDistance: 36,
+    sunSize: 0.8,
+    sunHaloSize: 4.1,
+    sunGlowStrength: 1.1,
+    sunPulseSpeed: 0.85,
+    sunNoiseScale: 1.9,
+    sunParticleCount: 180,
+    sunParticleSpeed: 0.42,
+    sunParticleSize: 0.12,
+    sunParticleColor: "#ff6242",
+    sunParticleLifetime: 5.0
+  },
+  "Blue Giant": {
+    sunColor: "#9fc4ff",
+    sunIntensity: 2.5,
+    sunDistance: 110,
+    sunSize: 1.6,
+    sunHaloSize: 8.2,
+    sunGlowStrength: 2.0,
+    sunPulseSpeed: 0.4,
+    sunNoiseScale: 1.2,
+    sunParticleCount: 320,
+    sunParticleSpeed: 0.9,
+    sunParticleSize: 0.18,
+    sunParticleColor: "#8abaff",
+    sunParticleLifetime: 3.2
+  },
+  "White Dwarf": {
+    sunColor: "#f2f7ff",
+    sunIntensity: 1.9,
+    sunDistance: 38,
+    sunSize: 0.9,
+    sunHaloSize: 3.6,
+    sunGlowStrength: 0.9,
+    sunPulseSpeed: 1.2,
+    sunNoiseScale: 2.3,
+    sunParticleCount: 140,
+    sunParticleSpeed: 0.5,
+    sunParticleSize: 0.1,
+    sunParticleColor: "#eff6ff",
+    sunParticleLifetime: 2.6
+  },
+  "Neutron Star": {
+    sunColor: "#9ecaff",
+    sunIntensity: 3.2,
+    sunDistance: 65,
+    sunSize: 0.6,
+    sunHaloSize: 5.2,
+    sunGlowStrength: 2.6,
+    sunPulseSpeed: 1.8,
+    sunNoiseScale: 3.0,
+    sunParticleCount: 260,
+    sunParticleSpeed: 1.4,
+    sunParticleSize: 0.09,
+    sunParticleColor: "#96caff",
+    sunParticleLifetime: 1.8
+  }
+};
+
 const shareKeys = [
   "seed",
   "radius",
@@ -778,6 +981,13 @@ const shareKeys = [
   "sunHaloSize",
   "sunGlowStrength",
   "sunPulseSpeed",
+  "sunPreset",
+  "sunNoiseScale",
+  "sunParticleCount",
+  "sunParticleSpeed",
+  "sunParticleSize",
+  "sunParticleColor",
+  "sunParticleLifetime",
   "moonCount",
   "moonMassScale",
   "starCount",
@@ -847,6 +1057,7 @@ let isApplyingPreset = false;
 let guiVisible = true;
 let sunPulsePhase = 0;
 let cloudTexOffsetX = 0;
+let isApplyingStarPreset = false;
 
 const { registerFolder, unregisterFolder, applyControlSearch } = initControlSearch({
   controlsContainer,
@@ -863,6 +1074,7 @@ setupPlanetControls({
   gui,
   params,
   presets,
+  starPresets,
   guiControllers,
   registerFolder,
   scheduleShareUpdate,
@@ -879,8 +1091,12 @@ setupPlanetControls({
   updateGravityDisplay,
   initMoonPhysics,
   getIsApplyingPreset: () => isApplyingPreset,
-  onPresetChange: (value) => applyPreset(value)
+  getIsApplyingStarPreset: () => isApplyingStarPreset,
+  onPresetChange: (value) => applyPreset(value),
+  onStarPresetChange: (value) => applyStarPreset(value)
 });
+
+applyStarPreset(params.sunPreset, { skipShareUpdate: true });
 
 const {
   moonSettings,
@@ -960,6 +1176,7 @@ randomizeSeedButton?.addEventListener("click", () => {
 resetAllButton?.addEventListener("click", () => {
   try {
     applyPreset("Earth-like", { skipShareUpdate: false, keepSeed: false });
+    applyStarPreset("Sol", { skipShareUpdate: true });
   } catch (e) {
     console.warn("Reset All failed:", e);
   }
@@ -1106,7 +1323,13 @@ async function applyConfigurationFromAPI(apiResult) {
   let updatedControllers = 0;
   Object.keys(guiControllers).forEach(key => {
     if (params[key] !== undefined && guiControllers[key]?.setValue) {
-      guiControllers[key].setValue(params[key]);
+      if (key === "sunPreset") {
+        isApplyingStarPreset = true;
+        guiControllers[key].setValue(params[key]);
+        isApplyingStarPreset = false;
+      } else {
+        guiControllers[key].setValue(params[key]);
+      }
       updatedControllers++;
     }
   });
@@ -1577,9 +1800,36 @@ function animate(timestamp) {
   cloudsMesh.rotation.y += delta * params.cloudDriftSpeed;
 
   if (params.ringEnabled && Math.abs(params.ringSpinSpeed) > 1e-4 && ringMesh) {
-    // Spin the ring around its own normal (local Z), not world Y
+    // Spin the ring around its own normal (local Z), not around the planet
     ringMesh.rotation.z += delta * params.ringSpinSpeed;
   }
+
+  starCoreUniforms.uTime.value += delta;
+  starCoronaUniforms.uTime.value += delta * 0.6;
+
+  if (params.sunPulseSpeed > 0.001) {
+    sunPulsePhase += delta * params.sunPulseSpeed * 2.4;
+    const pulse = Math.sin(sunPulsePhase) * 0.5 + 0.5;
+    const pulseStrength = Math.max(0.05, params.sunGlowStrength || 1) * 0.22;
+    starCoreUniforms.uPulse.value = (pulse - 0.5) * pulseStrength;
+    starCoronaUniforms.uPulse.value = (pulse - 0.4) * pulseStrength * 1.35;
+    const baseCoreScale = Math.max(0.1, params.sunSize);
+    const baseHaloScale = Math.max(baseCoreScale * 1.15, params.sunHaloSize);
+    const glowStrength = Math.max(0.05, params.sunGlowStrength || 1);
+    const coreScaleMultiplier = 1 + (pulse - 0.5) * glowStrength * 0.08;
+    const haloScaleMultiplier = 1 + (pulse - 0.4) * glowStrength * 0.12;
+    sunVisual.scale.setScalar(baseCoreScale * THREE.MathUtils.clamp(coreScaleMultiplier, 0.85, 1.4));
+    sunCorona.scale.setScalar(baseHaloScale * THREE.MathUtils.clamp(haloScaleMultiplier, 0.8, 1.6));
+  } else {
+    starCoreUniforms.uPulse.value = 0;
+    starCoronaUniforms.uPulse.value = 0;
+    const baseCoreScale = Math.max(0.1, params.sunSize);
+    const baseHaloScale = Math.max(baseCoreScale * 1.15, params.sunHaloSize);
+    sunVisual.scale.setScalar(baseCoreScale);
+    sunCorona.scale.setScalar(baseHaloScale);
+  }
+
+  updateStarParticles(simulationDelta);
 
   const gravityFactor = Math.sqrt(params.gravity / 9.81);
   if (params.physicsEnabled) {
@@ -1613,34 +1863,6 @@ function animate(timestamp) {
   updateExplosions(simulationDelta);
 
   syncOrbitLinesWithPivots();
-
-  if (params.sunPulseSpeed > 0.001) {
-    sunPulsePhase += delta * params.sunPulseSpeed * 2.4;
-    const pulse = Math.sin(sunPulsePhase) * 0.5 + 0.5;
-    if (sunGlow.userData) {
-      sunGlow.scale.setScalar(sunGlow.userData.baseScale * (0.9 + pulse * 0.3));
-      sunGlow.material.opacity = sunGlow.userData.baseOpacity * (0.8 + pulse * 0.5);
-    }
-    if (sunHalo.userData) {
-      sunHalo.scale.setScalar(sunHalo.userData.baseScale * (0.95 + pulse * 0.25));
-      sunHalo.material.opacity = sunHalo.userData.baseOpacity * (0.7 + pulse * 0.35);
-    }
-    if (sunVisual.userData?.baseScale) {
-      sunVisual.scale.setScalar(sunVisual.userData.baseScale * (0.98 + pulse * 0.05));
-    }
-  } else {
-    if (sunGlow.userData) {
-      sunGlow.scale.setScalar(sunGlow.userData.baseScale);
-      sunGlow.material.opacity = sunGlow.userData.baseOpacity;
-    }
-    if (sunHalo.userData) {
-      sunHalo.scale.setScalar(sunHalo.userData.baseScale);
-      sunHalo.material.opacity = sunHalo.userData.baseOpacity;
-    }
-    if (sunVisual.userData?.baseScale) {
-      sunVisual.scale.setScalar(sunVisual.userData.baseScale);
-    }
-  }
 
   if (starField && starField.material && starField.material.uniforms) {
     starField.rotation.y += delta * 0.002;
@@ -1904,29 +2126,202 @@ function updateSun() {
   sunLight.target = planetRoot;
   sunLight.target.updateMatrixWorld();
 
-  sunVisual.material.color.copy(color);
+  const edgeColor = color.clone().lerp(new THREE.Color(1, 0.72, 0.42), 0.35);
+
+  starCoreUniforms.uColorCore.value.copy(color);
+  starCoreUniforms.uColorEdge.value.copy(edgeColor);
+  starCoronaUniforms.uColor.value.copy(edgeColor);
+
   const coreScale = Math.max(0.1, params.sunSize);
-  sunVisual.userData = sunVisual.userData || {};
-  sunVisual.userData.baseScale = coreScale;
   sunVisual.scale.setScalar(coreScale);
 
-  sunGlow.material.color.copy(color);
-  sunHalo.material.color.copy(color);
-  sunGlow.userData = sunGlow.userData || {};
-  sunHalo.userData = sunHalo.userData || {};
+  const haloRadius = Math.max(coreScale * 1.15, params.sunHaloSize);
+  sunCorona.scale.setScalar(haloRadius);
 
-  const haloRadius = Math.max(0.5, params.sunHaloSize);
-  const glowStrength = Math.max(0.1, params.sunGlowStrength);
-  sunGlow.userData.baseScale = haloRadius * glowStrength;
-  sunHalo.userData.baseScale = haloRadius * (1.2 + glowStrength * 0.4);
-  sunGlow.scale.setScalar(sunGlow.userData.baseScale);
-  sunHalo.scale.setScalar(sunHalo.userData.baseScale);
+  const glowStrength = Math.max(0.05, params.sunGlowStrength);
+  const noiseScale = Math.max(0.2, params.sunNoiseScale || 1.6);
+  starCoreUniforms.uNoiseScale.value = noiseScale;
+  starCoreUniforms.uNoiseStrength.value = glowStrength * 0.35;
+  starCoronaUniforms.uNoiseScale.value = noiseScale * 0.75;
+  starCoronaUniforms.uNoiseStrength.value = glowStrength * 0.45;
 
-  sunGlow.userData.baseOpacity = THREE.MathUtils.clamp(glowStrength * 0.4, 0.05, 1.0);
-  sunHalo.userData.baseOpacity = THREE.MathUtils.clamp(glowStrength * 0.25, 0.03, 0.9);
-  sunGlow.material.opacity = sunGlow.userData.baseOpacity;
-  sunHalo.material.opacity = sunHalo.userData.baseOpacity;
+  const desiredCount = Math.max(0, Math.round(params.sunParticleCount || 0));
+  if (desiredCount !== params.sunParticleCount) {
+    params.sunParticleCount = desiredCount;
+  }
+  if (desiredCount !== starParticleState.count) {
+    rebuildStarParticles(desiredCount);
+  } else if (starParticleState.material) {
+    starParticleState.material.size = Math.max(0.02, params.sunParticleSize || 0.1);
+    starParticleState.material.color.set(params.sunParticleColor || params.sunColor || "#ffd27f");
+    starParticleState.material.needsUpdate = true;
+  }
+
+  starParticleState.speed = Math.max(0, params.sunParticleSpeed || 0.6);
+  starParticleState.baseLifetime = Math.max(0.5, params.sunParticleLifetime || 3.5);
+  starParticleState.color = params.sunParticleColor || params.sunColor || "#ffd27f";
+
   sunPulsePhase = 0;
+}
+
+function disposeStarParticles() {
+  if (starParticleState.points) {
+    sunGroup.remove(starParticleState.points);
+    if (starParticleState.geometry) starParticleState.geometry.dispose();
+    if (starParticleState.material) starParticleState.material.dispose();
+    if (starParticleState.texture) starParticleState.texture.dispose();
+  }
+  starParticleState = {
+    points: null,
+    geometry: null,
+    material: null,
+    texture: null,
+    positions: null,
+    velocities: null,
+    life: null,
+    maxLife: null,
+    rng: null,
+    count: 0,
+    speed: Math.max(0, params.sunParticleSpeed || 0.6),
+    baseLifetime: Math.max(0.5, params.sunParticleLifetime || 3.5),
+    color: params.sunParticleColor || params.sunColor || "#ffd27f"
+  };
+}
+
+function randomUnitVector(rng) {
+  const theta = rng.next() * Math.PI * 2;
+  const u = rng.next() * 2 - 1;
+  const s = Math.sqrt(Math.max(1e-6, 1 - u * u));
+  return { x: s * Math.cos(theta), y: u, z: s * Math.sin(theta) };
+}
+
+function respawnStarParticle(index, rng, randomizeLife = false) {
+  if (!starParticleState.positions || !starParticleState.velocities || !starParticleState.life || !starParticleState.maxLife) return;
+  const dir = randomUnitVector(rng);
+  const radius = Math.max(0.05, params.sunSize || 1) * (0.25 + rng.next() * 0.45);
+  const i3 = index * 3;
+  starParticleState.positions[i3 + 0] = dir.x * radius;
+  starParticleState.positions[i3 + 1] = dir.y * radius;
+  starParticleState.positions[i3 + 2] = dir.z * radius;
+
+  // Tangent vector via simple perpendicular
+  let tx = -dir.z;
+  let ty = 0;
+  let tz = dir.x;
+  let len = Math.sqrt(tx * tx + ty * ty + tz * tz);
+  if (len < 1e-5) {
+    tx = 0;
+    ty = dir.z;
+    tz = -dir.y;
+    len = Math.sqrt(tx * tx + ty * ty + tz * tz);
+  }
+  const invLen = len > 1e-5 ? 1 / len : 1;
+  tx *= invLen;
+  ty *= invLen;
+  tz *= invLen;
+
+  const radialSpeed = 0.6 + rng.next() * 0.9;
+  const tangentScale = (rng.next() - 0.5) * 0.35;
+  starParticleState.velocities[i3 + 0] = dir.x * radialSpeed + tx * tangentScale;
+  starParticleState.velocities[i3 + 1] = dir.y * radialSpeed + ty * tangentScale;
+  starParticleState.velocities[i3 + 2] = dir.z * radialSpeed + tz * tangentScale;
+
+  const baseLife = starParticleState.baseLifetime ?? Math.max(0.5, params.sunParticleLifetime || 3.5);
+  starParticleState.life[index] = randomizeLife ? rng.next() * baseLife * 0.3 : 0;
+  starParticleState.maxLife[index] = baseLife * (0.6 + rng.next() * 0.6);
+}
+
+function rebuildStarParticles(desiredCount) {
+  disposeStarParticles();
+  if (desiredCount <= 0) {
+    return;
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(desiredCount * 3);
+  const velocities = new Float32Array(desiredCount * 3);
+  const life = new Float32Array(desiredCount);
+  const maxLife = new Float32Array(desiredCount);
+  const rng = new SeededRNG(`${params.seed || "star"}-particles-${desiredCount}`);
+
+  starParticleState.positions = positions;
+  starParticleState.velocities = velocities;
+  starParticleState.life = life;
+  starParticleState.maxLife = maxLife;
+  starParticleState.count = desiredCount;
+  starParticleState.rng = rng;
+  starParticleState.speed = Math.max(0, params.sunParticleSpeed || 0.6);
+  starParticleState.baseLifetime = Math.max(0.5, params.sunParticleLifetime || 3.5);
+  starParticleState.color = params.sunParticleColor || params.sunColor || "#ffd27f";
+
+  for (let i = 0; i < desiredCount; i += 1) {
+    respawnStarParticle(i, rng, true);
+  }
+
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const texture = createSunTexture({ inner: 0.0, outer: 0.6, innerAlpha: 1, outerAlpha: 0 });
+  const material = new THREE.PointsMaterial({
+    size: Math.max(0.02, params.sunParticleSize || 0.1),
+    map: texture,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    color: new THREE.Color(params.sunParticleColor || params.sunColor || "#ffd27f"),
+    sizeAttenuation: true
+  });
+
+  const points = new THREE.Points(geometry, material);
+  points.frustumCulled = false;
+  sunGroup.add(points);
+
+  starParticleState.points = points;
+  starParticleState.geometry = geometry;
+  starParticleState.material = material;
+  starParticleState.texture = texture;
+  starParticleState.positions = positions;
+  starParticleState.velocities = velocities;
+  starParticleState.life = life;
+  starParticleState.maxLife = maxLife;
+  starParticleState.rng = rng;
+  starParticleState.count = desiredCount;
+  starParticleState.speed = Math.max(0, params.sunParticleSpeed || 0.6);
+  starParticleState.baseLifetime = Math.max(0.5, params.sunParticleLifetime || 3.5);
+  starParticleState.color = params.sunParticleColor || params.sunColor || "#ffd27f";
+}
+
+function updateStarParticles(dt) {
+  if (!starParticleState.points || !starParticleState.positions) return;
+  const count = starParticleState.count;
+  if (count <= 0) return;
+
+  const positions = starParticleState.positions;
+  const velocities = starParticleState.velocities;
+  const life = starParticleState.life;
+  const maxLife = starParticleState.maxLife;
+  const rng = starParticleState.rng || new SeededRNG(`${params.seed || "star"}-respawn`);
+  starParticleState.rng = rng;
+  const speed = starParticleState.speed ?? 0.6;
+  const baseLifetime = starParticleState.baseLifetime ?? Math.max(0.5, params.sunParticleLifetime || 3.5);
+
+  let needsUpdate = false;
+  for (let i = 0; i < count; i += 1) {
+    life[i] += dt;
+    if (life[i] >= maxLife[i]) {
+      respawnStarParticle(i, rng, false);
+      maxLife[i] = baseLifetime * (0.6 + rng.next() * 0.6);
+      life[i] = rng.next() * baseLifetime * 0.1;
+    }
+
+    const idx = i * 3;
+    positions[idx + 0] += velocities[idx + 0] * speed * dt;
+    positions[idx + 1] += velocities[idx + 1] * speed * dt;
+    positions[idx + 2] += velocities[idx + 2] * speed * dt;
+    needsUpdate = true;
+  }
+
+  if (needsUpdate && starParticleState.geometry) {
+    starParticleState.geometry.attributes.position.needsUpdate = true;
+  }
 }
 
 function generateRingTexture(innerRatio) {
@@ -2506,6 +2901,13 @@ function applyPreset(name, { skipShareUpdate = false, keepSeed = false } = {}) {
     if (key === "moons") return;
     if (key === "seed" && keepSeed) return;
     if (!(key in params)) return;
+    if (key === "sunPreset") {
+      isApplyingStarPreset = true;
+      params.sunPreset = value;
+      guiControllers.sunPreset?.setValue?.(value);
+      isApplyingStarPreset = false;
+      return;
+    }
     params[key] = value;
     guiControllers[key]?.setValue?.(value);
   });
@@ -2552,6 +2954,27 @@ function applyPreset(name, { skipShareUpdate = false, keepSeed = false } = {}) {
 
   isApplyingPreset = false;
   updateStabilityDisplay(moonSettings.length, moonSettings.length);
+  if (!skipShareUpdate) {
+    scheduleShareUpdate();
+  }
+}
+
+function applyStarPreset(name, { skipShareUpdate = false } = {}) {
+  const preset = starPresets[name];
+  if (!preset) return;
+  isApplyingStarPreset = true;
+
+  params.sunPreset = name;
+  guiControllers.sunPreset?.setValue?.(name);
+
+  Object.entries(preset).forEach(([key, value]) => {
+    if (!(key in params)) return;
+    params[key] = value;
+    guiControllers[key]?.setValue?.(value);
+  });
+
+  isApplyingStarPreset = false;
+  updateSun();
   if (!skipShareUpdate) {
     scheduleShareUpdate();
   }
@@ -2623,7 +3046,13 @@ function applySharePayload(payload) {
   shareKeys.forEach((key) => {
     if (data[key] === undefined) return;
     params[key] = data[key];
-    guiControllers[key]?.setValue?.(data[key]);
+    if (key === "sunPreset") {
+      isApplyingStarPreset = true;
+      guiControllers[key]?.setValue?.(data[key]);
+      isApplyingStarPreset = false;
+    } else {
+      guiControllers[key]?.setValue?.(data[key]);
+    }
   });
 
   if (data.seed) {
@@ -3564,6 +3993,11 @@ function surpriseMe() {
         ringSpinSpeed: params.ringSpinSpeed
       }
     : null;
+  const starPresetNames = Object.keys(starPresets);
+  if (starPresetNames.length) {
+    const pickedStarPreset = starPresetNames[Math.floor(rng.next() * starPresetNames.length)];
+    applyStarPreset(pickedStarPreset, { skipShareUpdate: true });
+  }
   isApplyingPreset = true;
   applyPreset(pickPreset, { skipShareUpdate: true, keepSeed: true });
   isApplyingPreset = false;
@@ -3615,6 +4049,12 @@ function surpriseMe() {
   params.sunHaloSize = THREE.MathUtils.lerp(4, 14, rng.next());
   params.sunGlowStrength = THREE.MathUtils.lerp(0.6, 2.6, rng.next());
   params.sunPulseSpeed = THREE.MathUtils.lerp(0, 1.6, rng.next());
+  params.sunNoiseScale = THREE.MathUtils.lerp(0.8, 3.0, rng.next());
+  params.sunParticleCount = Math.round(THREE.MathUtils.lerp(140, 420, rng.next()));
+  params.sunParticleSpeed = THREE.MathUtils.lerp(0.35, 1.6, rng.next());
+  params.sunParticleSize = THREE.MathUtils.lerp(0.08, 0.22, rng.next());
+  params.sunParticleLifetime = THREE.MathUtils.lerp(1.6, 5.2, rng.next());
+  params.sunParticleColor = `#${new THREE.Color().setHSL((hue + 0.1 + rng.next() * 0.25) % 1, 0.55 + rng.next() * 0.2, 0.6 + rng.next() * 0.2).getHexString()}`;
 
   // Space
   params.starCount = Math.round(THREE.MathUtils.lerp(1500, 3600, rng.next()));
@@ -3674,7 +4114,13 @@ function surpriseMe() {
   // Push to GUI controllers where available
   Object.keys(guiControllers).forEach((key) => {
     if (params[key] !== undefined && guiControllers[key]?.setValue) {
-      guiControllers[key].setValue(params[key]);
+      if (key === "sunPreset") {
+        isApplyingStarPreset = true;
+        guiControllers[key].setValue(params[key]);
+        isApplyingStarPreset = false;
+      } else {
+        guiControllers[key].setValue(params[key]);
+      }
     }
   });
 
@@ -3819,6 +4265,8 @@ function cycleCameraMode() {
   if (cameraModeButton) cameraModeButton.textContent = `Camera: ${cameraMode}`;
 }
 cameraModeButton?.addEventListener("click", cycleCameraMode);
+
+
 
 
 
