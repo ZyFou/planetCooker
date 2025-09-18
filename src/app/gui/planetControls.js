@@ -21,13 +21,37 @@ export function setupPlanetControls({
   getIsApplyingPreset,
   onPresetChange
 }) {
-  const presetController = gui.add(params, "preset", Object.keys(presets)).name("Preset");
+  // Build grouped preset UI: base presets + Real Worlds
+  const presetNames = Object.keys(presets);
+  const presetFolder = registerFolder(gui.addFolder("Presets"), { close: true });
+  const presetController = presetFolder.add(params, "preset", presetNames).name("Preset");
   guiControllers.preset = presetController;
 
   presetController.onChange((value) => {
     if (getIsApplyingPreset()) return;
     onPresetChange?.(value);
   });
+
+  // Real Worlds subfolder (predefined presets for solar system)
+  const realWorldsFolder = registerFolder(presetFolder.addFolder("Real Worlds"), { close: true });
+  const real = {
+    mercury: () => onPresetChange?.("Mercury"),
+    venus: () => onPresetChange?.("Venus"),
+    earth: () => onPresetChange?.("Earth-like"),
+    mars: () => onPresetChange?.("Mars"),
+    jupiter: () => onPresetChange?.("Jupiter"),
+    saturn: () => onPresetChange?.("Saturn"),
+    uranus: () => onPresetChange?.("Uranus"),
+    neptune: () => onPresetChange?.("Neptune")
+  };
+  realWorldsFolder.add(real, "mercury").name("Mercury");
+  realWorldsFolder.add(real, "venus").name("Venus");
+  realWorldsFolder.add(real, "earth").name("Earth");
+  realWorldsFolder.add(real, "mars").name("Mars");
+  realWorldsFolder.add(real, "jupiter").name("Jupiter");
+  realWorldsFolder.add(real, "saturn").name("Saturn");
+  realWorldsFolder.add(real, "uranus").name("Uranus");
+  realWorldsFolder.add(real, "neptune").name("Neptune");
 
   const planetFolder = registerFolder(gui.addFolder("Planet"), { close: true });
 

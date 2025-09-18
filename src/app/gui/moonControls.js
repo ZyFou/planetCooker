@@ -201,6 +201,29 @@ export function setupMoonControls({
       scheduleShareUpdate();
     });
 
+  // Impact tuning controls
+  const impactsFolder = registerFolder(physicsFolder.addFolder("Impact Tuning"), { close: true });
+  guiControllers.impactStrengthMul = impactsFolder.add(params, "impactStrengthMul", 0.1, 4, 0.05)
+    .name("Strength x")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+  guiControllers.impactSpeedMul = impactsFolder.add(params, "impactSpeedMul", 0, 3, 0.01)
+    .name("Speed x")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+  guiControllers.impactMassMul = impactsFolder.add(params, "impactMassMul", 0.2, 3, 0.05)
+    .name("Mass x")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+  guiControllers.impactElongationMul = impactsFolder.add(params, "impactElongationMul", 0, 3, 0.05)
+    .name("Elongation x")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
   guiControllers.moonMassScale = physicsFolder.add(params, "moonMassScale", 0.1, 5, 0.05)
     .name("Moon Mass Scale")
     .onChange(() => {

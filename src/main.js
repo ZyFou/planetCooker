@@ -40,8 +40,6 @@ const debugPlanetSpeedDisplay = document.getElementById("debug-planet-speed");
 const debugFpsDisplay = document.getElementById("debug-fps");
 const debugMoonSpeedList = document.getElementById("debug-moon-speed-list");
 const loadingOverlay = document.getElementById("loading");
-const mobileToggleButton = document.getElementById("toggle-controls");
-const panelScrim = document.getElementById("panel-scrim");
 if (!sceneContainer) {
   throw new Error("Missing scene container element");
 }
@@ -213,6 +211,7 @@ const stabilityDisplay = document.getElementById("orbit-stability");
 const shareDisplay = document.getElementById("share-display");
 
 const randomizeSeedButton = document.getElementById("randomize-seed");
+const resetAllButton = document.getElementById("reset-all");
 const exportButton = document.getElementById("export-fbx");
 const copyShareButton = document.getElementById("copy-share");
 const copyShareInlineButton = document.getElementById("copy-share-inline");
@@ -265,6 +264,11 @@ const params = {
   showOrbitLines: true,
   // Physics options
   impactDeformation: true,
+  // Impact tuning
+  impactStrengthMul: 1,
+  impactSpeedMul: 0.55,
+  impactMassMul: 1,
+  impactElongationMul: 1.6,
   // Effects: explosion customization
   explosionEnabled: true,
   explosionColor: "#ffaa66",
@@ -326,6 +330,260 @@ const presets = {
     starTwinkleSpeed: 0.6,
     moons: [
       { size: 0.27, distance: 4.2, orbitSpeed: 0.38, inclination: 6, color: "#cfd0d4", phase: 1.1, eccentricity: 0.055 }
+    ]
+  },
+  "Mars": {
+    seed: "MARS",
+    radius: 0.71,
+    subdivisions: 6,
+    noiseLayers: 5,
+    noiseFrequency: 3.1,
+    noiseAmplitude: 0.34,
+    persistence: 0.46,
+    lacunarity: 2.2,
+    oceanLevel: 0.0,
+    colorOcean: "#211b1b",
+    colorShallow: "#3b2a22",
+    colorLow: "#7a3e27",
+    colorMid: "#b25a32",
+    colorHigh: "#e4c7a1",
+    atmosphereColor: "#ffb382",
+    cloudsOpacity: 0.0,
+    axisTilt: 25,
+    rotationSpeed: 0.24,
+    simulationSpeed: 0.12,
+    gravity: 3.71,
+    sunColor: "#ffd27f",
+    sunIntensity: 1.8,
+    sunDistance: 60,
+    sunSize: 1,
+    sunHaloSize: 6.5,
+    sunGlowStrength: 1.2,
+    sunPulseSpeed: 0.5,
+    moonMassScale: 0.6,
+    starCount: 2400,
+    starBrightness: 0.9,
+    starTwinkleSpeed: 0.6,
+    moons: [
+      { size: 0.08, distance: 2.6, orbitSpeed: 0.8, inclination: 1, color: "#9e7a5c", phase: 0.3, eccentricity: 0.015 },
+      { size: 0.06, distance: 3.8, orbitSpeed: 0.66, inclination: 1.8, color: "#7a5d48", phase: 2.1, eccentricity: 0.025 }
+    ]
+  },
+  "Jupiter": {
+    seed: "JUPITER",
+    radius: 3.5,
+    subdivisions: 5,
+    noiseLayers: 3,
+    noiseFrequency: 1.2,
+    noiseAmplitude: 0.22,
+    persistence: 0.38,
+    lacunarity: 1.6,
+    oceanLevel: 0.55,
+    colorOcean: "#1b1f33",
+    colorShallow: "#2b3555",
+    colorLow: "#6a6f9a",
+    colorMid: "#c7b59a",
+    colorHigh: "#efe7dd",
+    atmosphereColor: "#d9c7a0",
+    cloudsOpacity: 0.7,
+    axisTilt: 3,
+    rotationSpeed: 0.48,
+    simulationSpeed: 0.32,
+    gravity: 24.79,
+    sunColor: "#ffd27f",
+    sunIntensity: 2.8,
+    sunDistance: 120,
+    sunSize: 1.6,
+    sunHaloSize: 10.5,
+    sunGlowStrength: 2.2,
+    sunPulseSpeed: 0.25,
+    moonMassScale: 2.2,
+    starCount: 3400,
+    starBrightness: 1.1,
+    starTwinkleSpeed: 0.45,
+    moons: [
+      { size: 0.35, distance: 5.8, orbitSpeed: 0.52, inclination: 2, color: "#d9d0c0", phase: 0.1, eccentricity: 0.01 },
+      { size: 0.32, distance: 7.3, orbitSpeed: 0.44, inclination: 0, color: "#b3a58b", phase: 0.7, eccentricity: 0.002 },
+      { size: 0.3, distance: 9.7, orbitSpeed: 0.36, inclination: 0.1, color: "#d6c8a7", phase: 1.3, eccentricity: 0.004 },
+      { size: 0.28, distance: 15.7, orbitSpeed: 0.23, inclination: 0.5, color: "#c0b8a8", phase: 2.0, eccentricity: 0.01 }
+    ]
+  },
+  "Saturn": {
+    seed: "SATURN",
+    radius: 3.2,
+    subdivisions: 5,
+    noiseLayers: 3,
+    noiseFrequency: 1.3,
+    noiseAmplitude: 0.2,
+    persistence: 0.38,
+    lacunarity: 1.6,
+    oceanLevel: 0.6,
+    colorOcean: "#1a2033",
+    colorShallow: "#2a3452",
+    colorLow: "#a38f6e",
+    colorMid: "#d4c3a8",
+    colorHigh: "#efe8dc",
+    atmosphereColor: "#e2d2b6",
+    cloudsOpacity: 0.6,
+    axisTilt: 27,
+    rotationSpeed: 0.42,
+    simulationSpeed: 0.32,
+    gravity: 10.44,
+    sunColor: "#ffd27f",
+    sunIntensity: 2.6,
+    sunDistance: 140,
+    sunSize: 1.6,
+    sunHaloSize: 12.5,
+    sunGlowStrength: 2.0,
+    sunPulseSpeed: 0.25,
+    moonMassScale: 2.2,
+    starCount: 3300,
+    starBrightness: 1.05,
+    starTwinkleSpeed: 0.45,
+    rings: { enabled: true },
+    moons: [
+      { size: 0.3, distance: 10.0, orbitSpeed: 0.3, inclination: 2, color: "#d9d6cf", phase: 0.1, eccentricity: 0.01 },
+      { size: 0.22, distance: 6.8, orbitSpeed: 0.42, inclination: 1, color: "#cdbb9a", phase: 0.8, eccentricity: 0.02 }
+    ]
+  },
+  "Mercury": {
+    seed: "MERCURY",
+    radius: 0.38,
+    subdivisions: 6,
+    noiseLayers: 5,
+    noiseFrequency: 3.4,
+    noiseAmplitude: 0.42,
+    persistence: 0.5,
+    lacunarity: 2.2,
+    oceanLevel: 0.0,
+    colorOcean: "#2a2623",
+    colorShallow: "#3b322c",
+    colorLow: "#5c4a3e",
+    colorMid: "#8a705d",
+    colorHigh: "#d1c0af",
+    atmosphereColor: "#b9b2a8",
+    cloudsOpacity: 0.0,
+    axisTilt: 0.03,
+    rotationSpeed: 0.02,
+    simulationSpeed: 0.12,
+    gravity: 3.7,
+    sunColor: "#ffd27f",
+    sunIntensity: 2.0,
+    sunDistance: 20,
+    sunSize: 1,
+    sunHaloSize: 6.5,
+    sunGlowStrength: 1.4,
+    sunPulseSpeed: 0.5,
+    moonMassScale: 0.2,
+    starCount: 2200,
+    starBrightness: 0.9,
+    starTwinkleSpeed: 0.6,
+    moons: []
+  },
+  "Venus": {
+    seed: "VENUS",
+    radius: 0.95,
+    subdivisions: 6,
+    noiseLayers: 5,
+    noiseFrequency: 3.0,
+    noiseAmplitude: 0.45,
+    persistence: 0.48,
+    lacunarity: 2.25,
+    oceanLevel: 0.35,
+    colorOcean: "#2d2018",
+    colorShallow: "#4a362a",
+    colorLow: "#6f513f",
+    colorMid: "#b38a6c",
+    colorHigh: "#f0e6d9",
+    atmosphereColor: "#e3c6a2",
+    cloudsOpacity: 0.85,
+    axisTilt: 177,
+    rotationSpeed: -0.01,
+    simulationSpeed: 0.12,
+    gravity: 8.87,
+    sunColor: "#ffd27f",
+    sunIntensity: 2.2,
+    sunDistance: 30,
+    sunSize: 1,
+    sunHaloSize: 6.5,
+    sunGlowStrength: 1.5,
+    sunPulseSpeed: 0.5,
+    moonMassScale: 0.4,
+    starCount: 2500,
+    starBrightness: 0.95,
+    starTwinkleSpeed: 0.6,
+    moons: []
+  },
+  "Uranus": {
+    seed: "URANUS",
+    radius: 2.7,
+    subdivisions: 5,
+    noiseLayers: 3,
+    noiseFrequency: 1.4,
+    noiseAmplitude: 0.25,
+    persistence: 0.42,
+    lacunarity: 1.7,
+    oceanLevel: 0.65,
+    colorOcean: "#12273a",
+    colorShallow: "#1f4763",
+    colorLow: "#6aa9c8",
+    colorMid: "#a8d4e8",
+    colorHigh: "#e7f7fb",
+    atmosphereColor: "#a8d7ea",
+    cloudsOpacity: 0.6,
+    axisTilt: 98,
+    rotationSpeed: -0.25,
+    simulationSpeed: 0.22,
+    gravity: 8.69,
+    sunColor: "#ffd27f",
+    sunIntensity: 2.4,
+    sunDistance: 150,
+    sunSize: 1.4,
+    sunHaloSize: 12.0,
+    sunGlowStrength: 1.9,
+    sunPulseSpeed: 0.3,
+    moonMassScale: 1.6,
+    starCount: 3200,
+    starBrightness: 1.0,
+    starTwinkleSpeed: 0.5,
+    moons: [
+      { size: 0.18, distance: 6.5, orbitSpeed: 0.4, inclination: 1, color: "#d5eaf6", phase: 0.2, eccentricity: 0.03 }
+    ]
+  },
+  "Neptune": {
+    seed: "NEPTUNE",
+    radius: 2.6,
+    subdivisions: 5,
+    noiseLayers: 3,
+    noiseFrequency: 1.5,
+    noiseAmplitude: 0.28,
+    persistence: 0.45,
+    lacunarity: 1.8,
+    oceanLevel: 0.65,
+    colorOcean: "#0e2240",
+    colorShallow: "#1e3d6b",
+    colorLow: "#5e86c0",
+    colorMid: "#94b7f7",
+    colorHigh: "#eaf2ff",
+    atmosphereColor: "#9ec2ff",
+    cloudsOpacity: 0.6,
+    axisTilt: 28,
+    rotationSpeed: 0.26,
+    simulationSpeed: 0.22,
+    gravity: 11.15,
+    sunColor: "#ffd27f",
+    sunIntensity: 2.4,
+    sunDistance: 160,
+    sunSize: 1.4,
+    sunHaloSize: 12.5,
+    sunGlowStrength: 1.9,
+    sunPulseSpeed: 0.3,
+    moonMassScale: 1.7,
+    starCount: 3200,
+    starBrightness: 1.0,
+    starTwinkleSpeed: 0.5,
+    moons: [
+      { size: 0.24, distance: 8.6, orbitSpeed: 0.34, inclination: 0.1, color: "#d1e2ff", phase: 0.8, eccentricity: 0.01 }
     ]
   },
   "Desert World": {
@@ -523,6 +781,11 @@ const shareKeys = [
   "physicsSubsteps",
   "showOrbitLines",
   "impactDeformation",
+  // Impact tuning
+  "impactStrengthMul",
+  "impactSpeedMul",
+  "impactMassMul",
+  "impactElongationMul",
   // Explosion customization
   "explosionEnabled",
   "explosionColor",
@@ -676,6 +939,15 @@ randomizeSeedButton?.addEventListener("click", () => {
   params.seed = nextSeed;
   guiControllers.seed?.setValue?.(nextSeed);
   handleSeedChanged();
+});
+
+// Reset all to default (Earth-like baseline)
+resetAllButton?.addEventListener("click", () => {
+  try {
+    applyPreset("Earth-like", { skipShareUpdate: false, keepSeed: false });
+  } catch (e) {
+    console.warn("Reset All failed:", e);
+  }
 });
 
 function getCurrentShareCode() {
@@ -2170,6 +2442,17 @@ function applyPreset(name, { skipShareUpdate = false, keepSeed = false } = {}) {
   updatePalette();
   updateClouds();
   updateSun();
+  // Rings: default to disabled unless preset explicitly enables
+  {
+    let nextRingEnabled = false;
+    if (Object.prototype.hasOwnProperty.call(preset, 'ringEnabled')) {
+      nextRingEnabled = !!preset.ringEnabled;
+    } else if (preset.rings && typeof preset.rings.enabled === 'boolean') {
+      nextRingEnabled = !!preset.rings.enabled;
+    }
+    params.ringEnabled = nextRingEnabled;
+    guiControllers.ringEnabled?.setValue?.(params.ringEnabled);
+  }
   updateRings();
   updateTilt();
   updateGravityDisplay();
@@ -3092,12 +3375,42 @@ function stepMoonPhysics(dt) {
       // Apply local crater deformation to the planet surface at impact
       if (params.impactDeformation && mesh) {
         try {
-          const moonRadius = mesh.scale.x; // in world units
-          // Project the moon center to the planet surface to find contact point
+          const moonRadius = mesh.scale.x; // in world units (approx projectile radius)
           const planetWorldPos = planetRoot.getWorldPosition(new THREE.Vector3());
-          const impactDir = new THREE.Vector3().copy(pos).sub(planetWorldPos).normalize();
-          const impactPoint = new THREE.Vector3().copy(planetWorldPos).addScaledVector(impactDir, Math.max(0.01, params.radius));
-          applyImpactDeformation(impactPoint, moonRadius * 1.2, { strength });
+          const surfaceNormal = new THREE.Vector3().copy(pos).sub(planetWorldPos).normalize();
+          const impactPoint = new THREE.Vector3().copy(planetWorldPos).addScaledVector(surfaceNormal, Math.max(0.01, params.radius));
+
+          // Use momentum and velocity direction to shape crater
+          const velocity = phys?.velWorld ? phys.velWorld.clone() : new THREE.Vector3();
+          const speed = velocity.length();
+          const mass = phys?.mass ?? 1;
+
+          // Direction of travel projected onto the surface (for elongation)
+          const travelAlongSurface = velocity.clone().projectOnPlane(surfaceNormal);
+          const hasTangent = travelAlongSurface.lengthSq() > 1e-8;
+          const tangentDir = hasTangent ? travelAlongSurface.normalize() : new THREE.Vector3(1, 0, 0);
+
+          // Incidence angle relative to the surface normal (0 = head-on)
+          const incidence = Math.acos(THREE.MathUtils.clamp(velocity.clone().normalize().negate().dot(surfaceNormal), -1, 1));
+
+          // Scale crater radius and depth by size and speed (tuned for visuals)
+          const radiusScale = 0.9 + (params.impactSpeedMul || 0.55) * Math.min(3, speed);
+          const impactRadius = moonRadius * radiusScale;
+
+          // Strength scales with momentum and incidence (less depth for very oblique hits)
+          const momentumScale = Math.cbrt(Math.max(1e-6, mass)) * (0.6 + (params.impactSpeedMul || 0.55) * Math.min(3, speed));
+          const normalHitScale = 0.5 + 0.5 * Math.max(0, Math.cos(incidence));
+          const impactStrength = THREE.MathUtils.clamp(
+            (params.impactStrengthMul || 1) * strength * (params.impactMassMul || 1) * momentumScale * normalHitScale,
+            0.2,
+            3.5
+          );
+
+          applyImpactDeformation(impactPoint, impactRadius, {
+            strength: impactStrength,
+            directionWorld: tangentDir, // elongate crater along downrange direction
+            obliquity: incidence
+          });
         } catch (e) {
           console.warn('Impact deformation failed:', e);
         }
@@ -3295,7 +3608,7 @@ function surpriseMe() {
 //#endregion
 
 // Deform planet mesh around an impact point to create a simple crater
-function applyImpactDeformation(worldPosition, impactRadius, { strength = 1 } = {}) {
+function applyImpactDeformation(worldPosition, impactRadius, { strength = 1, directionWorld = null, obliquity = 0 } = {}) {
   if (!planetMesh || !planetMesh.geometry || !worldPosition) return;
   const geometry = planetMesh.geometry;
   const positions = geometry.getAttribute('position');
@@ -3311,23 +3624,60 @@ function applyImpactDeformation(worldPosition, impactRadius, { strength = 1 } = 
   if (localImpact.lengthSq() === 0) return;
   const centerDir = localImpact.clone().normalize();
 
+  // Build a local tangent basis at impact for directional/elliptical deformation
+  const up = centerDir;
+  const tangentLocal = (() => {
+    if (!directionWorld || directionWorld.lengthSq() < 1e-8) return null;
+    // Convert world direction at impact point into local tangent direction
+    const p1 = planetMesh.worldToLocal(worldPosition.clone());
+    const p2 = planetMesh.worldToLocal(worldPosition.clone().add(directionWorld.clone()));
+    const dirLocal = p2.sub(p1).normalize();
+    // Remove any normal component to ensure tangent lies on surface
+    const tangent = dirLocal.sub(up.clone().multiplyScalar(dirLocal.dot(up))).normalize();
+    return tangent.lengthSq() > 0.5 ? tangent : null;
+  })();
+  const bitangentLocal = tangentLocal ? new THREE.Vector3().crossVectors(up, tangentLocal).normalize() : null;
+
   // Convert impact radius to angular radius on the sphere
   const craterAngle = THREE.MathUtils.clamp(impactRadius / Math.max(1e-6, params.radius), 0.01, Math.PI / 2);
 
   // Depth scaled by impact size and terrain scale
   const baseDepth = Math.min(impactRadius * 0.45, (params.noiseAmplitude || 0.5) * 0.6 + 0.02);
-  const depth = THREE.MathUtils.clamp(baseDepth * THREE.MathUtils.clamp(strength, 0.2, 2), 0.005, impactRadius);
+  const depth = THREE.MathUtils.clamp(baseDepth * THREE.MathUtils.clamp(strength, 0.2, 3.5), 0.005, impactRadius);
+
+  // Ellipticity increases with obliquity: 0 (head-on) -> circular, pi/2 (grazing) -> elongated
+  const obliq = THREE.MathUtils.clamp(isFinite(obliquity) ? obliquity : 0, 0, Math.PI / 2);
+  const elongBase = (params.impactElongationMul ?? 1.6);
+  const elongation = tangentLocal ? (1 + elongBase * (obliq / (Math.PI / 2))) : 1; // major axis scale
+  const minorScale = 1 / elongation; // maintain area roughly similar
 
   const arr = positions.array;
   const v = new THREE.Vector3();
   const vDir = new THREE.Vector3();
+  const local = new THREE.Vector3();
 
   for (let i = 0; i < arr.length; i += 3) {
     v.set(arr[i + 0], arr[i + 1], arr[i + 2]);
     const r = v.length();
     if (r <= 0) continue;
     vDir.copy(v).divideScalar(r); // normalize
-    const ang = Math.acos(THREE.MathUtils.clamp(vDir.dot(centerDir), -1, 1));
+    let ang;
+    if (tangentLocal) {
+      // Measure angular distance using elliptical metric in tangent space
+      // Compute local coordinates of vertex direction in tangent frame
+      const du = vDir.dot(tangentLocal);
+      const dv = vDir.dot(bitangentLocal);
+      const dn = vDir.dot(up);
+      // Project onto tangent plane frame proportions
+      // Scale axes to create ellipse
+      const u = du / elongation; // compress along tangent to simulate elongated footprint
+      const w = dv / minorScale;
+      // Reconstruct a pseudo-direction with anisotropic scaling for angle measure
+      local.set(u, dn, w).normalize();
+      ang = Math.acos(THREE.MathUtils.clamp(local.y, -1, 1)); // angle from up after scaling
+    } else {
+      ang = Math.acos(THREE.MathUtils.clamp(vDir.dot(centerDir), -1, 1));
+    }
     if (ang > craterAngle) continue;
 
     // Smooth falloff from center to rim
