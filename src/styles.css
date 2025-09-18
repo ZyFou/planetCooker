@@ -20,6 +20,9 @@ html {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  min-height: 100dvh;
+  height: 100vh;
+  height: 100dvh;
   backdrop-filter: blur(8px);
 }
 
@@ -66,6 +69,7 @@ button:hover {
   display: flex;
   flex: 1;
   min-height: 0;
+  height: 100%;
 }
 
 #scene {
@@ -79,13 +83,21 @@ canvas {
 }
 
 #info {
-  width: 320px;
+  width: 360px;
+  min-width: 360px;
+  flex: 0 0 360px;
   background: rgba(9, 13, 24, 0.8);
   border-right: 1px solid rgba(91, 126, 179, 0.18);
   padding: 1.25rem 1.5rem;
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .stat {
@@ -117,6 +129,106 @@ canvas {
   margin-top: 0.25rem;
 }
 
+.control-search-bar {
+  position: sticky;
+  top: 1.25rem;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.6rem 0.85rem;
+  margin-bottom: 0.85rem;
+  border-radius: 14px;
+  border: 1px solid rgba(91, 126, 179, 0.22);
+  background: linear-gradient(135deg, rgba(18, 28, 54, 0.92), rgba(9, 14, 26, 0.78));
+  box-shadow: 0 16px 38px rgba(5, 10, 26, 0.45);
+  backdrop-filter: blur(18px);
+}
+
+#control-search {
+  flex: 1;
+  padding: 0.55rem 1rem;
+  border-radius: 999px;
+  border: 1px solid rgba(91, 126, 179, 0.32);
+  background: rgba(15, 23, 45, 0.65);
+  color: inherit;
+  font-size: 0.9rem;
+  letter-spacing: 0.03em;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+#control-search:focus {
+  border-color: rgba(125, 196, 255, 0.65);
+  box-shadow: 0 0 0 3px rgba(73, 136, 212, 0.22);
+  background: rgba(18, 28, 52, 0.85);
+}
+
+#control-search::placeholder {
+  color: rgba(169, 195, 237, 0.6);
+}
+
+#control-search::-webkit-search-cancel-button {
+  display: none;
+}
+
+#control-search-clear {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(91, 126, 179, 0.28);
+  background: rgba(30, 46, 79, 0.72);
+  color: rgba(217, 230, 255, 0.85);
+  padding: 0;
+  line-height: 1;
+  font-size: 1.1rem;
+  text-transform: none;
+  letter-spacing: 0;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+#control-search-clear:hover {
+  background: rgba(53, 80, 131, 0.82);
+  border-color: rgba(135, 189, 255, 0.45);
+}
+
+#control-search-clear:active {
+  transform: translateY(1px);
+}
+
+#control-search-clear span {
+  pointer-events: none;
+}
+
+.control-search-bar.has-value #control-search {
+  border-color: rgba(125, 196, 255, 0.5);
+}
+
+.control-search-empty {
+  margin: -0.35rem 0 0.65rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(169, 195, 237, 0.6);
+}
+
+#controls .lil-gui .controller.search-hidden,
+#controls .lil-gui .lil-gui.search-hidden {
+  display: none !important;
+}
+
+#controls .lil-gui .controller.search-match {
+  border-color: rgba(135, 189, 255, 0.45);
+  background: rgba(28, 48, 91, 0.72);
+  box-shadow: 0 10px 24px rgba(6, 12, 26, 0.4);
+}
+
+#controls .lil-gui.root.search-active > .children {
+  padding-top: calc(var(--padding) - 6px);
+}
 .share-row {
   display: flex;
   align-items: center;
@@ -161,18 +273,43 @@ canvas {
 }
 
 @media (max-width: 960px) {
+  #app {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
   #main {
     flex-direction: column;
+    height: auto;
+  }
+
+  .control-search-bar {
+    position: static;
+    margin-bottom: 0.75rem;
+  }
+
+  #control-search-clear {
+    width: 34px;
+    height: 34px;
   }
 
   #info {
     width: 100%;
+    min-width: 100%;
+    flex: none;
     border-right: none;
     border-bottom: 1px solid rgba(91, 126, 179, 0.18);
     flex-direction: row;
     flex-wrap: wrap;
     justify-content: space-between;
     gap: 1.1rem;
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    overflow: visible;
+    overscroll-behavior: auto;
+    scrollbar-gutter: auto;
   }
 
   .hint {
@@ -192,3 +329,188 @@ canvas {
   color: #7dff9c;
   text-shadow: 0 0 6px rgba(125, 255, 156, 0.75);
 }
+
+/* Settings panel styling to match site aesthetic */
+#controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+#controls .lil-gui {
+  --background-color: rgba(8, 13, 26, 0.82);
+  --title-background-color: rgba(14, 21, 40, 0.95);
+  --title-text-color: #d9e6ff;
+  --text-color: rgba(217, 230, 255, 0.94);
+  --widget-color: rgba(30, 46, 79, 0.72);
+  --hover-color: rgba(53, 80, 131, 0.82);
+  --focus-color: rgba(73, 112, 173, 0.88);
+  --number-color: #7dd2ff;
+  --string-color: #86f3d7;
+  --font-family: "Segoe UI", Roboto, sans-serif;
+  --font-size: 12px;
+  --input-font-size: 12px;
+  --widget-height: 30px;
+  --widget-border-radius: 12px;
+  --padding: 12px;
+  --spacing: 10px;
+  --name-width: 46%;
+  --slider-knob-width: 4px;
+  --scrollbar-width: 6px;
+  color-scheme: dark;
+}
+
+#controls .lil-gui.root {
+  --width: 100%;
+  border-radius: 18px;
+  border: 1px solid rgba(91, 126, 179, 0.22);
+  background: linear-gradient(160deg, rgba(12, 18, 36, 0.94), rgba(6, 9, 18, 0.78));
+  box-shadow: 0 22px 60px rgba(5, 10, 26, 0.6);
+  backdrop-filter: blur(18px);
+  overflow: hidden;
+}
+
+#controls .lil-gui.root > .title {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(91, 126, 179, 0.25);
+  background: linear-gradient(135deg, rgba(18, 28, 54, 0.95), rgba(11, 19, 36, 0.9));
+  box-shadow: inset 0 -1px 0 rgba(91, 126, 179, 0.22);
+}
+
+#controls .lil-gui.root > .children {
+  padding: calc(var(--padding) - 4px);
+  background: radial-gradient(circle at top, rgba(24, 40, 78, 0.18), transparent 65%);
+}
+
+#controls .lil-gui .title:before {
+  margin-right: 0.4rem;
+  color: rgba(169, 195, 237, 0.65);
+}
+
+#controls .lil-gui .controller {
+  border-radius: 14px;
+  padding: calc(var(--padding) * 0.35) calc(var(--padding) * 0.75);
+  margin: calc(var(--spacing) * 0.2) 0;
+  background: rgba(17, 25, 44, 0.55);
+  border: 1px solid rgba(91, 126, 179, 0.15);
+  transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+#controls .lil-gui .controller:hover {
+  background: rgba(28, 43, 77, 0.65);
+  border-color: rgba(123, 162, 225, 0.3);
+  box-shadow: 0 8px 24px rgba(6, 12, 26, 0.35);
+}
+
+#controls .lil-gui .controller > .name {
+  font-size: 0.7rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: rgba(169, 195, 237, 0.75);
+}
+
+#controls .lil-gui input[type="text"],
+#controls .lil-gui input[type="number"],
+#controls .lil-gui select {
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+#controls .lil-gui input[type="text"],
+#controls .lil-gui input[type="number"] {
+  box-shadow: inset 0 0 0 1px rgba(93, 133, 199, 0.35);
+}
+
+#controls .lil-gui input[type="text"]:focus,
+#controls .lil-gui input[type="number"]:focus {
+  box-shadow: 0 0 0 4px rgba(73, 136, 212, 0.25);
+}
+
+#controls .lil-gui .controller.number .fill {
+  background: linear-gradient(90deg, rgba(74, 164, 255, 0.85), rgba(125, 196, 255, 0.7));
+  border-right-color: rgba(192, 232, 255, 0.9);
+}
+
+#controls .lil-gui input[type="checkbox"] {
+  border: 1px solid rgba(91, 126, 179, 0.35);
+  background: rgba(16, 24, 44, 0.65);
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+#controls .lil-gui input[type="checkbox"]:checked {
+  background: linear-gradient(135deg, rgba(78, 146, 235, 0.95), rgba(56, 108, 214, 0.88));
+  border-color: rgba(125, 196, 255, 0.75);
+  box-shadow: 0 0 12px rgba(125, 196, 255, 0.45);
+}
+
+#controls .lil-gui .controller.option .display {
+  border: 1px solid rgba(91, 126, 179, 0.28);
+  background: linear-gradient(135deg, rgba(30, 48, 82, 0.85), rgba(21, 34, 62, 0.85));
+}
+
+#controls .lil-gui .controller.option .display:after {
+  color: rgba(169, 195, 237, 0.65);
+}
+
+#controls .lil-gui .controller.color .display {
+  border: 1px solid rgba(91, 126, 179, 0.35);
+  box-shadow: 0 5px 18px rgba(4, 8, 18, 0.45);
+}
+
+#controls .lil-gui button {
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  box-shadow: inset 0 0 0 1px rgba(91, 126, 179, 0.3);
+}
+
+#controls .lil-gui button:hover {
+  box-shadow: inset 0 0 0 1px rgba(135, 169, 218, 0.45);
+}
+
+@media (max-width: 960px) {
+  #app {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  #main {
+    flex-direction: column;
+    height: auto;
+  }
+
+  #info {
+    width: 100%;
+    min-width: 100%;
+    flex: none;
+    border-right: none;
+    border-bottom: 1px solid rgba(91, 126, 179, 0.18);
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 1.1rem;
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    overflow: visible;
+    overscroll-behavior: auto;
+    scrollbar-gutter: auto;
+  }
+
+  .hint {
+    width: 100%;
+    margin-top: 0;
+  }
+}
+
+
+
+
+
+
+
+
+

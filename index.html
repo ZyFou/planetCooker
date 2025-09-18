@@ -41,6 +41,13 @@
               <!-- <button id="copy-share-inline" class="copy-inline" title="Copy share code">Copy</button> -->
             </div>
           </div>
+          <div class="control-search-bar" id="control-search-bar">
+            <input type="search" id="control-search" placeholder="Search controls..." autocomplete="off" spellcheck="false" aria-label="Search controls" />
+            <button id="control-search-clear" type="button" title="Clear search" aria-label="Clear search">
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+          <p id="control-search-empty" class="control-search-empty" hidden>No controls match your search.</p>
           <div id="controls"></div>
           <p class="hint">Use the sliders on the left to tweak the planet. Press H to hide/show the panel.</p>
         </section>
@@ -55,3 +62,4 @@
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
+

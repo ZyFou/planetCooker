@@ -64,9 +64,17 @@ function hashString(str) {
 //#region Scene and renderer setup
 const sceneContainer = document.getElementById("scene");
 const controlsContainer = document.getElementById("controls");
+const controlSearchInput = document.getElementById("control-search");
+const controlSearchClear = document.getElementById("control-search-clear");
+const controlSearchEmpty = document.getElementById("control-search-empty");
+const controlSearchBar = document.getElementById("control-search-bar");
+const infoPanel = document.getElementById("info");
 const loadingOverlay = document.getElementById("loading");
 if (!sceneContainer) {
   throw new Error("Missing scene container element");
+}
+if (!controlsContainer) {
+  throw new Error("Missing controls container element");
 }
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -503,6 +511,136 @@ const palette = {
 const moonSettings = [];
 const guiControllers = {};
 const moonControlFolders = [];
+const guiFolders = new Set();
+let controlSearchTerm = "";
+let controlSearchRestoreState = null;
+
+function registerFolder(folder, { close = false } = {}) {
+  guiFolders.add(folder);
+  if (controlSearchRestoreState && !controlSearchRestoreState.has(folder)) {
+    controlSearchRestoreState.set(folder, close);
+    folder.open();
+  } else if (close) {
+    folder.close();
+  }
+  return folder;
+}
+
+function applyControlSearch({ scrollToFirst = false } = {}) {
+  const root = controlsContainer?.querySelector(".lil-gui.root");
+  if (!root) return;
+
+  const term = controlSearchTerm.trim().toLowerCase();
+  const hasTerm = term.length > 0;
+
+  if (hasTerm) {
+    if (!controlSearchRestoreState) {
+      controlSearchRestoreState = new Map();
+    }
+    guiFolders.forEach((folder) => {
+      if (!controlSearchRestoreState.has(folder)) {
+        controlSearchRestoreState.set(folder, folder._closed);
+      }
+      folder.open();
+    });
+  } else if (controlSearchRestoreState) {
+    controlSearchRestoreState.forEach((wasClosed, folder) => {
+      if (wasClosed) {
+        folder.close();
+      } else {
+        folder.open();
+      }
+    });
+    controlSearchRestoreState = null;
+  }
+
+  const controllers = Array.from(root.querySelectorAll(".controller"));
+  let firstMatch = null;
+  let matchCount = 0;
+
+  controllers.forEach((controllerEl) => {
+    const label = controllerEl.querySelector(".name")?.textContent?.toLowerCase() ?? "";
+    const isMatch = !hasTerm || label.includes(term);
+    controllerEl.classList.toggle("search-hidden", hasTerm && !isMatch);
+    controllerEl.classList.toggle("search-match", hasTerm && isMatch);
+    if (isMatch) {
+      matchCount += 1;
+      if (!firstMatch) {
+        firstMatch = controllerEl;
+      }
+    }
+  });
+
+  const folders = Array.from(root.querySelectorAll(".lil-gui"));
+  folders.forEach((folderEl) => {
+    if (folderEl.classList.contains("root")) return;
+    const hasVisibleControllers = folderEl.querySelector(".controller:not(.search-hidden)");
+    folderEl.classList.toggle("search-hidden", hasTerm && !hasVisibleControllers);
+  });
+
+  root.classList.toggle("search-active", hasTerm);
+
+  if (controlSearchBar) {
+    controlSearchBar.classList.toggle("has-value", hasTerm);
+  }
+  if (controlSearchClear) {
+    controlSearchClear.hidden = !hasTerm;
+  }
+  if (controlSearchEmpty) {
+    controlSearchEmpty.hidden = !hasTerm || matchCount > 0;
+  }
+
+  if (hasTerm && scrollToFirst && firstMatch) {
+    firstMatch.scrollIntoView({ block: "nearest" });
+  }
+}
+
+function setControlSearchTerm(value, { scrollToFirst = true } = {}) {
+  const previousTerm = controlSearchTerm;
+  controlSearchTerm = value ?? "";
+  const trimmedPrevious = previousTerm.trim();
+  const trimmedCurrent = controlSearchTerm.trim();
+  const shouldScroll = scrollToFirst && trimmedCurrent.length > 0 && trimmedPrevious.length === 0;
+  applyControlSearch({ scrollToFirst: shouldScroll });
+  if (trimmedCurrent.length === 0 && trimmedPrevious.length > 0 && infoPanel) {
+    infoPanel.scrollTop = 0;
+  } else if (shouldScroll && infoPanel) {
+    infoPanel.scrollTop = 0;
+  }
+}
+
+const handleControlSearchInput = debounce(() => {
+  if (!controlSearchInput) return;
+  setControlSearchTerm(controlSearchInput.value, { scrollToFirst: true });
+}, 120);
+
+if (controlSearchInput) {
+  controlSearchInput.addEventListener("input", handleControlSearchInput);
+  controlSearchInput.addEventListener("search", () => {
+    setControlSearchTerm(controlSearchInput.value, { scrollToFirst: true });
+  });
+  controlSearchInput.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      controlSearchInput.value = "";
+      setControlSearchTerm("", { scrollToFirst: false });
+      controlSearchInput.blur();
+    }
+  });
+}
+
+if (controlSearchClear) {
+  controlSearchClear.hidden = true;
+  controlSearchClear.addEventListener("click", () => {
+    if (controlSearchInput) {
+      controlSearchInput.value = "";
+      controlSearchInput.focus();
+    }
+    setControlSearchTerm("", { scrollToFirst: false });
+  });
+}
+
+setControlSearchTerm(controlSearchInput?.value ?? "", { scrollToFirst: false });
 
 let planetDirty = true;
 let moonsDirty = true;
@@ -515,13 +653,12 @@ let sunPulsePhase = 0;
 //#endregion
 
 //#region GUI setup
-const gui = new GUI({ title: "Planet Controls", width: 320, container: controlsContainer || undefined });
+const gui = registerFolder(new GUI({ title: "Planet Controls", width: 320, container: controlsContainer || undefined }));
 
 const presetController = gui.add(params, "preset", Object.keys(presets)).name("Preset");
 guiControllers.preset = presetController;
 
-const planetFolder = gui.addFolder("Planet");
-planetFolder.close();
+const planetFolder = registerFolder(gui.addFolder("Planet"), { close: true });
 
 guiControllers.seed = planetFolder
   .add(params, "seed")
@@ -590,8 +727,7 @@ guiControllers.oceanLevel = planetFolder.add(params, "oceanLevel", 0, 0.95, 0.01
       scheduleShareUpdate();
     });
 
-const paletteFolder = gui.addFolder("Palette");
-paletteFolder.close();
+const paletteFolder = registerFolder(gui.addFolder("Palette"), { close: true });
 
 guiControllers.colorOcean = paletteFolder.addColor(params, "colorOcean")
     .name("Deep Water")
@@ -648,8 +784,7 @@ guiControllers.cloudsOpacity = paletteFolder.add(params, "cloudsOpacity", 0, 1, 
       scheduleShareUpdate();
     });
 
-const motionFolder = gui.addFolder("Motion");
-motionFolder.close();
+const motionFolder = registerFolder(gui.addFolder("Motion"), { close: true });
 
 guiControllers.axisTilt = motionFolder.add(params, "axisTilt", 0, 45, 0.5)
     .name("Axis Tilt")
@@ -670,8 +805,7 @@ guiControllers.simulationSpeed = motionFolder.add(params, "simulationSpeed", 0, 
       scheduleShareUpdate();
     });
 
-const environmentFolder = gui.addFolder("Environment");
-environmentFolder.close();
+const environmentFolder = registerFolder(gui.addFolder("Environment"), { close: true });
 
 guiControllers.gravity = environmentFolder.add(params, "gravity", 0.1, 40, 0.1)
     .name("Gravity m/s^2")
@@ -681,8 +815,7 @@ guiControllers.gravity = environmentFolder.add(params, "gravity", 0.1, 40, 0.1)
       scheduleShareUpdate();
     });
 
-const sunFolder = environmentFolder.addFolder("Star");
-sunFolder.close();
+const sunFolder = registerFolder(environmentFolder.addFolder("Star"), { close: true });
 
 guiControllers.sunColor = sunFolder.addColor(params, "sunColor")
     .name("Color")
@@ -733,8 +866,7 @@ guiControllers.sunPulseSpeed = sunFolder.add(params, "sunPulseSpeed", 0, 2.5, 0.
       scheduleShareUpdate();
     });
 
-const spaceFolder = environmentFolder.addFolder("Sky");
-spaceFolder.close();
+const spaceFolder = registerFolder(environmentFolder.addFolder("Sky"), { close: true });
 
 guiControllers.starCount = spaceFolder.add(params, "starCount", 500, 4000, 50)
     .name("Star Count")
@@ -758,7 +890,7 @@ guiControllers.starTwinkleSpeed = spaceFolder.add(params, "starTwinkleSpeed", 0,
       scheduleShareUpdate();
     });
 
-const moonsFolder = gui.addFolder("Moons");
+const moonsFolder = registerFolder(gui.addFolder("Moons"));
 moonsFolder.open();
 
 guiControllers.moonCount = moonsFolder.add(params, "moonCount", 0, 5, 1)
@@ -776,8 +908,7 @@ guiControllers.showOrbitLines = moonsFolder.add(params, "showOrbitLines")
     scheduleShareUpdate();
   });
 
-const physicsFolder = gui.addFolder("Physics");
-physicsFolder.close();
+const physicsFolder = registerFolder(gui.addFolder("Physics"), { close: true });
 
 guiControllers.physicsEnabled = physicsFolder.add(params, "physicsEnabled")
   .name("Enable Physics")
@@ -813,6 +944,8 @@ guiControllers.physicsSubsteps = physicsFolder.add(params, "physicsSubsteps", 1,
   });
 
 physicsFolder.add({ reset: () => resetMoonPhysics() }, "reset").name("Reset Orbits");
+
+applyControlSearch({ scrollToFirst: false });
 
 presetController.onChange((value) => {
   if (isApplyingPreset) return;
@@ -882,6 +1015,7 @@ markPlanetDirty();
 markMoonsDirty();
 initMoonPhysics();
 updateOrbitLinesVisibility();
+applyControlSearch({ scrollToFirst: false });
 updateShareCode();
 requestAnimationFrame(animate);
 //#endregion
@@ -1439,9 +1573,12 @@ function syncMoonSettings() {
 }
 
 function rebuildMoonControls() {
-  moonControlFolders.splice(0, moonControlFolders.length).forEach((folder) => folder.destroy());
+  moonControlFolders.splice(0, moonControlFolders.length).forEach((folder) => {
+    guiFolders.delete(folder);
+    folder.destroy();
+  });
   moonSettings.forEach((moon, index) => {
-    const folder = gui.addFolder(`Moon ${index + 1}`);
+    const folder = registerFolder(gui.addFolder(`Moon ${index + 1}`));
     folder
       .add(moon, "size", 0.05, 0.9, 0.01)
       .name("Size (radii)")
@@ -1492,6 +1629,7 @@ function rebuildMoonControls() {
       });
     moonControlFolders.push(folder);
   });
+  applyControlSearch({ scrollToFirst: false });
 }
 //#endregion
 //#region Presets and sharing
@@ -2189,5 +2327,4 @@ function saveArrayBuffer(data, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 //#endregion
-
 
