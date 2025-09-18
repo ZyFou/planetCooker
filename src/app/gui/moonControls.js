@@ -194,6 +194,13 @@ export function setupMoonControls({
       scheduleShareUpdate();
     });
 
+  guiControllers.impactDeformation = physicsFolder.add(params, "impactDeformation")
+    .name("Impact Deformation")
+    .onChange(() => {
+      // Pure toggle; no immediate rebuild required
+      scheduleShareUpdate();
+    });
+
   guiControllers.moonMassScale = physicsFolder.add(params, "moonMassScale", 0.1, 5, 0.05)
     .name("Moon Mass Scale")
     .onChange(() => {

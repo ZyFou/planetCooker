@@ -253,6 +253,8 @@ const params = {
   physicsDamping: 0.0005,
   physicsSubsteps: 2,
   showOrbitLines: true,
+  // Physics options
+  impactDeformation: true,
   // Effects: explosion customization
   explosionEnabled: true,
   explosionColor: "#ffaa66",
@@ -499,6 +501,7 @@ const shareKeys = [
   "physicsDamping",
   "physicsSubsteps",
   "showOrbitLines",
+  "impactDeformation",
   // Explosion customization
   "explosionEnabled",
   "explosionColor",
@@ -2838,6 +2841,21 @@ function stepMoonPhysics(dt) {
       const color = mesh?.material?.color || new THREE.Color(0xffaa66);
       const pos = phys?.posWorld || pivot.getWorldPosition(new THREE.Vector3());
       const strength = Math.max(0.3, (mesh?.scale?.x || 0.2) / Math.max(0.1, params.radius));
+
+      // Apply local crater deformation to the planet surface at impact
+      if (params.impactDeformation && mesh) {
+        try {
+          const moonRadius = mesh.scale.x; // in world units
+          // Project the moon center to the planet surface to find contact point
+          const planetWorldPos = planetRoot.getWorldPosition(new THREE.Vector3());
+          const impactDir = new THREE.Vector3().copy(pos).sub(planetWorldPos).normalize();
+          const impactPoint = new THREE.Vector3().copy(planetWorldPos).addScaledVector(impactDir, Math.max(0.01, params.radius));
+          applyImpactDeformation(impactPoint, moonRadius * 1.2, { strength });
+        } catch (e) {
+          console.warn('Impact deformation failed:', e);
+        }
+      }
+
       spawnExplosion(pos, color, 2 * strength);
 
       // Clean up orbit line for this moon
@@ -2877,9 +2895,14 @@ function surpriseMe() {
   const rng = new SeededRNG(newSeed);
   const presetNames = Object.keys(presets);
   const pickPreset = presetNames[Math.floor(rng.next() * presetNames.length)];
+  // Preserve user simulation speed across Surprise Me
+  const prevSimSpeed = params.simulationSpeed;
   isApplyingPreset = true;
   applyPreset(pickPreset, { skipShareUpdate: true, keepSeed: true });
   isApplyingPreset = false;
+  // Restore user value overwritten by preset
+  params.simulationSpeed = prevSimSpeed;
+  guiControllers.simulationSpeed?.setValue?.(prevSimSpeed);
 
   params.seed = newSeed;
   guiControllers.seed?.setValue?.(newSeed);
@@ -2910,10 +2933,9 @@ function surpriseMe() {
   params.cloudNoiseScale = THREE.MathUtils.lerp(1.2, 5.0, rng.next());
   params.cloudDriftSpeed = THREE.MathUtils.lerp(0, 0.06, rng.next());
 
-  // Motion & environment
+  // Motion & environment (keep current simulationSpeed)
   params.axisTilt = THREE.MathUtils.lerp(0, 35, rng.next());
   params.rotationSpeed = THREE.MathUtils.lerp(0.05, 0.5, rng.next());
-  params.simulationSpeed = THREE.MathUtils.lerp(0.05, 1.5, rng.next());
   params.gravity = THREE.MathUtils.lerp(4, 25, rng.next());
   params.sunIntensity = THREE.MathUtils.lerp(0.8, 3.5, rng.next());
   params.sunDistance = THREE.MathUtils.lerp(25, 120, rng.next());
@@ -2986,6 +3008,60 @@ function surpriseMe() {
   scheduleShareUpdate();
 }
 //#endregion
+
+// Deform planet mesh around an impact point to create a simple crater
+function applyImpactDeformation(worldPosition, impactRadius, { strength = 1 } = {}) {
+  if (!planetMesh || !planetMesh.geometry || !worldPosition) return;
+  const geometry = planetMesh.geometry;
+  const positions = geometry.getAttribute('position');
+  if (!positions) return;
+  if (positions.setUsage) {
+    try { positions.setUsage(THREE.DynamicDrawUsage); } catch {}
+  } else if ('usage' in positions) {
+    positions.usage = THREE.DynamicDrawUsage;
+  }
+
+  // Center direction in planet local space
+  const localImpact = planetMesh.worldToLocal(worldPosition.clone());
+  if (localImpact.lengthSq() === 0) return;
+  const centerDir = localImpact.clone().normalize();
+
+  // Convert impact radius to angular radius on the sphere
+  const craterAngle = THREE.MathUtils.clamp(impactRadius / Math.max(1e-6, params.radius), 0.01, Math.PI / 2);
+
+  // Depth scaled by impact size and terrain scale
+  const baseDepth = Math.min(impactRadius * 0.45, (params.noiseAmplitude || 0.5) * 0.6 + 0.02);
+  const depth = THREE.MathUtils.clamp(baseDepth * THREE.MathUtils.clamp(strength, 0.2, 2), 0.005, impactRadius);
+
+  const arr = positions.array;
+  const v = new THREE.Vector3();
+  const vDir = new THREE.Vector3();
+
+  for (let i = 0; i < arr.length; i += 3) {
+    v.set(arr[i + 0], arr[i + 1], arr[i + 2]);
+    const r = v.length();
+    if (r <= 0) continue;
+    vDir.copy(v).divideScalar(r); // normalize
+    const ang = Math.acos(THREE.MathUtils.clamp(vDir.dot(centerDir), -1, 1));
+    if (ang > craterAngle) continue;
+
+    // Smooth falloff from center to rim
+    const t = 1 - ang / craterAngle; // 1 at center, 0 at rim
+    const falloff = t * t * (3 - 2 * t); // smoothstep
+
+    // Depress surface along the normal
+    const newR = Math.max(0.01, r - depth * falloff);
+    vDir.multiplyScalar(newR);
+    arr[i + 0] = vDir.x;
+    arr[i + 1] = vDir.y;
+    arr[i + 2] = vDir.z;
+  }
+
+  positions.needsUpdate = true;
+  geometry.computeVertexNormals();
+  if (geometry.attributes.normal) geometry.attributes.normal.needsUpdate = true;
+  geometry.computeBoundingSphere();
+}
 
 function saveArrayBuffer(data, filename) {
   const blob = data instanceof Blob ? data : new Blob([data], { type: "application/octet-stream" });
