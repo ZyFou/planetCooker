@@ -1,4 +1,5 @@
 // server.js
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -11,24 +12,56 @@ const { initDatabase, saveConfiguration, getConfiguration, deleteConfiguration }
 const app = express();
 
 // ---- Config ----
-const PORT = process.env.PORT || 5014;
+const PORT = process.env.PORT || 3001;
 const BASE_PATH = process.env.BASE_PATH || '';            // << ex: "/planetApi"
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://zyfod.dev/planetCooker/';
+
+// Build CORS allowlist from env + sensible defaults
+const defaultOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:3000',
+  'http://localhost:8080'
+];
+
+function toOrigin(u) {
+  try { return new URL(u).origin; } catch { return undefined; }
+}
+
+const envCors = (process.env.CORS_ORIGIN || process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean)
+  .map(v => toOrigin(v) || v);
+
+const frontendOrigin = toOrigin(FRONTEND_URL);
+const allowlist = Array.from(new Set([
+  ...defaultOrigins,
+  frontendOrigin,
+  // Historical defaults
+  'https://zyfod.dev'
+].concat(envCors).filter(Boolean)));
 
 app.set('trust proxy', 1);
 
 // ---- Middleware global ----
 app.use(helmet());
-app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'http://localhost:5174',
-    'http://localhost:3000',
-    'http://localhost:8080',
-    'https://zyfod.dev'
-  ],
-  credentials: true
-}));
+
+const corsOptions = {
+  origin: function(origin, callback) {
+    if (!origin) return callback(null, true); // curl, server-to-server
+    if (allowlist.includes(origin)) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+  methods: ['GET','POST','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization','X-Requested-With'],
+  maxAge: 86400
+};
+
+app.use(cors(corsOptions));
+// Explicitly handle preflight for any route
+app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 
 // ---- Router monté sous BASE_PATH ----

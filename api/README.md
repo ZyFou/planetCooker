@@ -117,8 +117,21 @@ cp env.example .env
 ```
 
 - `PORT`: API server port (default: 3001)
+- `BASE_PATH`: Optional base path prefix when mounted behind a reverse proxy (e.g. `/planetApi`). Leave empty for localhost.
 - `FRONTEND_URL`: Frontend URL for CORS and redirects
 - `NODE_ENV`: Environment (development/production)
+ - `CORS_ORIGIN`: Comma-separated list of allowed origins (scheme+host only, no paths). Example: `http://localhost:5173,https://planetstudio.zyfod.dev,https://zyfod.dev`
+
+### Reverse Proxy note (Nginx)
+If you host the API under a path prefix like `/planetApi`, either:
+
+- set `BASE_PATH=/planetApi` and keep the upstream path unchanged:
+  - `location /planetApi/ { proxy_pass http://127.0.0.1:3001; }` (no trailing slash after the upstream)
+
+or if you strip the prefix with a trailing slash in `proxy_pass`:
+
+- `location /planetApi/ { proxy_pass http://127.0.0.1:3001/; }`
+- then leave `BASE_PATH` empty so routes match (backend sees `/api/...`).
 
 ## Database
 
