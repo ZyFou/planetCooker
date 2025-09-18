@@ -23,6 +23,11 @@ const controlSearchClear = document.getElementById("control-search-clear");
 const controlSearchEmpty = document.getElementById("control-search-empty");
 const controlSearchBar = document.getElementById("control-search-bar");
 const infoPanel = document.getElementById("info");
+const debugPanel = document.getElementById("debug-panel");
+const debugPlanetToggle = document.getElementById("debug-planet-vector");
+const debugMoonToggle = document.getElementById("debug-moon-vectors");
+const debugPlanetSpeedDisplay = document.getElementById("debug-planet-speed");
+const debugMoonSpeedList = document.getElementById("debug-moon-speed-list");
 const loadingOverlay = document.getElementById("loading");
 if (!sceneContainer) {
   throw new Error("Missing scene container element");
@@ -112,6 +117,18 @@ planetRoot.add(moonsGroup);
 
 const orbitLinesGroup = new THREE.Group();
 planetRoot.add(orbitLinesGroup);
+
+const debugVectorScale = 0.45;
+const debugState = { showPlanetVelocity: false, showMoonVelocity: false };
+const debugPlanetArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 1, 0xff7d7d);
+debugPlanetArrow.visible = false;
+scene.add(debugPlanetArrow);
+const debugMoonArrows = [];
+const debugMoonSpeedRows = [];
+const debugVec = new THREE.Vector3();
+const debugVec2 = new THREE.Vector3();
+const debugVec3 = new THREE.Vector3();
+const debugMatrix = new THREE.Matrix3();
 
 const sunGroup = new THREE.Group();
 sunGroup.name = "SunGroup";
@@ -527,6 +544,39 @@ const {
   getIsApplyingPreset: () => isApplyingPreset
 });
 
+if (debugPlanetSpeedDisplay) {
+  debugPlanetSpeedDisplay.textContent = "0.000";
+}
+
+if (debugPlanetToggle) {
+  debugPlanetToggle.checked = false;
+  debugPlanetToggle.addEventListener("change", () => {
+    debugState.showPlanetVelocity = !!debugPlanetToggle.checked;
+    if (!debugState.showPlanetVelocity) {
+      debugPlanetArrow.visible = false;
+    }
+    updateDebugVectors();
+  });
+}
+
+if (debugMoonToggle) {
+  debugMoonToggle.checked = false;
+  debugMoonToggle.addEventListener("change", () => {
+    debugState.showMoonVelocity = !!debugMoonToggle.checked;
+    if (!debugState.showMoonVelocity) {
+      debugMoonArrows.forEach((arrow) => {
+        if (arrow) arrow.visible = false;
+      });
+    }
+    updateDebugVectors();
+  });
+}
+
+if (debugPanel) {
+  syncDebugMoonArtifacts();
+  updateDebugVectors();
+}
+
 //#endregion
 
 randomizeSeedButton?.addEventListener("click", () => {
@@ -636,7 +686,7 @@ function animate(timestamp) {
       const eccentricity = THREE.MathUtils.clamp(moon.eccentricity ?? 0, 0, 0.95);
       const data = pivot.userData;
       const baseSpeed = Math.sqrt(Math.max(1e-6, mu / Math.pow(semiMajor, 3)));
-      const speedMultiplier = Math.max(0.05, moon.orbitSpeed || 0.3);
+      const speedMultiplier = Math.max(0.2, moon.orbitSpeed ?? 0.4);
       data.trueAnomaly = (data.trueAnomaly ?? (moon.phase ?? 0)) + baseSpeed * speedMultiplier * simulationDelta * gravityFactor;
       const angle = data.trueAnomaly;
       computeOrbitPosition(semiMajor, eccentricity, angle, mesh.position);
@@ -679,6 +729,8 @@ function animate(timestamp) {
     uniforms.uBrightness.value = params.starBrightness;
     uniforms.uTwinkleSpeed.value = params.starTwinkleSpeed;
   }
+
+  updateDebugVectors();
 
   renderer.render(scene, camera);
   updateTimeDisplay(simulationYears);
@@ -962,6 +1014,8 @@ function updateMoons() {
     orbit.material.dispose();
   }
 
+  syncDebugMoonArtifacts();
+
   moonSettings.forEach((moon, index) => {
     const pivot = moonsGroup.children[index];
     pivot.rotation.x = THREE.MathUtils.degToRad(moon.inclination || 0);
@@ -1086,6 +1140,116 @@ function computeAccelerationTowards(targetPosition, sourcePosition, mu, out = tm
   const dist = Math.sqrt(distSq);
   return out.multiplyScalar(-mu / (distSq * dist));
 }
+
+//#region Debug helpers
+function syncDebugMoonArtifacts() {
+  while (debugMoonArrows.length > moonSettings.length) {
+    const arrow = debugMoonArrows.pop();
+    scene.remove(arrow);
+    if (arrow.cone) {
+      arrow.cone.geometry.dispose();
+      arrow.cone.material.dispose();
+    }
+    if (arrow.line) {
+      arrow.line.geometry.dispose();
+      arrow.line.material.dispose();
+    }
+  }
+  while (debugMoonArrows.length < moonSettings.length) {
+    const arrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 1, 0x61b8ff);
+    arrow.visible = debugState.showMoonVelocity;
+    scene.add(arrow);
+    debugMoonArrows.push(arrow);
+  }
+
+  if (debugMoonSpeedList) {
+    while (debugMoonSpeedRows.length > moonSettings.length) {
+      const row = debugMoonSpeedRows.pop();
+      if (row && row.parentElement) {
+        row.parentElement.removeChild(row);
+      }
+    }
+    while (debugMoonSpeedRows.length < moonSettings.length) {
+      const index = debugMoonSpeedRows.length;
+      const row = document.createElement("li");
+      row.className = "debug-moon-entry";
+      row.textContent = `Moon ${index + 1}: -`;
+      debugMoonSpeedList.appendChild(row);
+      debugMoonSpeedRows.push(row);
+    }
+  }
+}
+
+function updateDebugVectors() {
+  const planetVel = params.physicsEnabled ? planetRoot.userData.planetVel : null;
+  const planetSpeed = planetVel ? planetVel.length() : 0;
+  if (debugPlanetSpeedDisplay) {
+    debugPlanetSpeedDisplay.textContent = planetSpeed.toFixed(3);
+  }
+
+  if (debugState.showPlanetVelocity && planetVel && planetSpeed > 1e-4) {
+    const origin = planetRoot.getWorldPosition(debugVec2);
+    debugPlanetArrow.position.copy(origin);
+    debugPlanetArrow.setDirection(debugVec.copy(planetVel).normalize());
+    const length = THREE.MathUtils.clamp(planetSpeed * debugVectorScale, 0.2, 10);
+    debugPlanetArrow.setLength(length, length * 0.6, length * 0.35);
+    debugPlanetArrow.visible = true;
+  } else {
+    debugPlanetArrow.visible = false;
+  }
+
+  moonSettings.forEach((moon, index) => {
+    const pivot = moonsGroup.children[index];
+    const arrow = debugMoonArrows[index];
+    const row = debugMoonSpeedRows[index];
+    if (!pivot || !moon) {
+      if (row) row.textContent = `Moon ${index + 1}: -`;
+      if (arrow) arrow.visible = false;
+      return;
+    }
+
+    const mesh = pivot.userData.mesh;
+    if (!mesh) {
+      if (row) row.textContent = `Moon ${index + 1}: -`;
+      if (arrow) arrow.visible = false;
+      return;
+    }
+
+    pivot.updateMatrixWorld(true);
+    const posWorld = mesh.getWorldPosition(debugVec2);
+
+    let velWorld = debugVec3.set(0, 0, 0);
+    if (params.physicsEnabled && pivot.userData.physics?.velWorld) {
+      velWorld = debugVec3.copy(pivot.userData.physics.velWorld);
+    } else {
+      const semiMajor = Math.max(0.5, params.radius * (moon.distance || 3.5));
+      const eccentricity = THREE.MathUtils.clamp(moon.eccentricity ?? 0, 0, 0.95);
+      const anomaly = pivot.userData.trueAnomaly ?? (moon.phase ?? 0);
+      const mu = getGravParameter(getPlanetMass());
+      const velLocal = computeOrbitVelocity(semiMajor, eccentricity, anomaly, mu, debugVec);
+      const speedMultiplier = Math.max(0.2, moon.orbitSpeed ?? 0.4);
+      velLocal.multiplyScalar(speedMultiplier);
+      const rotationMatrix = debugMatrix.setFromMatrix4(pivot.matrixWorld);
+      velWorld = debugVec3.copy(velLocal).applyMatrix3(rotationMatrix);
+    }
+
+    const speed = velWorld.length();
+    if (row) {
+      row.textContent = `Moon ${index + 1}: ${speed.toFixed(3)} u/s`;
+    }
+
+    if (debugState.showMoonVelocity && arrow && speed > 1e-4) {
+      arrow.position.copy(posWorld);
+      arrow.setDirection(debugVec.copy(velWorld).normalize());
+      const length = THREE.MathUtils.clamp(speed * debugVectorScale, 0.15, 8);
+      arrow.setLength(length, length * 0.6, length * 0.35);
+      arrow.visible = true;
+    } else if (arrow) {
+      arrow.visible = false;
+    }
+  });
+}
+//#endregion
 
 function updateOrbitMaterial(pivot, isBound) {
   const orbit = pivot.userData.orbit;
@@ -1601,6 +1765,9 @@ function initMoonPhysics() {
     const moonMass = getMoonMass(moon);
     const mu = getGravParameter(planetMass, params.physicsTwoWay ? moonMass : 0);
     const velLocal = computeOrbitVelocity(semiMajor, eccentricity, phase, mu, tmpVecA);
+    const speedSetting = THREE.MathUtils.clamp(moon.orbitSpeed ?? 0.4, 0.2, 4);
+    const speedFactor = speedSetting / 0.4;
+    velLocal.multiplyScalar(speedFactor);
     const velWorld = velLocal.applyMatrix3(rotMatrix);
 
     pivot.userData.physics = {
@@ -1786,4 +1953,6 @@ function saveArrayBuffer(data, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 //#endregion
+
+
 

@@ -93,6 +93,9 @@ export function setupMoonControls({
         .add(moon, "orbitSpeed", 0, 2, 0.01)
         .name("Orbit Speed")
         .onChange(() => {
+          if (params.physicsEnabled) {
+            initMoonPhysics();
+          }
           scheduleShareUpdate();
         });
       folder

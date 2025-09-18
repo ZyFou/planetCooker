@@ -49,6 +49,23 @@
           </div>
           <p id="control-search-empty" class="control-search-empty" hidden>No controls match your search.</p>
           <div id="controls"></div>
+          <section id="debug-panel" class="debug-panel">
+            <h2 class="debug-title">Debug Vectors</h2>
+            <div class="debug-option">
+              <label class="debug-toggle">
+                <input type="checkbox" id="debug-planet-vector" />
+                <span>Planet velocity vector</span>
+              </label>
+              <span class="debug-metric">Speed: <span id="debug-planet-speed">0.000</span></span>
+            </div>
+            <div class="debug-option">
+              <label class="debug-toggle">
+                <input type="checkbox" id="debug-moon-vectors" />
+                <span>Moon velocity vectors</span>
+              </label>
+            </div>
+            <ul id="debug-moon-speed-list" class="debug-moon-speed-list"></ul>
+          </section>
           <p class="hint">Use the sliders on the left to tweak the planet. Press H to hide/show the panel.</p>
         </section>
         <section id="scene">
@@ -62,4 +79,5 @@
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
+
 
