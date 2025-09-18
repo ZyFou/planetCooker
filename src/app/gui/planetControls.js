@@ -259,6 +259,58 @@ export function setupPlanetControls({
       scheduleShareUpdate();
     });
 
+  // Effects: Explosions
+  const effectsFolder = registerFolder(environmentFolder.addFolder("Explosions"), { close: true });
+
+  guiControllers.explosionEnabled = effectsFolder.add(params, "explosionEnabled")
+    .name("Enable Explosions")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.explosionColor = effectsFolder.addColor(params, "explosionColor")
+    .name("Color")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.explosionStrength = effectsFolder.add(params, "explosionStrength", 0.2, 3, 0.05)
+    .name("Strength Multiplier")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.explosionParticleBase = effectsFolder.add(params, "explosionParticleBase", 10, 400, 1)
+    .name("Particle Count")
+    .onChange(() => {
+      params.explosionParticleBase = Math.round(params.explosionParticleBase);
+      scheduleShareUpdate();
+    });
+
+  guiControllers.explosionSize = effectsFolder.add(params, "explosionSize", 0.1, 3, 0.05)
+    .name("Particle Size")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.explosionGravity = effectsFolder.add(params, "explosionGravity", 0, 20, 0.1)
+    .name("Gravity Pull")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.explosionDamping = effectsFolder.add(params, "explosionDamping", 0.6, 1, 0.01)
+    .name("Damping")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.explosionLifetime = effectsFolder.add(params, "explosionLifetime", 0.3, 5, 0.05)
+    .name("Lifetime (s)")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
   return {
     presetController,
     folders: {
@@ -267,7 +319,8 @@ export function setupPlanetControls({
       motionFolder,
       environmentFolder,
       sunFolder,
-      spaceFolder
+      spaceFolder,
+      effectsFolder
     }
   };
 }

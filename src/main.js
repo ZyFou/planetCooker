@@ -243,7 +243,16 @@ const params = {
   physicsTwoWay: true,
   physicsDamping: 0.0005,
   physicsSubsteps: 2,
-  showOrbitLines: true
+  showOrbitLines: true,
+  // Effects: explosion customization
+  explosionEnabled: true,
+  explosionColor: "#ffaa66",
+  explosionStrength: 1,
+  explosionParticleBase: 90,
+  explosionSize: 0.8,
+  explosionGravity: 4.2,
+  explosionDamping: 0.9,
+  explosionLifetime: 1.6
 };
 
 const presets = {
@@ -472,7 +481,16 @@ const shareKeys = [
   "physicsTwoWay",
   "physicsDamping",
   "physicsSubsteps",
-  "showOrbitLines"
+  "showOrbitLines",
+  // Explosion customization
+  "explosionEnabled",
+  "explosionColor",
+  "explosionStrength",
+  "explosionParticleBase",
+  "explosionSize",
+  "explosionGravity",
+  "explosionDamping",
+  "explosionLifetime"
 ];
 //#endregion
 
@@ -1804,14 +1822,19 @@ function createSunTexture({ inner = 0.1, outer = 1, innerAlpha = 1, outerAlpha =
 
 // Explosion particles when a moon is destroyed
 function spawnExplosion(position, color = new THREE.Color(0xffaa66), strength = 1) {
-  const count = Math.max(20, Math.floor(80 * THREE.MathUtils.clamp(strength, 0.2, 2)));
+  if (!params.explosionEnabled) return;
+  const effectiveStrength = Math.max(0.05, params.explosionStrength) * Math.max(0.1, strength);
+  const baseCount = Math.max(10, Math.round(params.explosionParticleBase || 80));
+  const count = Math.max(20, Math.floor(baseCount * THREE.MathUtils.clamp(effectiveStrength, 0.2, 4)));
   const geometry = new THREE.BufferGeometry();
   const positions = new Float32Array(count * 3);
   const velocities = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
 
+  const baseCol = new THREE.Color();
+  baseCol.set(params.explosionColor || 0xffaa66);
   const col = new THREE.Color(color);
-  const warm = new THREE.Color(1, 0.8, 0.5).lerp(col, 0.35);
+  const warm = baseCol.clone().lerp(col, 0.45);
 
   for (let i = 0; i < count; i += 1) {
     positions[i * 3 + 0] = position.x;
@@ -1824,7 +1847,7 @@ function spawnExplosion(position, color = new THREE.Color(0xffaa66), strength = 
       (Math.random() - 0.2),
       (Math.random() - 0.5)
     ).normalize();
-    const speed = THREE.MathUtils.lerp(3.5, 10.5, Math.random()) * strength;
+    const speed = THREE.MathUtils.lerp(3.5, 10.5, Math.random()) * effectiveStrength;
     velocities[i * 3 + 0] = dir.x * speed;
     velocities[i * 3 + 1] = dir.y * speed;
     velocities[i * 3 + 2] = dir.z * speed;
@@ -1840,7 +1863,7 @@ function spawnExplosion(position, color = new THREE.Color(0xffaa66), strength = 
 
   const pointTexture = createSunTexture({ inner: 0.0, outer: 0.55, innerAlpha: 1, outerAlpha: 0 });
   const material = new THREE.PointsMaterial({
-    size: 0.8 * Math.max(1, strength),
+    size: Math.max(0.1, (params.explosionSize || 0.8) * Math.max(1, effectiveStrength)),
     map: pointTexture,
     vertexColors: true,
     transparent: true,
@@ -1857,8 +1880,8 @@ function spawnExplosion(position, color = new THREE.Color(0xffaa66), strength = 
     object: points,
     velocities,
     life: 0,
-    maxLife: 1.6,
-    damping: 0.9
+    maxLife: Math.max(0.1, params.explosionLifetime || 1.6),
+    damping: THREE.MathUtils.clamp(params.explosionDamping ?? 0.9, 0.4, 1)
   });
 }
 
@@ -1873,7 +1896,7 @@ function updateExplosions(dt) {
     const drag = Math.pow(e.damping, Math.max(0, dt) * 60);
     for (let p = 0; p < vels.length; p += 3) {
       vels[p + 0] *= drag;
-      vels[p + 1] = vels[p + 1] * drag - 4.2 * dt; // gravity-like pull
+      vels[p + 1] = vels[p + 1] * drag - Math.max(0, params.explosionGravity || 0) * dt; // gravity-like pull
       vels[p + 2] *= drag;
 
       positions[p + 0] += vels[p + 0] * dt;
@@ -2116,12 +2139,24 @@ function stepMoonPhysics(dt) {
         if (orbit.material) orbit.material.dispose();
         pivot.userData.orbit = null;
       }
-      // Remove moon from settings and mark dirty so scene rebuilds without it
+      // Remove mesh immediately for visual feedback
+      if (mesh && mesh.parent) {
+        mesh.parent.remove(mesh);
+        if (mesh.geometry) mesh.geometry.dispose();
+        if (mesh.material) mesh.material.dispose();
+      }
+      // Remove pivot from scene graph to keep indices aligned
+      moonsGroup.remove(pivot);
+
+      // Remove moon from settings; do not trigger a full rebuild
       moonSettings.splice(idx, 1);
     });
     params.moonCount = moonSettings.length;
-    guiControllers.moonCount?.setValue?.(params.moonCount);
-    markMoonsDirty();
+    // Avoid firing Moons Count onChange; just refresh UI and debug artifacts
+    try { guiControllers.moonCount?.updateDisplay?.(); } catch {}
+    syncDebugMoonArtifacts();
+    rebuildMoonControls();
+    updateStabilityDisplay(moonSettings.length, moonSettings.length);
   }
 }
 

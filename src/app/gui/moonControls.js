@@ -162,6 +162,22 @@ export function setupMoonControls({
       scheduleShareUpdate();
     });
 
+  // Respawn/Add a moon convenience button
+  const respawnApi = {
+    respawn: () => {
+      moonSettings.push(createDefaultMoon(moonSettings.length));
+      params.moonCount = moonSettings.length;
+      rebuildMoonControls();
+      // Rebuild scene for new moon
+      markMoonsDirty();
+      scheduleShareUpdate();
+      if (params.physicsEnabled) {
+        initMoonPhysics();
+      }
+    }
+  };
+  moonsFolder.add(respawnApi, "respawn").name("Respawn Moon");
+
   const physicsFolder = registerFolder(gui.addFolder("Physics"), { close: true });
 
   guiControllers.physicsEnabled = physicsFolder.add(params, "physicsEnabled")
