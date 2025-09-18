@@ -77,7 +77,7 @@ export function setupMoonControls({
       const folder = registerFolder(gui.addFolder(`Moon ${index + 1}`));
       folder
         .add(moon, "size", 0.05, 0.9, 0.01)
-        .name("Size (radii)")
+        .name("Size")
         .onChange(() => {
           markMoonsDirty();
           scheduleShareUpdate();

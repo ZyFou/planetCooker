@@ -82,6 +82,12 @@ planetRoot.add(tiltGroup);
 const spinGroup = new THREE.Group();
 tiltGroup.add(spinGroup);
 
+// Rings holder (follows tilt but not planet spin)
+const ringGroup = new THREE.Group();
+tiltGroup.add(ringGroup);
+let ringMesh = null;
+let ringTexture = null;
+
 const planetMaterial = new THREE.MeshStandardMaterial({
   vertexColors: true,
   roughness: 0.82,
@@ -267,7 +273,18 @@ const params = {
   // Additional explosion variations
   explosionColorVariation: 0.5,
   explosionSpeedVariation: 1.0,
-  explosionSizeVariation: 1.0
+  explosionSizeVariation: 1.0,
+  // Rings
+  ringEnabled: false,
+  ringColor: "#c7b299",
+  ringStart: 1.6, // multiples of planet radius
+  ringEnd: 2.4,   // multiples of planet radius
+  ringAngle: 0,   // degrees relative to equator
+  ringOpacity: 0.6,
+  ringNoiseScale: 3.2,
+  ringNoiseStrength: 0.55,
+  ringSpinSpeed: 0.05,
+  ringAllowRandom: true
 };
 
 const presets = {
@@ -513,7 +530,18 @@ const shareKeys = [
   "explosionLifetime",
   "explosionColorVariation",
   "explosionSpeedVariation",
-  "explosionSizeVariation"
+  "explosionSizeVariation",
+  // Rings
+  "ringEnabled",
+  "ringColor",
+  "ringStart",
+  "ringEnd",
+  "ringAngle",
+  "ringOpacity",
+  "ringNoiseScale",
+  "ringNoiseStrength",
+  "ringSpinSpeed",
+  "ringAllowRandom"
 ];
 //#endregion
 
@@ -570,6 +598,7 @@ setupPlanetControls({
   updateClouds,
   updateTilt,
   updateSun,
+  updateRings,
   updateStarfieldUniforms,
   regenerateStarfield,
   updateGravityDisplay,
@@ -773,6 +802,7 @@ async function applyConfigurationFromAPI(apiResult) {
   updatePalette();
   updateClouds();
   updateSun();
+  updateRings();
   updateTilt();
   updateGravityDisplay();
   
@@ -1113,6 +1143,7 @@ async function initializeApp() {
     updatePalette();
     updateClouds();
     updateSun();
+    updateRings();
     updateTilt();
     updateSeedDisplay();
     updateGravityDisplay();
@@ -1177,6 +1208,10 @@ function animate(timestamp) {
   // Additional independent cloud drift
   cloudsMesh.rotation.y += delta * params.cloudDriftSpeed;
 
+  if (params.ringEnabled && Math.abs(params.ringSpinSpeed) > 1e-4) {
+    ringGroup.rotation.y += delta * params.ringSpinSpeed;
+  }
+
   const gravityFactor = Math.sqrt(params.gravity / 9.81);
   if (params.physicsEnabled) {
     stepMoonPhysics(simulationDelta);
@@ -1187,7 +1222,7 @@ function animate(timestamp) {
       const moon = moonSettings[index];
       const mesh = pivot.userData.mesh;
       if (!moon || !mesh) return;
-      const semiMajor = Math.max(0.5, params.radius * (moon.distance || 3.5));
+      const semiMajor = Math.max(0.5, moon.distance || 3.5);
       const eccentricity = THREE.MathUtils.clamp(moon.eccentricity ?? 0, 0, 0.95);
       const data = pivot.userData;
       const baseSpeed = Math.sqrt(Math.max(1e-6, mu / Math.pow(semiMajor, 3)));
@@ -1396,6 +1431,7 @@ function rebuildPlanet() {
   const atmosphereScale = params.radius * (1.06 + Math.max(0.0, (params.cloudHeight || 0.03)) * 0.8);
   cloudsMesh.scale.setScalar(cloudScale);
   atmosphereMesh.scale.setScalar(atmosphereScale);
+  updateRings();
 
   scheduleShareUpdate();
 }
@@ -1524,6 +1560,153 @@ function updateSun() {
   sunPulsePhase = 0;
 }
 
+function generateRingTexture(innerRatio) {
+  const size = 512;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    const fallback = new THREE.CanvasTexture(canvas);
+    fallback.colorSpace = THREE.SRGBColorSpace;
+    fallback.wrapS = THREE.ClampToEdgeWrapping;
+    fallback.wrapT = THREE.ClampToEdgeWrapping;
+    fallback.anisotropy = 4;
+    fallback.generateMipmaps = false;
+    fallback.minFilter = THREE.LinearFilter;
+    fallback.magFilter = THREE.LinearFilter;
+    fallback.needsUpdate = true;
+    return fallback;
+  }
+  const image = ctx.createImageData(size, size);
+  const data = image.data;
+  const center = size * 0.5;
+
+  const baseColor = new THREE.Color(params.ringColor || 0xc7b299);
+  const highlight = baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.45);
+  const shadow = baseColor.clone().lerp(new THREE.Color(0, 0, 0), 0.4);
+  const baseOpacity = THREE.MathUtils.clamp(params.ringOpacity ?? 0.6, 0, 1);
+  const noiseStrength = THREE.MathUtils.clamp(params.ringNoiseStrength ?? 0.55, 0, 1);
+  const freq = Math.max(0.2, params.ringNoiseScale ?? 3.2);
+  const rng = new SeededRNG(`${params.seed || "ring"}-${freq.toFixed(2)}-${noiseStrength.toFixed(2)}`);
+  const noise = createNoise3D(() => rng.next());
+
+  const inner = THREE.MathUtils.clamp(innerRatio, 0, 0.98);
+  const innerFeather = 0.03;
+  const outerFeather = 0.04;
+
+  for (let y = 0; y < size; y += 1) {
+    const dy = (y - center) / center;
+    for (let x = 0; x < size; x += 1) {
+      const dx = (x - center) / center;
+      const radius = Math.sqrt(dx * dx + dy * dy);
+      const idx = (y * size + x) * 4;
+
+      if (radius <= inner || radius >= 1) {
+        data[idx + 3] = 0;
+        continue;
+      }
+
+      const innerFade = THREE.MathUtils.smoothstep(radius, inner, inner + innerFeather);
+      const outerFade = 1 - THREE.MathUtils.smoothstep(radius, 1 - outerFeather, 1);
+      const radialFade = THREE.MathUtils.clamp(innerFade * outerFade, 0, 1);
+      if (radialFade <= 0) {
+        data[idx + 3] = 0;
+        continue;
+      }
+
+      const angle = (Math.atan2(dy, dx) + Math.PI) / (Math.PI * 2);
+      const radialComponent = noise(radius * freq, angle * freq * 0.8, 0) * 0.5 + 0.5;
+      const angularComponent = noise(angle * freq * 1.6, radius * freq, 1.5) * 0.5 + 0.5;
+      const combined = THREE.MathUtils.clamp(radialComponent * 0.6 + angularComponent * 0.4, 0, 1);
+      const mix = THREE.MathUtils.lerp(0.5, combined, noiseStrength);
+
+      const r = THREE.MathUtils.lerp(shadow.r, highlight.r, mix) * 255;
+      const g = THREE.MathUtils.lerp(shadow.g, highlight.g, mix) * 255;
+      const b = THREE.MathUtils.lerp(shadow.b, highlight.b, mix) * 255;
+      const alpha = radialFade * baseOpacity * THREE.MathUtils.lerp(0.6, 1, mix);
+
+      data[idx + 0] = Math.max(0, Math.min(255, Math.round(r)));
+      data[idx + 1] = Math.max(0, Math.min(255, Math.round(g)));
+      data[idx + 2] = Math.max(0, Math.min(255, Math.round(b)));
+      data[idx + 3] = Math.max(0, Math.min(255, Math.round(alpha * 255)));
+    }
+  }
+
+  ctx.putImageData(image, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.anisotropy = 4;
+  texture.generateMipmaps = false;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function updateRings() {
+  if (!ringGroup) return;
+  // Remove ring if disabled
+  if (!params.ringEnabled) {
+    if (ringMesh && ringMesh.parent) {
+      if (ringMesh.material) {
+        ringMesh.material.map = null;
+        ringMesh.material.alphaMap = null;
+      }
+      ringMesh.parent.remove(ringMesh);
+      if (ringMesh.geometry) ringMesh.geometry.dispose();
+      if (ringMesh.material) ringMesh.material.dispose();
+      ringMesh = null;
+    }
+    if (ringTexture) {
+      ringTexture.dispose();
+      ringTexture = null;
+    }
+    return;
+  }
+
+  const startR = Math.max(1.05, params.ringStart ?? 1.6);
+  const endR = Math.max(startR + 0.05, params.ringEnd ?? 2.4);
+  const inner = Math.max(params.radius * startR, params.radius + 0.02);
+  const outer = Math.max(params.radius * endR, inner + 0.02);
+  const segments = 256;
+  const innerRatio = THREE.MathUtils.clamp(inner / outer, 0, 0.98);
+
+  if (!ringMesh) {
+    const geom = new THREE.RingGeometry(inner, outer, segments, 1);
+    const mat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(params.ringColor || 0xc7b299),
+      transparent: true,
+      opacity: 1,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    ringMesh = new THREE.Mesh(geom, mat);
+    ringMesh.renderOrder = 0;
+    ringGroup.add(ringMesh);
+  } else {
+    ringMesh.geometry.dispose();
+    ringMesh.geometry = new THREE.RingGeometry(inner, outer, segments, 1);
+    ringMesh.material.color.set(params.ringColor || 0xc7b299);
+    ringMesh.material.opacity = 1;
+    ringMesh.material.needsUpdate = true;
+  }
+
+  if (ringTexture) {
+    ringTexture.dispose();
+    ringTexture = null;
+  }
+  ringTexture = generateRingTexture(innerRatio);
+  ringMesh.material.map = ringTexture;
+  ringMesh.material.alphaMap = ringTexture;
+  ringMesh.material.needsUpdate = true;
+
+  ringMesh.rotation.set(0, 0, 0);
+  ringMesh.rotation.x = Math.PI / 2 + THREE.MathUtils.degToRad(params.ringAngle || 0);
+}
+
 function updateMoons() {
   normalizeMoonSettings();
 
@@ -1577,9 +1760,9 @@ function updateMoons() {
     }
 
     mesh.material.color.set(moon.color || "#d0d0d0");
-    mesh.scale.setScalar(Math.max(0.02, moon.size || 0.15) * params.radius);
+    mesh.scale.setScalar(Math.max(0.02, moon.size || 0.15));
 
-    const semiMajor = Math.max(0.5, params.radius * (moon.distance || 3.5));
+    const semiMajor = Math.max(0.5, moon.distance || 3.5);
     const eccentricity = THREE.MathUtils.clamp(moon.eccentricity ?? 0, 0, 0.95);
     const phase = (moon.phase ?? 0) % (Math.PI * 2);
 
@@ -1700,7 +1883,7 @@ function updateTrajectoryLine(pivot) {
 function updateOrbitLine(geometry, moon) {
   const positions = geometry.attributes.position.array;
   const segments = geometry.attributes.position.count;
-  const semiMajor = Math.max(0.5, params.radius * (moon.distance || 3.5));
+  const semiMajor = Math.max(0.5, moon.distance || 3.5);
   const eccentricity = THREE.MathUtils.clamp(moon.eccentricity ?? 0, 0, 0.95);
   for (let i = 0; i < segments; i += 1) {
     const angle = (i / segments) * Math.PI * 2;
@@ -1748,7 +1931,7 @@ function getPlanetMass() {
 }
 
 function getMoonMass(moon) {
-  const moonRadius = Math.max(0.05, moon.size || 0.15) * params.radius;
+  const moonRadius = Math.max(0.05, moon.size || 0.15);
   const density = Math.max(0.05, params.moonMassScale);
   return Math.pow(moonRadius, 3) * density;
 }
@@ -1871,7 +2054,7 @@ function updateDebugVectors() {
         velWorld.sub(planetVel);
       }
     } else {
-      const semiMajor = Math.max(0.5, params.radius * (moon.distance || 3.5));
+      const semiMajor = Math.max(0.5, moon.distance || 3.5);
       const eccentricity = THREE.MathUtils.clamp(moon.eccentricity ?? 0, 0, 0.95);
       const anomaly = pivot.userData.trueAnomaly ?? (moon.phase ?? 0);
       const mu = getGravParameter(getPlanetMass());
@@ -1962,6 +2145,7 @@ function applyPreset(name, { skipShareUpdate = false, keepSeed = false } = {}) {
   updatePalette();
   updateClouds();
   updateSun();
+  updateRings();
   updateTilt();
   updateGravityDisplay();
   regenerateStarfield();
@@ -2069,6 +2253,7 @@ function applySharePayload(payload) {
   updatePalette();
   updateClouds();
   updateSun();
+  updateRings();
   updateTilt();
   updateGravityDisplay();
   regenerateStarfield();
@@ -2103,6 +2288,7 @@ function handleSeedChanged({ skipShareUpdate = false } = {}) {
   regenerateStarfield();
   cloudTextureDirty = true;
   markPlanetDirty();
+  updateRings();
   if (!skipShareUpdate) {
     scheduleShareUpdate();
   }
@@ -2677,7 +2863,7 @@ function initMoonPhysics() {
       const moon = moonSettings[index];
       const mesh = pivot.userData.mesh;
       if (!moon || !mesh) return;
-      const semiMajor = Math.max(0.5, params.radius * (moon.distance || 3.5));
+      const semiMajor = Math.max(0.5, moon.distance || 3.5);
       const eccentricity = THREE.MathUtils.clamp(moon.eccentricity ?? 0, 0, 0.95);
       const phase = (moon.phase ?? 0) % (Math.PI * 2);
       computeOrbitPosition(semiMajor, eccentricity, phase, mesh.position);
@@ -2694,9 +2880,7 @@ function initMoonPhysics() {
   const planetVel = planetRoot.userData.planetVel || new THREE.Vector3();
   planetVel.set(0, 0, 0);
   planetRoot.userData.planetVel = planetVel;
-  if (!params.physicsTwoWay) {
-    planetRoot.position.set(0, 0, 0);
-  }
+  planetRoot.position.set(0, 0, 0);
 
   const totalMomentum = tmpVecD.set(0, 0, 0);
   let totalMoonMass = 0;
@@ -2706,7 +2890,7 @@ function initMoonPhysics() {
     const mesh = pivot.userData.mesh;
     if (!moon || !mesh) return;
 
-    const semiMajor = Math.max(0.5, params.radius * (moon.distance || 3.5));
+    const semiMajor = Math.max(0.5, moon.distance || 3.5);
     const eccentricity = THREE.MathUtils.clamp(moon.eccentricity ?? 0, 0, 0.95);
     const phase = (moon.phase ?? 0) % (Math.PI * 2);
 
@@ -2763,6 +2947,8 @@ function stepMoonPhysics(dt) {
   const h = dt / substeps;
   const planetMass = getPlanetMass();
   const planetVel = planetRoot.userData.planetVel || new THREE.Vector3();
+  planetVel.set(0, 0, 0);
+  planetRoot.userData.planetVel = planetVel;
   const damping = Math.max(0, 1 - params.physicsDamping);
   const collidedIndices = new Set();
 
@@ -2807,7 +2993,7 @@ function stepMoonPhysics(dt) {
       updateOrbitMaterial(pivot, phys.bound);
 
       // Collision detection (approximate)
-      const moonRadius = mesh.scale.x; // sphere geometry radius is 1 scaled to size*params.radius
+      const moonRadius = mesh.scale.x;
       const collisionRadius = Math.max(0.1, params.radius) + moonRadius * 0.95;
       if (dist <= collisionRadius) {
         pivot.userData._collided = true;
@@ -2815,10 +3001,11 @@ function stepMoonPhysics(dt) {
       }
     });
 
-    if (params.physicsTwoWay) {
-      planetRoot.position.addScaledVector(planetVel, h);
-    }
   }
+
+  // Keep planet anchored at origin regardless of two-way effects
+  planetRoot.position.set(0, 0, 0);
+  planetRoot.updateMatrixWorld(true);
 
   planetRoot.userData.planetVel = planetVel;
 
@@ -2897,12 +3084,30 @@ function surpriseMe() {
   const pickPreset = presetNames[Math.floor(rng.next() * presetNames.length)];
   // Preserve user simulation speed across Surprise Me
   const prevSimSpeed = params.simulationSpeed;
+  const preserveRings = !params.ringAllowRandom;
+  const prevRingSettings = preserveRings
+    ? {
+        ringEnabled: params.ringEnabled,
+        ringColor: params.ringColor,
+        ringStart: params.ringStart,
+        ringEnd: params.ringEnd,
+        ringAngle: params.ringAngle,
+        ringOpacity: params.ringOpacity,
+        ringNoiseScale: params.ringNoiseScale,
+        ringNoiseStrength: params.ringNoiseStrength,
+        ringSpinSpeed: params.ringSpinSpeed
+      }
+    : null;
   isApplyingPreset = true;
   applyPreset(pickPreset, { skipShareUpdate: true, keepSeed: true });
   isApplyingPreset = false;
   // Restore user value overwritten by preset
   params.simulationSpeed = prevSimSpeed;
   guiControllers.simulationSpeed?.setValue?.(prevSimSpeed);
+
+  if (preserveRings && prevRingSettings) {
+    Object.assign(params, prevRingSettings);
+  }
 
   params.seed = newSeed;
   guiControllers.seed?.setValue?.(newSeed);
@@ -2949,6 +3154,25 @@ function surpriseMe() {
   params.starCount = Math.round(THREE.MathUtils.lerp(1500, 3600, rng.next()));
   params.starBrightness = THREE.MathUtils.lerp(0.6, 1.4, rng.next());
   params.starTwinkleSpeed = THREE.MathUtils.lerp(0.1, 1.6, rng.next());
+
+  // Rings
+  if (params.ringAllowRandom) {
+    const enableRings = rng.next() > 0.45;
+    params.ringEnabled = enableRings;
+    if (enableRings) {
+      const ringHue = (hue + 0.15 + rng.next() * 0.25) % 1;
+      params.ringColor = `#${new THREE.Color().setHSL(ringHue, 0.35 + rng.next() * 0.3, 0.58 + rng.next() * 0.25).getHexString()}`;
+      params.ringStart = THREE.MathUtils.lerp(1.15, 2.6, rng.next());
+      const maxEnd = params.ringStart + 2.5;
+      params.ringEnd = Math.max(params.ringStart + 0.25, THREE.MathUtils.lerp(params.ringStart + 0.35, maxEnd, rng.next()));
+      params.ringAngle = THREE.MathUtils.lerp(-25, 25, rng.next());
+      params.ringOpacity = THREE.MathUtils.lerp(0.35, 0.85, rng.next());
+      params.ringNoiseScale = THREE.MathUtils.lerp(1.2, 6.5, rng.next());
+      params.ringNoiseStrength = THREE.MathUtils.lerp(0.35, 0.85, rng.next());
+      const spinSign = rng.next() > 0.5 ? 1 : -1;
+      params.ringSpinSpeed = spinSign * THREE.MathUtils.lerp(0.01, 0.35, rng.next());
+    }
+  }
 
   // Explosions (effects)
   params.explosionEnabled = true;
@@ -2998,6 +3222,7 @@ function surpriseMe() {
   updatePalette();
   updateClouds();
   updateSun();
+  updateRings();
   updateTilt();
   updateGravityDisplay();
   rebuildMoonControls();
