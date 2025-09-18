@@ -524,6 +524,9 @@ let moonsDirty = true;
 let shareDirty = true;
 let simulationYears = 0;
 let lastFrameTime = performance.now();
+let fps = 0;
+let fpsUpdateTime = performance.now();
+let frameCount = 0;
 let isApplyingPreset = false;
 let guiVisible = true;
 let sunPulsePhase = 0;
@@ -585,6 +588,10 @@ const {
 
 if (debugPlanetSpeedDisplay) {
   debugPlanetSpeedDisplay.textContent = "0.000";
+}
+
+if (debugFpsDisplay) {
+  debugFpsDisplay.textContent = "0";
 }
 
 if (debugPlanetToggle) {
@@ -783,6 +790,17 @@ function animate(timestamp) {
   lastFrameTime = timestamp;
   const simulationDelta = delta * params.simulationSpeed;
   simulationYears += simulationDelta * 0.08;
+
+  // Calculate FPS
+  frameCount++;
+  if (timestamp - fpsUpdateTime >= 1000) {
+    fps = Math.round((frameCount * 1000) / (timestamp - fpsUpdateTime));
+    frameCount = 0;
+    fpsUpdateTime = timestamp;
+    if (debugFpsDisplay) {
+      debugFpsDisplay.textContent = fps;
+    }
+  }
 
   controls.update();
 
