@@ -1208,8 +1208,9 @@ function animate(timestamp) {
   // Additional independent cloud drift
   cloudsMesh.rotation.y += delta * params.cloudDriftSpeed;
 
-  if (params.ringEnabled && Math.abs(params.ringSpinSpeed) > 1e-4) {
-    ringGroup.rotation.y += delta * params.ringSpinSpeed;
+  if (params.ringEnabled && Math.abs(params.ringSpinSpeed) > 1e-4 && ringMesh) {
+    // Spin the ring around its own normal (local Z), not world Y
+    ringMesh.rotation.z += delta * params.ringSpinSpeed;
   }
 
   const gravityFactor = Math.sqrt(params.gravity / 9.81);
@@ -1616,8 +1617,14 @@ function generateRingTexture(innerRatio) {
       }
 
       const angle = (Math.atan2(dy, dx) + Math.PI) / (Math.PI * 2);
-      const radialComponent = noise(radius * freq, angle * freq * 0.8, 0) * 0.5 + 0.5;
-      const angularComponent = noise(angle * freq * 1.6, radius * freq, 1.5) * 0.5 + 0.5;
+      // Make angular noise seamless by mapping angle to periodic coordinates
+      const theta = angle * Math.PI * 2;
+      const ax = Math.cos(theta);
+      const ay = Math.sin(theta);
+
+      // Use periodic (ax, ay) so angle 0 and 2π sample identical noise space
+      const radialComponent = noise(radius * freq, ax * freq * 0.8, ay * freq * 0.8) * 0.5 + 0.5;
+      const angularComponent = noise(ax * freq * 1.6, ay * freq * 1.6, radius * freq) * 0.5 + 0.5;
       const combined = THREE.MathUtils.clamp(radialComponent * 0.6 + angularComponent * 0.4, 0, 1);
       const mix = THREE.MathUtils.lerp(0.5, combined, noiseStrength);
 
@@ -1631,6 +1638,16 @@ function generateRingTexture(innerRatio) {
       data[idx + 2] = Math.max(0, Math.min(255, Math.round(b)));
       data[idx + 3] = Math.max(0, Math.min(255, Math.round(alpha * 255)));
     }
+  }
+
+  // Ensure the first and last columns are identical to remove any residual seam
+  for (let y = 0; y < size; y += 1) {
+    const idx0 = (y * size + 0) * 4;
+    const idx1 = (y * size + (size - 1)) * 4;
+    data[idx1 + 0] = data[idx0 + 0];
+    data[idx1 + 1] = data[idx0 + 1];
+    data[idx1 + 2] = data[idx0 + 2];
+    data[idx1 + 3] = data[idx0 + 3];
   }
 
   ctx.putImageData(image, 0, 0);
