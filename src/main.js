@@ -10,7 +10,7 @@ import { setupPlanetControls } from "./app/gui/planetControls.js";
 import { setupMoonControls } from "./app/gui/moonControls.js";
 
 // API configuration - defined early to avoid initialization issues
-const API_BASE_URL = 'http://localhost:3001/api';
+const API_BASE_URL = 'https://zyfod.dev/planetApi/api';
 
 const debounceShare = debounce(() => {
   if (!shareDirty) return;
