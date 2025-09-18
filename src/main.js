@@ -1925,6 +1925,11 @@ function applyPreset(name, { skipShareUpdate = false, keepSeed = false } = {}) {
   const preset = presets[name];
   if (!preset) return;
   isApplyingPreset = true;
+  // Ensure the preset selector reflects the applied preset
+  try {
+    params.preset = name;
+    guiControllers.preset?.setValue?.(name);
+  } catch {}
 
   Object.entries(preset).forEach(([key, value]) => {
     if (key === "moons") return;
@@ -2893,12 +2898,12 @@ function surpriseMe() {
   const hue = rng.next();
   const hue2 = (hue + 0.12 + rng.next() * 0.2) % 1;
   const hue3 = (hue + 0.3 + rng.next() * 0.3) % 1;
-  params.colorOcean = new THREE.Color().setHSL(hue, 0.6, 0.28).getStyle();
-  params.colorShallow = new THREE.Color().setHSL(hue, 0.55, 0.45).getStyle();
-  params.colorLow = new THREE.Color().setHSL(hue2, 0.42, 0.3).getStyle();
-  params.colorMid = new THREE.Color().setHSL(hue2, 0.36, 0.58).getStyle();
-  params.colorHigh = new THREE.Color().setHSL(hue3, 0.15, 0.92).getStyle();
-  params.atmosphereColor = new THREE.Color().setHSL(hue2, 0.5, 0.7).getStyle();
+  params.colorOcean = `#${new THREE.Color().setHSL(hue, 0.6, 0.28).getHexString()}`;
+  params.colorShallow = `#${new THREE.Color().setHSL(hue, 0.55, 0.45).getHexString()}`;
+  params.colorLow = `#${new THREE.Color().setHSL(hue2, 0.42, 0.3).getHexString()}`;
+  params.colorMid = `#${new THREE.Color().setHSL(hue2, 0.36, 0.58).getHexString()}`;
+  params.colorHigh = `#${new THREE.Color().setHSL(hue3, 0.15, 0.92).getHexString()}`;
+  params.atmosphereColor = `#${new THREE.Color().setHSL(hue2, 0.5, 0.7).getHexString()}`;
   params.cloudsOpacity = THREE.MathUtils.lerp(0.1, 0.8, rng.next());
   params.cloudHeight = THREE.MathUtils.lerp(0.01, 0.12, rng.next());
   params.cloudDensity = THREE.MathUtils.lerp(0.25, 0.85, rng.next());
@@ -2912,7 +2917,7 @@ function surpriseMe() {
   params.gravity = THREE.MathUtils.lerp(4, 25, rng.next());
   params.sunIntensity = THREE.MathUtils.lerp(0.8, 3.5, rng.next());
   params.sunDistance = THREE.MathUtils.lerp(25, 120, rng.next());
-  params.sunColor = new THREE.Color().setHSL((hue + 0.05) % 1, 0.65, 0.7).getStyle();
+  params.sunColor = `#${new THREE.Color().setHSL((hue + 0.05) % 1, 0.65, 0.7).getHexString()}`;
   params.sunSize = THREE.MathUtils.lerp(0.6, 2.8, rng.next());
   params.sunHaloSize = THREE.MathUtils.lerp(4, 14, rng.next());
   params.sunGlowStrength = THREE.MathUtils.lerp(0.6, 2.6, rng.next());
@@ -2925,7 +2930,7 @@ function surpriseMe() {
 
   // Explosions (effects)
   params.explosionEnabled = true;
-  params.explosionColor = new THREE.Color().setHSL((hue + 0.04 + rng.next() * 0.1) % 1, 0.6, THREE.MathUtils.lerp(0.45, 0.7, rng.next())).getStyle();
+  params.explosionColor = `#${new THREE.Color().setHSL((hue + 0.04 + rng.next() * 0.1) % 1, 0.6, THREE.MathUtils.lerp(0.45, 0.7, rng.next())).getHexString()}`;
   params.explosionStrength = THREE.MathUtils.lerp(0.6, 2.2, rng.next());
   params.explosionParticleBase = Math.round(THREE.MathUtils.lerp(60, 220, rng.next()));
   params.explosionSize = THREE.MathUtils.lerp(0.5, 1.6, rng.next());
@@ -2948,7 +2953,7 @@ function surpriseMe() {
       distance: THREE.MathUtils.lerp(2.4, 12.5, rng.next()),
       orbitSpeed: THREE.MathUtils.lerp(0.15, 0.8, rng.next()),
       inclination: THREE.MathUtils.lerp(-25, 25, rng.next()),
-      color: new THREE.Color().setHSL((hue + 0.5 + rng.next() * 0.2) % 1, 0.15 + rng.next() * 0.3, 0.6 + rng.next() * 0.2).getStyle(),
+      color: `#${new THREE.Color().setHSL((hue + 0.5 + rng.next() * 0.2) % 1, 0.15 + rng.next() * 0.3, 0.6 + rng.next() * 0.2).getHexString()}`,
       phase: rng.next() * Math.PI * 2,
       eccentricity: THREE.MathUtils.lerp(0.02, 0.55, rng.next())
     });
@@ -2960,6 +2965,11 @@ function surpriseMe() {
       guiControllers[key].setValue(params[key]);
     }
   });
+
+  // Force controllers to refresh their displays to the new randomized values
+  try {
+    Object.values(guiControllers).forEach((ctrl) => ctrl?.updateDisplay?.());
+  } catch {}
 
   normalizeMoonSettings();
   handleSeedChanged({ skipShareUpdate: true });
