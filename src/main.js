@@ -9,6 +9,9 @@ import { initControlSearch } from "./app/gui/controlSearch.js";
 import { setupPlanetControls } from "./app/gui/planetControls.js";
 import { setupMoonControls } from "./app/gui/moonControls.js";
 
+// API configuration - defined early to avoid initialization issues
+const API_BASE_URL = 'http://localhost:3001/api';
+
 const debounceShare = debounce(() => {
   if (!shareDirty) return;
   updateShareCode();
@@ -685,20 +688,52 @@ async function loadConfigurationFromHash() {
 
 // Apply configuration loaded from API
 async function applyConfigurationFromAPI(apiResult) {
+  console.log("🔄 Applying configuration from API...");
   const { data, metadata } = apiResult;
   
-  // Update parameters
-  Object.keys(data).forEach(key => {
-    if (params[key] !== undefined) {
-      params[key] = data[key];
-    }
+  console.log("📦 API Data received:", {
+    hasData: !!data,
+    hasMoons: !!(data.moons && Array.isArray(data.moons)),
+    moonCount: data.moons ? data.moons.length : 0,
+    seed: data.seed,
+    preset: data.preset
   });
+  
+  // Update parameters from data.data (the actual planet parameters)
+  let updatedParams = 0;
+  if (data.data) {
+    console.log("🔄 Updating planet parameters from data.data...");
+    Object.keys(data.data).forEach(key => {
+      if (params[key] !== undefined) {
+        const oldValue = params[key];
+        params[key] = data.data[key];
+        if (oldValue !== data.data[key]) {
+          updatedParams++;
+          console.log(`🔄 Updated param ${key}: ${oldValue} → ${data.data[key]}`);
+        }
+      }
+    });
+  } else {
+    console.log("⚠️ No data.data found, trying direct data...");
+    Object.keys(data).forEach(key => {
+      if (params[key] !== undefined) {
+        const oldValue = params[key];
+        params[key] = data[key];
+        if (oldValue !== data[key]) {
+          updatedParams++;
+          console.log(`🔄 Updated param ${key}: ${oldValue} → ${data[key]}`);
+        }
+      }
+    });
+  }
+  console.log(`📊 Updated ${updatedParams} parameters`);
 
   // Update moon settings
   if (data.moons && Array.isArray(data.moons)) {
+    console.log(`🔄 Updating ${data.moons.length} moons...`);
     moonSettings.splice(0, moonSettings.length);
-    data.moons.forEach(moon => {
-      moonSettings.push({
+    data.moons.forEach((moon, index) => {
+      const moonData = {
         size: moon.size || 0.15,
         distance: moon.distance || 3.5,
         orbitSpeed: moon.orbitSpeed || 0.4,
@@ -706,46 +741,72 @@ async function applyConfigurationFromAPI(apiResult) {
         color: moon.color || "#d0d0d0",
         phase: moon.phase || 0,
         eccentricity: moon.eccentricity || 0
-      });
+      };
+      moonSettings.push(moonData);
+      console.log(`🌙 Moon ${index + 1}:`, moonData);
     });
+  } else {
+    console.log("🔄 No moons to update");
   }
 
   // Update GUI controllers
+  let updatedControllers = 0;
   Object.keys(guiControllers).forEach(key => {
     if (params[key] !== undefined && guiControllers[key]?.setValue) {
       guiControllers[key].setValue(params[key]);
+      updatedControllers++;
     }
   });
+  console.log(`🎛️ Updated ${updatedControllers} GUI controllers`);
 
   // Rebuild moon controls
   if (typeof rebuildMoonControls === 'function') {
+    console.log("🔄 Rebuilding moon controls...");
     rebuildMoonControls();
   }
 
   // Update all systems
+  console.log("🔄 Updating all systems...");
   updatePalette();
   updateClouds();
   updateSun();
   updateTilt();
   updateGravityDisplay();
+  
+  // Force planet reconstruction
+  console.log("🔄 Forcing planet reconstruction...");
   markPlanetDirty();
   markMoonsDirty();
   
+  // Force immediate planet rebuild
+  if (typeof rebuildPlanet === 'function') {
+    console.log("🔄 Calling rebuildPlanet()...");
+    rebuildPlanet();
+  }
+  
   if (params.physicsEnabled) {
+    console.log("🔄 Initializing moon physics...");
     initMoonPhysics();
   }
   
   updateStarfieldUniforms();
   updateStabilityDisplay(moonSettings.length, moonSettings.length);
   
+  // Force a render update
+  console.log("🔄 Forcing render update...");
+  if (typeof animate === 'function') {
+    requestAnimationFrame(animate);
+  }
+  
   // Update share display
   if (shareDisplay) {
     shareDisplay.textContent = chunkCode(apiResult.id, 4).join(" ");
     shareDisplay.dataset.code = apiResult.id;
     shareDisplay.title = `Loaded: ${apiResult.id}\nClick to copy`;
+    console.log(`📋 Updated share display with ID: ${apiResult.id}`);
   }
 
-  console.log(`🎉 Configuration applied: ${metadata.name || 'Unnamed Planet'}`);
+  console.log(`🎉 Configuration applied successfully: ${metadata?.name || 'Unnamed Planet'}`);
 }
 
 function flashButtonCopied(btn) {
@@ -754,24 +815,132 @@ function flashButtonCopied(btn) {
   btn.disabled = true;
   btn.textContent = "Copied!";
   setTimeout(() => {
-    btn.textContent = prev;
+    // Restore to original button text, not the "Saving..." state
+    btn.textContent = "Copy Share Code";
     btn.disabled = false;
   }, 700);
 }
 
-copyShareButton?.addEventListener("click", () => {
-  const code = getCurrentShareCode();
-  if (!code) return;
-  copyToClipboard(code).then(() => {
-    flashShareFeedback();
-    flashButtonCopied(copyShareButton);
-  });
+copyShareButton?.addEventListener("click", async () => {
+  const originalText = copyShareButton.textContent;
+  
+  try {
+    // Show loading state
+    copyShareButton.textContent = "Saving...";
+    copyShareButton.disabled = true;
+    
+    console.log("🚀 Starting share process...");
+    
+    // Get current configuration
+    const payload = buildSharePayload();
+    console.log("📦 Built share payload:", {
+      seed: payload.data.seed,
+      moonCount: payload.data.moonCount,
+      preset: payload.preset,
+      moons: payload.moons.length
+    });
+    
+    // Try to save to API first
+    try {
+      const result = await saveConfigurationToAPI(payload, {
+        name: `Planet ${payload.data.seed}`,
+        description: `A ${payload.preset} planet with ${payload.data.moonCount} moon(s)`,
+        preset: payload.preset,
+        moonCount: payload.data.moonCount
+      });
+      
+      console.log("✅ Configuration saved to API:", result);
+      
+      // Copy the short ID to clipboard
+      await copyToClipboard(result.id);
+      
+      // Update share display
+      if (shareDisplay) {
+        shareDisplay.textContent = chunkCode(result.id, 4).join(" ");
+        shareDisplay.dataset.code = result.id;
+        shareDisplay.title = `Short ID: ${result.id}\nClick to copy\nAPI: ${result.url}`;
+      }
+      
+      // Show success feedback
+      flashShareFeedback(`✅ Saved! ID: ${result.id}`);
+      flashButtonCopied(copyShareButton);
+      
+      console.log(`🎉 Share successful! ID: ${result.id}`);
+      console.log(`🔗 Share URL: ${result.shortUrl}`);
+      
+    } catch (apiError) {
+      console.warn("⚠️ API not available, using fallback:", apiError.message);
+      
+      // Fallback to local encoding
+      const code = getCurrentShareCode();
+      if (!code) {
+        throw new Error("No share code available");
+      }
+      
+      await copyToClipboard(code);
+      flashShareFeedback("📋 Copied (offline mode)");
+      flashButtonCopied(copyShareButton);
+      
+      console.log("📋 Fallback: Local code copied to clipboard");
+    }
+    
+  } catch (error) {
+    console.error("❌ Share failed:", error);
+    flashShareFeedback("❌ Share failed");
+  } finally {
+    // Restore button state
+    copyShareButton.textContent = originalText;
+    copyShareButton.disabled = false;
+  }
 });
 
-copyShareInlineButton?.addEventListener("click", () => {
-  const code = getCurrentShareCode();
-  if (!code) return;
-  copyToClipboard(code).then(() => flashShareFeedback());
+copyShareInlineButton?.addEventListener("click", async () => {
+  const originalText = copyShareInlineButton.textContent;
+  
+  try {
+    // Show loading state
+    copyShareInlineButton.textContent = "Saving...";
+    copyShareInlineButton.disabled = true;
+    
+    console.log("🚀 Starting inline share process...");
+    
+    // Get current configuration
+    const payload = buildSharePayload();
+    
+    // Try to save to API first
+    try {
+      const result = await saveConfigurationToAPI(payload, {
+        name: `Planet ${payload.data.seed}`,
+        description: `A ${payload.preset} planet with ${payload.data.moonCount} moon(s)`
+      });
+      
+      console.log("✅ Inline configuration saved to API:", result);
+      
+      // Copy the short ID to clipboard
+      await copyToClipboard(result.id);
+      flashShareFeedback(`✅ Saved! ID: ${result.id}`);
+      
+    } catch (apiError) {
+      console.warn("⚠️ API not available for inline share, using fallback:", apiError.message);
+      
+      // Fallback to local encoding
+      const code = getCurrentShareCode();
+      if (!code) {
+        throw new Error("No share code available");
+      }
+      
+      await copyToClipboard(code);
+      flashShareFeedback("📋 Copied (offline mode)");
+    }
+    
+  } catch (error) {
+    console.error("❌ Inline share failed:", error);
+    flashShareFeedback("❌ Share failed");
+  } finally {
+    // Restore button state
+    copyShareInlineButton.textContent = originalText;
+    copyShareInlineButton.disabled = false;
+  }
 });
 
 // Import share code UI
@@ -786,35 +955,107 @@ importShareButton?.addEventListener("click", () => {
   }, 0);
 });
 
-function tryImportShare(code) {
+async function tryImportShare(code) {
   const trimmed = (code || "").trim();
   if (!trimmed) return;
+  
+  // console.log("🔄 Attempting to import share code:", trimmed);
+  
   try {
+    // Try to load from API first (short ID)
+    if (trimmed.length <= 12 && /^[a-zA-Z0-9_-]+$/.test(trimmed)) {
+      console.log("🔄 Loading from API...");
+      const result = await loadConfigurationFromAPI(trimmed);
+      
+      if (result && result.data) {
+        console.log("✅ Loaded from API:", result.id);
+        await applyConfigurationFromAPI(result);
+        history.replaceState(null, "", `#${trimmed}`);
+        
+        if (importShareContainer && importShareInput) {
+          importShareContainer.hidden = true;
+          importShareInput.value = "";
+        }
+        
+        flashShareFeedback(`✅ Loaded: ${result.id}`);
+        return;
+      }
+    }
+  } catch (apiError) {
+    console.warn("⚠️ API load failed, trying legacy format:", apiError.message);
+  }
+
+  // Fallback to legacy base64 decoding
+  try {
+    console.log("🔄 Loading legacy format...");
     const payload = decodeShare(trimmed);
-    applySharePayload(payload);
-    history.replaceState(null, "", `#${trimmed}`);
-    if (importShareContainer && importShareInput) {
-      importShareContainer.hidden = true;
-      importShareInput.value = "";
+    if (payload && payload.data) {
+      console.log("✅ Loaded legacy configuration");
+      applySharePayload(payload);
+      history.replaceState(null, "", `#${trimmed}`);
+      
+      if (importShareContainer && importShareInput) {
+        importShareContainer.hidden = true;
+        importShareInput.value = "";
+      }
+      
+      flashShareFeedback("✅ Loaded (legacy)");
+      return;
     }
   } catch (err) {
-    console.warn("Invalid share code", err);
-    if (importShareInput) {
-      importShareInput.focus();
-      importShareInput.select();
-    }
-    alert("Invalid share code. Please check and try again.");
+    console.warn("❌ Invalid share code", err);
   }
+  
+  // If we get here, both methods failed
+  if (importShareInput) {
+    importShareInput.focus();
+    importShareInput.select();
+  }
+  alert("Invalid share code. Please check and try again.");
 }
 
-importShareLoad?.addEventListener("click", () => {
-  tryImportShare(importShareInput?.value || "");
+importShareLoad?.addEventListener("click", async () => {
+  const code = importShareInput?.value || "";
+  if (!code.trim()) return;
+  
+  // Show loading state
+  const originalText = importShareLoad.textContent;
+  importShareLoad.textContent = "Loading...";
+  importShareLoad.disabled = true;
+  
+  try {
+    await tryImportShare(code);
+  } catch (error) {
+    console.error("❌ Import failed:", error);
+    flashShareFeedback("❌ Import failed");
+  } finally {
+    // Restore button state
+    importShareLoad.textContent = originalText;
+    importShareLoad.disabled = false;
+  }
 });
 
-importShareInput?.addEventListener("keydown", (e) => {
+importShareInput?.addEventListener("keydown", async (e) => {
   if (e.key === "Enter") {
     e.preventDefault();
-    tryImportShare(importShareInput.value);
+    const code = importShareInput.value;
+    if (!code.trim()) return;
+    
+    // Show loading state
+    const originalText = importShareLoad.textContent;
+    importShareLoad.textContent = "Loading...";
+    importShareLoad.disabled = true;
+    
+    try {
+      await tryImportShare(code);
+    } catch (error) {
+      console.error("❌ Import failed:", error);
+      flashShareFeedback("❌ Import failed");
+    } finally {
+      // Restore button state
+      importShareLoad.textContent = originalText;
+      importShareLoad.disabled = false;
+    }
   } else if (e.key === "Escape") {
     if (importShareContainer && importShareInput) {
       importShareContainer.hidden = true;
@@ -881,12 +1122,13 @@ async function initializeApp() {
 }
 
 // Start the app
-initializeApp();
-normalizeMoonSettings();
-regenerateStarfield();
-updateStarfieldUniforms();
-markPlanetDirty();
-markMoonsDirty();
+initializeApp().then(() => {
+  normalizeMoonSettings();
+  regenerateStarfield();
+  updateStarfieldUniforms();
+  markPlanetDirty();
+  markMoonsDirty();
+});
 initMoonPhysics();
 updateOrbitLinesVisibility();
 applyControlSearch({ scrollToFirst: false });
@@ -1728,35 +1970,62 @@ function applyPreset(name, { skipShareUpdate = false, keepSeed = false } = {}) {
 }
 
 async function initFromHash() {
-  if (!window.location.hash) return false;
+  if (!window.location.hash) {
+    console.log("🔍 No hash in URL, skipping load");
+    return false;
+  }
+  
   const code = window.location.hash.slice(1).trim();
-  if (!code) return false;
+  if (!code) {
+    console.log("🔍 Empty hash, skipping load");
+    return false;
+  }
+  
+  // console.log(`🔍 Attempting to load configuration: ${code}`);
   
   try {
     // Try to load from API first (short ID)
     if (code.length <= 12 && /^[a-zA-Z0-9_-]+$/.test(code)) {
-      console.log(`🔄 Loading configuration from API: ${code}`);
+      // console.log(`🔄 Loading configuration from API: ${code}`);
       const result = await loadConfigurationFromAPI(code);
       
       if (result && result.data) {
-        console.log(`✅ Loaded configuration: ${result.id}`);
+        // console.log(`✅ Loaded configuration from API: ${result.id}`);
+        console.log(`📦 Configuration data:`, {
+          seed: result.data.seed,
+          moonCount: result.data.moonCount,
+          preset: result.data.preset
+        });
+        
         await applyConfigurationFromAPI(result);
+        console.log("🎉 Configuration applied successfully");
         return true;
+      } else {
+        console.warn("⚠️ API returned empty or invalid data");
       }
     }
   } catch (error) {
-    console.warn('Failed to load from API, trying legacy format:', error.message);
+    console.warn('⚠️ Failed to load from API, trying legacy format:', error.message);
   }
 
   // Fallback to legacy base64 decoding
   try {
+    // console.log("🔄 Trying legacy base64 format...");
     const payload = decodeShare(code);
-    if (!payload) return false;
+    if (!payload) {
+      console.warn("⚠️ Legacy decode returned empty payload");
+      return false;
+    }
+    
+    // console.log("✅ Legacy payload decoded, applying...");
     applySharePayload(payload);
+    // console.log("🎉 Legacy configuration applied successfully");
     return true;
   } catch (err) {
-    console.warn("Failed to load share code", err);
+    console.warn("❌ Failed to load share code:", err.message);
   }
+  
+  console.log("❌ All load methods failed");
   return false;
 }
 
@@ -1891,47 +2160,23 @@ function scheduleShareUpdate() {
   debounceShare();
 }
 
-async function updateShareCode() {
-  try {
-    // Try to save to API first
-    const payload = buildSharePayload();
-    const result = await saveConfigurationToAPI(payload, {
-      name: `Planet ${params.seed}`,
-      description: `A ${params.preset} planet with ${params.moonCount} moon(s)`
-    });
-    
-    // Display the short ID instead of the long base64 code
-    const shortId = result.id;
-    const formatted = chunkCode(shortId, 4).join(" ");
-    
-    if (shareDisplay) {
-      shareDisplay.textContent = formatted;
-      shareDisplay.dataset.code = shortId;
-      shareDisplay.title = `Short ID: ${shortId}\nClick to copy`;
-    }
-    
-    // Update URL with short ID
-    history.replaceState(null, "", `#${shortId}`);
-    
-    console.log(`✅ Configuration saved with ID: ${shortId}`);
-    console.log(`🔗 Share URL: ${result.shortUrl}`);
-    
-  } catch (error) {
-    console.warn('API not available, falling back to local encoding:', error.message);
-    
-    // Fallback to local encoding if API is not available
-    const payload = buildSharePayload();
-    const encoded = encodeShare(payload);
-    const formatted = chunkCode(encoded, 5).join(" ");
-    
-    if (shareDisplay) {
-      shareDisplay.textContent = formatted;
-      shareDisplay.dataset.code = encoded;
-      shareDisplay.title = `Local code (API unavailable)\nClick to copy`;
-    }
-    
-    history.replaceState(null, "", `#${encoded}`);
+function updateShareCode() {
+  // Only generate local code for display - don't save to database
+  // Database saving only happens when user clicks "Copy Share Code"
+  // console.log("🔄 Updating share code display...");
+  
+  const payload = buildSharePayload();
+  const encoded = encodeShare(payload);
+  const formatted = chunkCode(encoded, 5).join(" ");
+  
+  if (shareDisplay) {
+    shareDisplay.textContent = formatted;
+    shareDisplay.dataset.code = encoded;
+    shareDisplay.title = `Local code - Click "Copy Share Code" to save to API\nClick to copy`;
   }
+  
+  history.replaceState(null, "", `#${encoded}`);
+  // console.log("📋 Local share code generated for display");
 }
 
 function buildSharePayload() {
@@ -1956,8 +2201,6 @@ function buildSharePayload() {
   };
 }
 
-// API configuration
-const API_BASE_URL = 'http://localhost:3001/api';
 
 // Save configuration to API and get short ID
 async function saveConfigurationToAPI(configData, metadata = {}) {
