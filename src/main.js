@@ -40,6 +40,8 @@ const debugPlanetSpeedDisplay = document.getElementById("debug-planet-speed");
 const debugFpsDisplay = document.getElementById("debug-fps");
 const debugMoonSpeedList = document.getElementById("debug-moon-speed-list");
 const loadingOverlay = document.getElementById("loading");
+const debugHudFpsToggle = document.getElementById("debug-hud-fps");
+const cameraModeButton = document.getElementById("camera-mode");
 if (!sceneContainer) {
   throw new Error("Missing scene container element");
 }
@@ -216,6 +218,12 @@ const exportButton = document.getElementById("export-fbx");
 const copyShareButton = document.getElementById("copy-share");
 const copyShareInlineButton = document.getElementById("copy-share-inline");
 const surpriseMeButton = document.getElementById("surprise-me");
+const mobileMenuToggle = document.getElementById("mobile-menu-toggle");
+const mobileMenu = document.getElementById("mobile-menu");
+const mobileRandomize = document.getElementById("mobile-randomize");
+const mobileSurprise = document.getElementById("mobile-surprise");
+const mobileCopy = document.getElementById("mobile-copy");
+const mobileReset = document.getElementById("mobile-reset");
 //#endregion
 
 //#region Parameters and presets
@@ -902,6 +910,13 @@ if (debugPlanetSpeedDisplay) {
 if (debugFpsDisplay) {
   debugFpsDisplay.textContent = "0";
 }
+  const hudFps = document.getElementById("hud-fps");
+  if (hudFps && debugHudFpsToggle) {
+    hudFps.hidden = !debugHudFpsToggle.checked;
+    debugHudFpsToggle.addEventListener("change", () => {
+      hudFps.hidden = !debugHudFpsToggle.checked;
+    });
+  }
 
 if (debugPlanetToggle) {
   debugPlanetToggle.checked = false;
@@ -948,6 +963,36 @@ resetAllButton?.addEventListener("click", () => {
   } catch (e) {
     console.warn("Reset All failed:", e);
   }
+});
+
+// Mobile menu actions
+function closeMobileMenu() {
+  mobileMenu?.setAttribute("hidden", "");
+  mobileMenuToggle?.setAttribute("aria-expanded", "false");
+}
+function openMobileMenu() {
+  mobileMenu?.removeAttribute("hidden");
+  mobileMenuToggle?.setAttribute("aria-expanded", "true");
+}
+mobileMenuToggle?.addEventListener("click", () => {
+  const expanded = mobileMenuToggle.getAttribute("aria-expanded") === "true";
+  if (expanded) closeMobileMenu(); else openMobileMenu();
+});
+mobileRandomize?.addEventListener("click", () => {
+  randomizeSeedButton?.click();
+  closeMobileMenu();
+});
+mobileSurprise?.addEventListener("click", () => {
+  surpriseMeButton?.click();
+  closeMobileMenu();
+});
+mobileCopy?.addEventListener("click", () => {
+  copyShareButton?.click();
+  closeMobileMenu();
+});
+mobileReset?.addEventListener("click", () => {
+  resetAllButton?.click();
+  closeMobileMenu();
 });
 
 function getCurrentShareCode() {
@@ -1466,9 +1511,52 @@ function animate(timestamp) {
     if (debugFpsDisplay) {
       debugFpsDisplay.textContent = fps;
     }
+    const hudFps = document.getElementById("hud-fps");
+    if (hudFps) hudFps.textContent = `FPS: ${fps}`;
   }
 
-  controls.update();
+  // Update camera by mode
+  if (cameraMode === CameraMode.ORBIT) {
+    controls.enabled = true;
+    controls.update();
+  } else if (cameraMode === CameraMode.SURFACE) {
+    controls.enabled = false;
+    const planetCenter = planetRoot.getWorldPosition(tmpVecA);
+    // Keep surface view stable and not occluded by planet
+    const spinQuat = spinGroup.getWorldQuaternion(tmpQuatA);
+    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(spinQuat);
+    const up = tmpVecC.copy(planetCenter).normalize();
+    const right = new THREE.Vector3().crossVectors(up, forward).normalize();
+    const tangentForward = new THREE.Vector3().crossVectors(right, up).normalize();
+    const target = new THREE.Vector3().copy(planetCenter);
+    const radius = Math.max(0.3, params.radius);
+    const eye = new THREE.Vector3().copy(target)
+      .addScaledVector(up, radius + 0.08)
+      .addScaledVector(tangentForward, 0.22);
+    camera.position.lerp(eye, 0.2);
+    camera.lookAt(target.addScaledVector(up, radius + 0.02));
+  } else if (cameraMode === CameraMode.CHASE) {
+    controls.enabled = false;
+    if (!chaseTarget && moonsGroup.children.length > 0) {
+      chaseTarget = moonsGroup.children[0];
+    }
+    if (chaseTarget && chaseTarget.userData?.mesh) {
+      chaseTarget.updateMatrixWorld(true);
+      const targetPos = chaseTarget.userData.mesh.getWorldPosition(tmpVecB);
+      const vel = chaseTarget.userData.physics?.velWorld || tmpVecD.set(0, 0, 0);
+      const speed = Math.max(0.001, vel.length());
+      const back = tmpVecC.copy(vel).normalize().multiplyScalar(-THREE.MathUtils.clamp(0.6 + speed * 0.12, 0.6, 2.0));
+      const up2 = tmpVecD.copy(targetPos).normalize().multiplyScalar(THREE.MathUtils.clamp(0.35 + speed * 0.05, 0.35, 1.2));
+      const lateral = tmpVecE.copy(vel).cross(targetPos).normalize().multiplyScalar(0.15);
+      const desired = new THREE.Vector3().copy(targetPos).add(back).add(up2).add(lateral);
+      camera.position.lerp(desired, 0.18);
+      const lookAhead = new THREE.Vector3().copy(targetPos).addScaledVector(vel, 0.15);
+      camera.lookAt(lookAhead);
+    } else {
+      controls.enabled = true;
+      controls.update();
+    }
+  }
 
   if (planetDirty) {
     showLoading();
@@ -3708,6 +3796,24 @@ function saveArrayBuffer(data, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 //#endregion
+
+// Camera modes
+const CameraMode = {
+  ORBIT: "Orbit",
+  SURFACE: "Surface",
+  CHASE: "Chase"
+};
+let cameraMode = CameraMode.ORBIT;
+let chaseTarget = null; // first moon
+
+// Camera mode cycling
+function cycleCameraMode() {
+  const order = [CameraMode.ORBIT, CameraMode.SURFACE, CameraMode.CHASE];
+  const idx = order.indexOf(cameraMode);
+  cameraMode = order[(idx + 1) % order.length];
+  if (cameraModeButton) cameraModeButton.textContent = `Camera: ${cameraMode}`;
+}
+cameraModeButton?.addEventListener("click", cycleCameraMode);
 
 
 

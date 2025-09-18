@@ -13,10 +13,17 @@
           <button id="toggle-controls" class="mobile-controls-toggle" aria-controls="info" aria-expanded="false" title="Toggle controls">Controls</button>
           <!-- <button id="export-fbx">Export FBX</button> -->
 
-          <button id="randomize-seed">Randomize Seed</button>
-          <button id="surprise-me">Surprise Me</button>
-          <button id="copy-share">Copy Share Code</button>
+          <button id="randomize-seed" class="desktop-only">Randomize Seed</button>
+          <button id="surprise-me" class="desktop-only">Surprise Me</button>
+          <button id="copy-share" class="desktop-only">Copy Share Code</button>
           <!-- <button id="import-share" title="Import a shared code">Import Code</button> -->
+          <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-controls="mobile-menu" aria-expanded="false" title="Menu">&#9776;</button>
+        </div>
+        <div id="mobile-menu" class="mobile-menu" hidden>
+          <button id="mobile-randomize">Randomize Seed</button>
+          <button id="mobile-surprise">Surprise Me</button>
+          <button id="mobile-copy">Copy Share Code</button>
+          <button id="mobile-reset">Reset All</button>
         </div>
       </header>
       <main id="main">
@@ -75,6 +82,12 @@
                 <span>Moon velocity vectors</span>
               </label>
             </div>
+            <div class="debug-option">
+              <label class="debug-toggle">
+                <input type="checkbox" id="debug-hud-fps" checked />
+                <span>HUD FPS</span>
+              </label>
+            </div>
             <ul id="debug-moon-speed-list" class="debug-moon-speed-list"></ul>
           <button id="reset-all" title="Reset to defaults">Reset All</button>
 
@@ -86,6 +99,8 @@
             <div class="spinner"></div>
             <div class="loading-text">Generating...</div>
           </div> -->
+          <!-- <button id="camera-mode" class="camera-mode-btn" title="Change camera mode">Camera: Orbit</button> -->
+          <div id="hud-fps" class="hud-fps" aria-live="polite">FPS: 0</div>
         </section>
       </main>
       <div id="panel-scrim" hidden></div>
