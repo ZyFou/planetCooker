@@ -650,6 +650,104 @@ function getCurrentShareCode() {
   }
 }
 
+// Load configuration from URL hash (supports both API IDs and legacy codes)
+async function loadConfigurationFromHash() {
+  const hash = window.location.hash.substring(1);
+  if (!hash) return;
+
+  try {
+    // Try to load from API first (short ID)
+    if (hash.length <= 12 && /^[a-zA-Z0-9_-]+$/.test(hash)) {
+      console.log(`🔄 Loading configuration from API: ${hash}`);
+      const result = await loadConfigurationFromAPI(hash);
+      
+      if (result && result.data) {
+        console.log(`✅ Loaded configuration: ${result.id}`);
+        await applyConfigurationFromAPI(result);
+        return;
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to load from API, trying legacy format:', error.message);
+  }
+
+  // Fallback to legacy base64 decoding
+  try {
+    const payload = decodeShare(hash);
+    if (payload && payload.data) {
+      console.log('✅ Loaded legacy configuration');
+      applyConfiguration(payload);
+    }
+  } catch (error) {
+    console.error('Failed to load configuration:', error);
+  }
+}
+
+// Apply configuration loaded from API
+async function applyConfigurationFromAPI(apiResult) {
+  const { data, metadata } = apiResult;
+  
+  // Update parameters
+  Object.keys(data).forEach(key => {
+    if (params[key] !== undefined) {
+      params[key] = data[key];
+    }
+  });
+
+  // Update moon settings
+  if (data.moons && Array.isArray(data.moons)) {
+    moonSettings.splice(0, moonSettings.length);
+    data.moons.forEach(moon => {
+      moonSettings.push({
+        size: moon.size || 0.15,
+        distance: moon.distance || 3.5,
+        orbitSpeed: moon.orbitSpeed || 0.4,
+        inclination: moon.inclination || 0,
+        color: moon.color || "#d0d0d0",
+        phase: moon.phase || 0,
+        eccentricity: moon.eccentricity || 0
+      });
+    });
+  }
+
+  // Update GUI controllers
+  Object.keys(guiControllers).forEach(key => {
+    if (params[key] !== undefined && guiControllers[key]?.setValue) {
+      guiControllers[key].setValue(params[key]);
+    }
+  });
+
+  // Rebuild moon controls
+  if (typeof rebuildMoonControls === 'function') {
+    rebuildMoonControls();
+  }
+
+  // Update all systems
+  updatePalette();
+  updateClouds();
+  updateSun();
+  updateTilt();
+  updateGravityDisplay();
+  markPlanetDirty();
+  markMoonsDirty();
+  
+  if (params.physicsEnabled) {
+    initMoonPhysics();
+  }
+  
+  updateStarfieldUniforms();
+  updateStabilityDisplay(moonSettings.length, moonSettings.length);
+  
+  // Update share display
+  if (shareDisplay) {
+    shareDisplay.textContent = chunkCode(apiResult.id, 4).join(" ");
+    shareDisplay.dataset.code = apiResult.id;
+    shareDisplay.title = `Loaded: ${apiResult.id}\nClick to copy`;
+  }
+
+  console.log(`🎉 Configuration applied: ${metadata.name || 'Unnamed Planet'}`);
+}
+
 function flashButtonCopied(btn) {
   if (!btn) return;
   const prev = btn.textContent;
@@ -765,20 +863,25 @@ const tmpQuatA = new THREE.Quaternion();
 const tmpQuatB = new THREE.Quaternion();
 
 //#region Initialization
-const loadedFromHash = initFromHash();
-if (!loadedFromHash) {
-  updatePalette();
-  updateClouds();
-  updateSun();
-  updateTilt();
-  updateSeedDisplay();
-  updateGravityDisplay();
-  applyPreset(params.preset, { skipShareUpdate: true, keepSeed: true });
-  syncMoonSettings();
-} else {
-  updateSeedDisplay();
-  updateGravityDisplay();
+async function initializeApp() {
+  const loadedFromHash = await initFromHash();
+  if (!loadedFromHash) {
+    updatePalette();
+    updateClouds();
+    updateSun();
+    updateTilt();
+    updateSeedDisplay();
+    updateGravityDisplay();
+    applyPreset(params.preset, { skipShareUpdate: true, keepSeed: true });
+    syncMoonSettings();
+  } else {
+    updateSeedDisplay();
+    updateGravityDisplay();
+  }
 }
+
+// Start the app
+initializeApp();
 normalizeMoonSettings();
 regenerateStarfield();
 updateStarfieldUniforms();
@@ -1624,10 +1727,28 @@ function applyPreset(name, { skipShareUpdate = false, keepSeed = false } = {}) {
   }
 }
 
-function initFromHash() {
+async function initFromHash() {
   if (!window.location.hash) return false;
   const code = window.location.hash.slice(1).trim();
   if (!code) return false;
+  
+  try {
+    // Try to load from API first (short ID)
+    if (code.length <= 12 && /^[a-zA-Z0-9_-]+$/.test(code)) {
+      console.log(`🔄 Loading configuration from API: ${code}`);
+      const result = await loadConfigurationFromAPI(code);
+      
+      if (result && result.data) {
+        console.log(`✅ Loaded configuration: ${result.id}`);
+        await applyConfigurationFromAPI(result);
+        return true;
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to load from API, trying legacy format:', error.message);
+  }
+
+  // Fallback to legacy base64 decoding
   try {
     const payload = decodeShare(code);
     if (!payload) return false;
@@ -1770,15 +1891,47 @@ function scheduleShareUpdate() {
   debounceShare();
 }
 
-function updateShareCode() {
-  const payload = buildSharePayload();
-  const encoded = encodeShare(payload);
-  const formatted = chunkCode(encoded, 5).join(" ");
-  if (shareDisplay) {
-    shareDisplay.textContent = formatted;
-    shareDisplay.dataset.code = encoded;
+async function updateShareCode() {
+  try {
+    // Try to save to API first
+    const payload = buildSharePayload();
+    const result = await saveConfigurationToAPI(payload, {
+      name: `Planet ${params.seed}`,
+      description: `A ${params.preset} planet with ${params.moonCount} moon(s)`
+    });
+    
+    // Display the short ID instead of the long base64 code
+    const shortId = result.id;
+    const formatted = chunkCode(shortId, 4).join(" ");
+    
+    if (shareDisplay) {
+      shareDisplay.textContent = formatted;
+      shareDisplay.dataset.code = shortId;
+      shareDisplay.title = `Short ID: ${shortId}\nClick to copy`;
+    }
+    
+    // Update URL with short ID
+    history.replaceState(null, "", `#${shortId}`);
+    
+    console.log(`✅ Configuration saved with ID: ${shortId}`);
+    console.log(`🔗 Share URL: ${result.shortUrl}`);
+    
+  } catch (error) {
+    console.warn('API not available, falling back to local encoding:', error.message);
+    
+    // Fallback to local encoding if API is not available
+    const payload = buildSharePayload();
+    const encoded = encodeShare(payload);
+    const formatted = chunkCode(encoded, 5).join(" ");
+    
+    if (shareDisplay) {
+      shareDisplay.textContent = formatted;
+      shareDisplay.dataset.code = encoded;
+      shareDisplay.title = `Local code (API unavailable)\nClick to copy`;
+    }
+    
+    history.replaceState(null, "", `#${encoded}`);
   }
-  history.replaceState(null, "", `#${encoded}`);
 }
 
 function buildSharePayload() {
@@ -1801,6 +1954,60 @@ function buildSharePayload() {
     data,
     moons
   };
+}
+
+// API configuration
+const API_BASE_URL = 'http://localhost:3001/api';
+
+// Save configuration to API and get short ID
+async function saveConfigurationToAPI(configData, metadata = {}) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/share`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        data: configData,
+        metadata: {
+          ...metadata,
+          preset: params.preset,
+          moonCount: params.moonCount,
+          timestamp: new Date().toISOString()
+        }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error('Error saving to API:', error);
+    throw error;
+  }
+}
+
+// Load configuration from API by ID
+async function loadConfigurationFromAPI(id) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/share/${id}`);
+    
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new Error('Configuration not found');
+      }
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error('Error loading from API:', error);
+    throw error;
+  }
 }
 
 function encodeShare(payload) {
