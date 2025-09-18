@@ -620,6 +620,16 @@ document.addEventListener("keydown", (event) => {
 });
 //#endregion
 
+const tmpVecA = new THREE.Vector3();
+const tmpVecB = new THREE.Vector3();
+const tmpVecC = new THREE.Vector3();
+const tmpVecD = new THREE.Vector3();
+const tmpVecE = new THREE.Vector3();
+const tmpVecF = new THREE.Vector3();
+const tmpMatrix3 = new THREE.Matrix3();
+const tmpQuatA = new THREE.Quaternion();
+const tmpQuatB = new THREE.Quaternion();
+
 //#region Initialization
 const loadedFromHash = initFromHash();
 if (!loadedFromHash) {
@@ -686,13 +696,16 @@ function animate(timestamp) {
       const eccentricity = THREE.MathUtils.clamp(moon.eccentricity ?? 0, 0, 0.95);
       const data = pivot.userData;
       const baseSpeed = Math.sqrt(Math.max(1e-6, mu / Math.pow(semiMajor, 3)));
-      const speedMultiplier = Math.max(0.2, moon.orbitSpeed ?? 0.4);
+      const rawSpeed = moon.orbitSpeed ?? 0.4;
+      const speedMultiplier = (Math.sign(rawSpeed) || 1) * Math.max(0.2, Math.abs(rawSpeed));
       data.trueAnomaly = (data.trueAnomaly ?? (moon.phase ?? 0)) + baseSpeed * speedMultiplier * simulationDelta * gravityFactor;
       const angle = data.trueAnomaly;
       computeOrbitPosition(semiMajor, eccentricity, angle, mesh.position);
     });
     updateStabilityDisplay(moonSettings.length, moonSettings.length);
   }
+
+  syncOrbitLinesWithPivots();
 
   if (params.sunPulseSpeed > 0.001) {
     sunPulsePhase += delta * params.sunPulseSpeed * 2.4;
@@ -1055,6 +1068,7 @@ function updateMoons() {
 
     updateOrbitLine(pivot.userData.orbit.geometry, moon);
     updateOrbitMaterial(pivot, true);
+    alignOrbitLineWithPivot(pivot);
   });
 
   if (params.physicsEnabled) {
@@ -1089,12 +1103,30 @@ function updateOrbitLine(geometry, moon) {
     positions[i * 3 + 2] = Math.sin(angle) * r;
   }
   geometry.attributes.position.needsUpdate = true;
+  geometry.computeBoundingSphere();
 }
 
-const tmpVecA = new THREE.Vector3();
-const tmpVecB = new THREE.Vector3();
-const tmpVecC = new THREE.Vector3();
-const tmpMatrix3 = new THREE.Matrix3();
+function alignOrbitLineWithPivot(pivot) {
+  if (!pivot?.userData?.orbit) return;
+  const orbit = pivot.userData.orbit;
+  pivot.updateMatrixWorld(true);
+  const pivotWorldQuat = pivot.getWorldQuaternion(tmpQuatA);
+  const parentWorldQuat = orbitLinesGroup.getWorldQuaternion(tmpQuatB);
+  parentWorldQuat.invert();
+  orbit.quaternion.copy(parentWorldQuat.multiply(pivotWorldQuat));
+  const pivotWorldPos = pivot.getWorldPosition(tmpVecF);
+  orbitLinesGroup.worldToLocal(pivotWorldPos);
+  orbit.position.copy(pivotWorldPos);
+  orbit.updateMatrixWorld(true);
+}
+
+function syncOrbitLinesWithPivots() {
+  if (!params.showOrbitLines) return;
+  moonsGroup.children.forEach((pivot) => {
+    if (!pivot?.userData?.orbit) return;
+    alignOrbitLineWithPivot(pivot);
+  });
+}
 
 function getPlanetMass() {
   const radius = Math.max(0.1, params.radius);
@@ -1221,13 +1253,17 @@ function updateDebugVectors() {
     let velWorld = debugVec3.set(0, 0, 0);
     if (params.physicsEnabled && pivot.userData.physics?.velWorld) {
       velWorld = debugVec3.copy(pivot.userData.physics.velWorld);
+      if (planetVel) {
+        velWorld.sub(planetVel);
+      }
     } else {
       const semiMajor = Math.max(0.5, params.radius * (moon.distance || 3.5));
       const eccentricity = THREE.MathUtils.clamp(moon.eccentricity ?? 0, 0, 0.95);
       const anomaly = pivot.userData.trueAnomaly ?? (moon.phase ?? 0);
       const mu = getGravParameter(getPlanetMass());
       const velLocal = computeOrbitVelocity(semiMajor, eccentricity, anomaly, mu, debugVec);
-      const speedMultiplier = Math.max(0.2, moon.orbitSpeed ?? 0.4);
+      const rawSpeed = moon.orbitSpeed ?? 0.4;
+      const speedMultiplier = (Math.sign(rawSpeed) || 1) * Math.max(0.2, Math.abs(rawSpeed));
       velLocal.multiplyScalar(speedMultiplier);
       const rotationMatrix = debugMatrix.setFromMatrix4(pivot.matrixWorld);
       velWorld = debugVec3.copy(velLocal).applyMatrix3(rotationMatrix);
@@ -1735,6 +1771,7 @@ function initMoonPhysics() {
       pivot.userData.physics = null;
       pivot.userData.trueAnomaly = phase;
       updateOrbitMaterial(pivot, true);
+      alignOrbitLineWithPivot(pivot);
     });
     updateStabilityDisplay(moonSettings.length, moonSettings.length);
     return;
@@ -1747,6 +1784,9 @@ function initMoonPhysics() {
   if (!params.physicsTwoWay) {
     planetRoot.position.set(0, 0, 0);
   }
+
+  const totalMomentum = tmpVecD.set(0, 0, 0);
+  let totalMoonMass = 0;
 
   moonsGroup.children.forEach((pivot, index) => {
     const moon = moonSettings[index];
@@ -1765,10 +1805,14 @@ function initMoonPhysics() {
     const moonMass = getMoonMass(moon);
     const mu = getGravParameter(planetMass, params.physicsTwoWay ? moonMass : 0);
     const velLocal = computeOrbitVelocity(semiMajor, eccentricity, phase, mu, tmpVecA);
-    const speedSetting = THREE.MathUtils.clamp(moon.orbitSpeed ?? 0.4, 0.2, 4);
-    const speedFactor = speedSetting / 0.4;
+    const rawSpeedSetting = moon.orbitSpeed ?? 0.4;
+    const speedFactor = (Math.sign(rawSpeedSetting) || 1) * (THREE.MathUtils.clamp(Math.abs(rawSpeedSetting), 0.2, 4) / 0.4);
     velLocal.multiplyScalar(speedFactor);
-    const velWorld = velLocal.applyMatrix3(rotMatrix);
+    const velWorld = velLocal.clone().applyMatrix3(rotMatrix);
+    if (params.physicsTwoWay) {
+      totalMomentum.add(tmpVecE.copy(velWorld).multiplyScalar(moonMass));
+      totalMoonMass += moonMass;
+    }
 
     pivot.userData.physics = {
       posWorld,
@@ -1780,7 +1824,12 @@ function initMoonPhysics() {
     };
     pivot.userData.trueAnomaly = phase;
     updateOrbitMaterial(pivot, true);
+    alignOrbitLineWithPivot(pivot);
   });
+
+  if (params.physicsTwoWay && totalMoonMass > 0) {
+    planetVel.copy(totalMomentum).multiplyScalar(-1 / Math.max(1e-6, planetMass));
+  }
 
   updateStabilityDisplay(moonSettings.length, moonSettings.length);
 }
@@ -1812,7 +1861,8 @@ function stepMoonPhysics(dt) {
       phys.posWorld.addScaledVector(phys.velWorld, h).addScaledVector(acc, 0.5 * h * h);
 
       const nextAcc = computeAccelerationTowards(planetWorld, phys.posWorld, phys.mu, tmpVecC);
-      phys.velWorld.addScaledVector(acc.add(nextAcc).multiplyScalar(0.5 * h));
+      // Velocity Verlet: v += 0.5 * (a + a_next) * h
+      phys.velWorld.add(acc.add(nextAcc).multiplyScalar(0.5 * h));
       if (params.physicsDamping > 0) {
         phys.velWorld.multiplyScalar(damping);
       }
