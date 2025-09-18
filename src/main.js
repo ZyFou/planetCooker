@@ -24,6 +24,11 @@ const controlSearchEmpty = document.getElementById("control-search-empty");
 const controlSearchBar = document.getElementById("control-search-bar");
 const infoPanel = document.getElementById("info");
 const debugPanel = document.getElementById("debug-panel");
+const importShareButton = document.getElementById("import-share");
+const importShareContainer = document.getElementById("import-share-container");
+const importShareInput = document.getElementById("import-share-input");
+const importShareLoad = document.getElementById("import-share-load");
+const importShareCancel = document.getElementById("import-share-cancel");
 const debugPlanetToggle = document.getElementById("debug-planet-vector");
 const debugMoonToggle = document.getElementById("debug-moon-vectors");
 const debugPlanetSpeedDisplay = document.getElementById("debug-planet-speed");
@@ -181,6 +186,8 @@ sunHalo.renderOrder = 1;
 sunGroup.add(sunHalo);
 
 let starField = null;
+// Active particle explosions
+const activeExplosions = [];
 //#endregion
 
 //#region UI bindings
@@ -586,16 +593,97 @@ randomizeSeedButton?.addEventListener("click", () => {
   handleSeedChanged();
 });
 
+function getCurrentShareCode() {
+  const fromDataset = shareDisplay?.dataset?.code;
+  if (fromDataset && fromDataset.length) return fromDataset;
+  // Fallback: compute on-demand
+  try {
+    return encodeShare(buildSharePayload());
+  } catch {
+    return "";
+  }
+}
+
+function flashButtonCopied(btn) {
+  if (!btn) return;
+  const prev = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Copied!";
+  setTimeout(() => {
+    btn.textContent = prev;
+    btn.disabled = false;
+  }, 700);
+}
+
 copyShareButton?.addEventListener("click", () => {
-  const code = shareDisplay?.dataset?.code || "";
+  const code = getCurrentShareCode();
+  if (!code) return;
+  copyToClipboard(code).then(() => {
+    flashShareFeedback();
+    flashButtonCopied(copyShareButton);
+  });
+});
+
+copyShareInlineButton?.addEventListener("click", () => {
+  const code = getCurrentShareCode();
   if (!code) return;
   copyToClipboard(code).then(() => flashShareFeedback());
 });
 
-copyShareInlineButton?.addEventListener("click", () => {
-  const code = shareDisplay?.dataset?.code || "";
-  if (!code) return;
-  copyToClipboard(code).then(() => flashShareFeedback());
+// Import share code UI
+importShareButton?.addEventListener("click", () => {
+  if (!importShareContainer || !importShareInput) return;
+  importShareContainer.hidden = false;
+  const suggested = (window.location.hash ? window.location.hash.slice(1).trim() : "") || (shareDisplay?.dataset?.code || "");
+  importShareInput.value = suggested;
+  setTimeout(() => {
+    importShareInput.focus();
+    importShareInput.select();
+  }, 0);
+});
+
+function tryImportShare(code) {
+  const trimmed = (code || "").trim();
+  if (!trimmed) return;
+  try {
+    const payload = decodeShare(trimmed);
+    applySharePayload(payload);
+    history.replaceState(null, "", `#${trimmed}`);
+    if (importShareContainer && importShareInput) {
+      importShareContainer.hidden = true;
+      importShareInput.value = "";
+    }
+  } catch (err) {
+    console.warn("Invalid share code", err);
+    if (importShareInput) {
+      importShareInput.focus();
+      importShareInput.select();
+    }
+    alert("Invalid share code. Please check and try again.");
+  }
+}
+
+importShareLoad?.addEventListener("click", () => {
+  tryImportShare(importShareInput?.value || "");
+});
+
+importShareInput?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    tryImportShare(importShareInput.value);
+  } else if (e.key === "Escape") {
+    if (importShareContainer && importShareInput) {
+      importShareContainer.hidden = true;
+      importShareInput.value = "";
+    }
+  }
+});
+
+importShareCancel?.addEventListener("click", () => {
+  if (importShareContainer && importShareInput) {
+    importShareContainer.hidden = true;
+    importShareInput.value = "";
+  }
 });
 
 surpriseMeButton?.addEventListener("click", () => {
@@ -704,6 +792,9 @@ function animate(timestamp) {
     });
     updateStabilityDisplay(moonSettings.length, moonSettings.length);
   }
+
+  // Update explosion particles after physics
+  updateExplosions(simulationDelta);
 
   syncOrbitLinesWithPivots();
 
@@ -1711,6 +1802,102 @@ function createSunTexture({ inner = 0.1, outer = 1, innerAlpha = 1, outerAlpha =
   return texture;
 }
 
+// Explosion particles when a moon is destroyed
+function spawnExplosion(position, color = new THREE.Color(0xffaa66), strength = 1) {
+  const count = Math.max(20, Math.floor(80 * THREE.MathUtils.clamp(strength, 0.2, 2)));
+  const geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(count * 3);
+  const velocities = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+
+  const col = new THREE.Color(color);
+  const warm = new THREE.Color(1, 0.8, 0.5).lerp(col, 0.35);
+
+  for (let i = 0; i < count; i += 1) {
+    positions[i * 3 + 0] = position.x;
+    positions[i * 3 + 1] = position.y;
+    positions[i * 3 + 2] = position.z;
+
+    // Random radial direction with slight upward bias
+    const dir = new THREE.Vector3(
+      (Math.random() - 0.5),
+      (Math.random() - 0.2),
+      (Math.random() - 0.5)
+    ).normalize();
+    const speed = THREE.MathUtils.lerp(3.5, 10.5, Math.random()) * strength;
+    velocities[i * 3 + 0] = dir.x * speed;
+    velocities[i * 3 + 1] = dir.y * speed;
+    velocities[i * 3 + 2] = dir.z * speed;
+
+    const tint = warm.clone().lerp(new THREE.Color(1, 0.3, 0.1), Math.random() * 0.35);
+    colors[i * 3 + 0] = tint.r;
+    colors[i * 3 + 1] = tint.g;
+    colors[i * 3 + 2] = tint.b;
+  }
+
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+  const pointTexture = createSunTexture({ inner: 0.0, outer: 0.55, innerAlpha: 1, outerAlpha: 0 });
+  const material = new THREE.PointsMaterial({
+    size: 0.8 * Math.max(1, strength),
+    map: pointTexture,
+    vertexColors: true,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    sizeAttenuation: true,
+    opacity: 1
+  });
+  const points = new THREE.Points(geometry, material);
+  points.frustumCulled = false;
+  scene.add(points);
+
+  activeExplosions.push({
+    object: points,
+    velocities,
+    life: 0,
+    maxLife: 1.6,
+    damping: 0.9
+  });
+}
+
+function updateExplosions(dt) {
+  if (activeExplosions.length === 0) return;
+  for (let i = activeExplosions.length - 1; i >= 0; i -= 1) {
+    const e = activeExplosions[i];
+    const geom = e.object.geometry;
+    const positions = geom.attributes.position.array;
+    const vels = e.velocities;
+
+    const drag = Math.pow(e.damping, Math.max(0, dt) * 60);
+    for (let p = 0; p < vels.length; p += 3) {
+      vels[p + 0] *= drag;
+      vels[p + 1] = vels[p + 1] * drag - 4.2 * dt; // gravity-like pull
+      vels[p + 2] *= drag;
+
+      positions[p + 0] += vels[p + 0] * dt;
+      positions[p + 1] += vels[p + 1] * dt;
+      positions[p + 2] += vels[p + 2] * dt;
+    }
+    geom.attributes.position.needsUpdate = true;
+
+    e.life += dt;
+    const t = THREE.MathUtils.clamp(e.life / e.maxLife, 0, 1);
+    const fade = 1 - Math.pow(t, 1.8);
+    e.object.material.opacity = fade;
+    e.object.material.size = Math.max(0.1, e.object.material.size * (0.995 + 0.002 * Math.random()));
+
+    if (e.life >= e.maxLife) {
+      scene.remove(e.object);
+      if (geom) geom.dispose();
+      if (e.object.material && e.object.material.map) e.object.material.map.dispose();
+      if (e.object.material) e.object.material.dispose();
+      activeExplosions.splice(i, 1);
+    }
+  }
+}
+
 
 //#endregion
 //#region Export
@@ -1845,6 +2032,7 @@ function stepMoonPhysics(dt) {
   const planetMass = getPlanetMass();
   const planetVel = planetRoot.userData.planetVel || new THREE.Vector3();
   const damping = Math.max(0, 1 - params.physicsDamping);
+  const collidedIndices = new Set();
 
   for (let s = 0; s < substeps; s += 1) {
     const planetWorld = planetRoot.getWorldPosition(tmpVecB);
@@ -1854,6 +2042,7 @@ function stepMoonPhysics(dt) {
       const mesh = pivot.userData.mesh;
       const moon = moonSettings[index];
       if (!phys || !mesh || !moon) return;
+      if (pivot.userData._collided) return;
 
       phys.mu = getGravParameter(planetMass, params.physicsTwoWay ? phys.mass : 0);
 
@@ -1881,6 +2070,14 @@ function stepMoonPhysics(dt) {
       phys.energy = 0.5 * speedSq - phys.mu / dist;
       phys.bound = phys.energy < 0 && dist < params.radius * 140;
       updateOrbitMaterial(pivot, phys.bound);
+
+      // Collision detection (approximate)
+      const moonRadius = mesh.scale.x; // sphere geometry radius is 1 scaled to size*params.radius
+      const collisionRadius = Math.max(0.1, params.radius) + moonRadius * 0.95;
+      if (dist <= collisionRadius) {
+        pivot.userData._collided = true;
+        collidedIndices.add(index);
+      }
     });
 
     if (params.physicsTwoWay) {
@@ -1897,6 +2094,35 @@ function stepMoonPhysics(dt) {
     }
   });
   updateStabilityDisplay(boundCount, moonSettings.length);
+
+  // Resolve collisions after substeps
+  if (collidedIndices.size > 0) {
+    const indices = Array.from(collidedIndices).sort((a, b) => b - a);
+    indices.forEach((idx) => {
+      const pivot = moonsGroup.children[idx];
+      if (!pivot) return;
+      const mesh = pivot.userData.mesh;
+      const phys = pivot.userData.physics;
+      const color = mesh?.material?.color || new THREE.Color(0xffaa66);
+      const pos = phys?.posWorld || pivot.getWorldPosition(new THREE.Vector3());
+      const strength = Math.max(0.3, (mesh?.scale?.x || 0.2) / Math.max(0.1, params.radius));
+      spawnExplosion(pos, color, 2 * strength);
+
+      // Clean up orbit line for this moon
+      if (pivot.userData.orbit) {
+        const orbit = pivot.userData.orbit;
+        orbitLinesGroup.remove(orbit);
+        if (orbit.geometry) orbit.geometry.dispose();
+        if (orbit.material) orbit.material.dispose();
+        pivot.userData.orbit = null;
+      }
+      // Remove moon from settings and mark dirty so scene rebuilds without it
+      moonSettings.splice(idx, 1);
+    });
+    params.moonCount = moonSettings.length;
+    guiControllers.moonCount?.setValue?.(params.moonCount);
+    markMoonsDirty();
+  }
 }
 
 //#endregion

@@ -13,7 +13,8 @@
           <!-- <button id="export-fbx">Export FBX</button> -->
           <button id="randomize-seed">Randomize Seed</button>
           <button id="surprise-me">Surprise Me</button>
-          <!-- <button id="copy-share">Copy Share Code</button> -->
+          <button id="copy-share">Copy Share Code</button>
+          <button id="import-share" title="Import a shared code">Import Code</button>
         </div>
       </header>
       <main id="main">
@@ -35,10 +36,15 @@
             <span id="orbit-stability" class="value">-</span>
           </div>
           <div class="stat">
-            <!-- <span class="label">Share Code</span> -->
+            <span class="label">Share Code</span>
             <div class="share-row">
               <!-- <span id="share-display" class="value"></span> -->
               <!-- <button id="copy-share-inline" class="copy-inline" title="Copy share code">Copy</button> -->
+            </div>
+            <div id="import-share-container" class="share-row" hidden>
+              <input id="import-share-input" type="text" inputmode="text" spellcheck="false" autocomplete="off" placeholder="Paste share code..." aria-label="Paste share code" style="flex:1; min-width: 0;" />
+              <button id="import-share-load" class="copy-inline">Load</button>
+              <button id="import-share-cancel" class="copy-inline" title="Cancel import">Cancel</button>
             </div>
           </div>
           <div class="control-search-bar" id="control-search-bar">
