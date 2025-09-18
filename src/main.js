@@ -256,9 +256,13 @@ const params = {
   explosionStrength: 1,
   explosionParticleBase: 90,
   explosionSize: 0.8,
-  explosionGravity: 4.2,
+  explosionGravity: 0, // Removed gravity effect
   explosionDamping: 0.9,
-  explosionLifetime: 1.6
+  explosionLifetime: 1.6,
+  // Additional explosion variations
+  explosionColorVariation: 0.5,
+  explosionSpeedVariation: 1.0,
+  explosionSizeVariation: 1.0
 };
 
 const presets = {
@@ -500,7 +504,10 @@ const shareKeys = [
   "explosionSize",
   "explosionGravity",
   "explosionDamping",
-  "explosionLifetime"
+  "explosionLifetime",
+  "explosionColorVariation",
+  "explosionSpeedVariation",
+  "explosionSizeVariation"
 ];
 //#endregion
 
@@ -1937,10 +1944,21 @@ function spawnExplosion(position, color = new THREE.Color(0xffaa66), strength = 
   const velocities = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
 
+  // Create a more diverse color palette based on surprise me parameters
   const baseCol = new THREE.Color();
   baseCol.set(params.explosionColor || 0xffaa66);
   const col = new THREE.Color(color);
-  const warm = baseCol.clone().lerp(col, 0.45);
+  
+  // Create multiple color variations for more interesting explosions
+  const colorVariations = [
+    baseCol.clone(),
+    baseCol.clone().lerp(col, 0.3),
+    baseCol.clone().lerp(col, 0.6),
+    baseCol.clone().lerp(new THREE.Color(1, 0.2, 0.1), 0.4), // Red-orange
+    baseCol.clone().lerp(new THREE.Color(1, 0.8, 0.2), 0.3), // Yellow-orange
+    baseCol.clone().lerp(new THREE.Color(0.8, 0.2, 1), 0.2), // Purple
+    baseCol.clone().lerp(new THREE.Color(0.2, 0.8, 1), 0.2), // Blue
+  ];
 
   for (let i = 0; i < count; i += 1) {
     positions[i * 3 + 0] = position.x;
@@ -1953,12 +1971,30 @@ function spawnExplosion(position, color = new THREE.Color(0xffaa66), strength = 
       (Math.random() - 0.2),
       (Math.random() - 0.5)
     ).normalize();
-    const speed = THREE.MathUtils.lerp(3.5, 10.5, Math.random()) * effectiveStrength;
+    
+    // Use speed variation parameter for more dynamic explosions
+    const baseSpeed = THREE.MathUtils.lerp(3.5, 10.5, Math.random()) * effectiveStrength;
+    const speedVariation = THREE.MathUtils.lerp(0.5, 2.0, Math.random()) * (params.explosionSpeedVariation || 1.0);
+    const speed = baseSpeed * speedVariation;
+    
     velocities[i * 3 + 0] = dir.x * speed;
     velocities[i * 3 + 1] = dir.y * speed;
     velocities[i * 3 + 2] = dir.z * speed;
 
-    const tint = warm.clone().lerp(new THREE.Color(1, 0.3, 0.1), Math.random() * 0.35);
+    // Pick a random color variation and add some randomness
+    const baseColor = colorVariations[Math.floor(Math.random() * colorVariations.length)];
+    const colorVariation = params.explosionColorVariation || 0.5;
+    const tint = baseColor.clone().lerp(
+      new THREE.Color(Math.random(), Math.random(), Math.random()), 
+      Math.random() * colorVariation
+    );
+    
+    // Add some brightness variation
+    tint.multiplyScalar(THREE.MathUtils.lerp(0.7, 1.3, Math.random()));
+    tint.r = THREE.MathUtils.clamp(tint.r, 0, 1);
+    tint.g = THREE.MathUtils.clamp(tint.g, 0, 1);
+    tint.b = THREE.MathUtils.clamp(tint.b, 0, 1);
+    
     colors[i * 3 + 0] = tint.r;
     colors[i * 3 + 1] = tint.g;
     colors[i * 3 + 2] = tint.b;
@@ -1968,8 +2004,9 @@ function spawnExplosion(position, color = new THREE.Color(0xffaa66), strength = 
   geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 
   const pointTexture = createSunTexture({ inner: 0.0, outer: 0.55, innerAlpha: 1, outerAlpha: 0 });
+  const sizeVariation = params.explosionSizeVariation || 1.0;
   const material = new THREE.PointsMaterial({
-    size: Math.max(0.1, (params.explosionSize || 0.8) * Math.max(1, effectiveStrength)),
+    size: Math.max(0.1, (params.explosionSize || 0.8) * Math.max(1, effectiveStrength) * sizeVariation),
     map: pointTexture,
     vertexColors: true,
     transparent: true,
@@ -2002,7 +2039,7 @@ function updateExplosions(dt) {
     const drag = Math.pow(e.damping, Math.max(0, dt) * 60);
     for (let p = 0; p < vels.length; p += 3) {
       vels[p + 0] *= drag;
-      vels[p + 1] = vels[p + 1] * drag - Math.max(0, params.explosionGravity || 0) * dt; // gravity-like pull
+      vels[p + 1] *= drag; // removed gravity effect
       vels[p + 2] *= drag;
 
       positions[p + 0] += vels[p + 0] * dt;
@@ -2331,9 +2368,14 @@ function surpriseMe() {
   params.explosionStrength = THREE.MathUtils.lerp(0.6, 2.2, rng.next());
   params.explosionParticleBase = Math.round(THREE.MathUtils.lerp(60, 220, rng.next()));
   params.explosionSize = THREE.MathUtils.lerp(0.5, 1.6, rng.next());
-  params.explosionGravity = THREE.MathUtils.lerp(1.2, 9.2, rng.next());
+  params.explosionGravity = 0; // Always 0 since we removed gravity
   params.explosionDamping = THREE.MathUtils.lerp(0.78, 0.96, rng.next());
   params.explosionLifetime = THREE.MathUtils.lerp(0.8, 2.8, rng.next());
+  
+  // Additional explosion variations for surprise me
+  params.explosionColorVariation = THREE.MathUtils.lerp(0.2, 0.8, rng.next()); // How much color variation
+  params.explosionSpeedVariation = THREE.MathUtils.lerp(0.5, 2.0, rng.next()); // Speed variation multiplier
+  params.explosionSizeVariation = THREE.MathUtils.lerp(0.3, 1.5, rng.next()); // Size variation multiplier
 
   // Moons
   params.moonCount = Math.round(THREE.MathUtils.lerp(0, 4, rng.next()));

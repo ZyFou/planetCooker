@@ -321,7 +321,7 @@ export function setupPlanetControls({
     });
 
   guiControllers.explosionGravity = effectsFolder.add(params, "explosionGravity", 0, 20, 0.1)
-    .name("Gravity Pull")
+    .name("Gravity Pull (Disabled)")
     .onChange(() => {
       scheduleShareUpdate();
     });
@@ -334,6 +334,24 @@ export function setupPlanetControls({
 
   guiControllers.explosionLifetime = effectsFolder.add(params, "explosionLifetime", 0.3, 5, 0.05)
     .name("Lifetime (s)")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.explosionColorVariation = effectsFolder.add(params, "explosionColorVariation", 0, 1, 0.05)
+    .name("Color Variation")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.explosionSpeedVariation = effectsFolder.add(params, "explosionSpeedVariation", 0.2, 3, 0.05)
+    .name("Speed Variation")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.explosionSizeVariation = effectsFolder.add(params, "explosionSizeVariation", 0.2, 2, 0.05)
+    .name("Size Variation")
     .onChange(() => {
       scheduleShareUpdate();
     });
