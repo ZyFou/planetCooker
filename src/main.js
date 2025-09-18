@@ -110,7 +110,8 @@ const atmosphereMaterial = new THREE.MeshPhongMaterial({
   opacity: 0.28,
   side: THREE.BackSide,
   blending: THREE.AdditiveBlending,
-  depthWrite: false
+  depthWrite: false,
+  depthTest: true
 });
 const atmosphereMesh = new THREE.Mesh(new THREE.SphereGeometry(1.08, 64, 64), atmosphereMaterial);
 atmosphereMesh.castShadow = false;
@@ -166,7 +167,7 @@ const sunGlowMaterial = new THREE.SpriteMaterial({
   blending: THREE.AdditiveBlending,
   transparent: true,
   depthWrite: false,
-  depthTest: false
+  depthTest: true
 });
 const sunGlow = new THREE.Sprite(sunGlowMaterial);
 sunGlow.renderOrder = 2;
@@ -179,7 +180,7 @@ const sunHaloMaterial = new THREE.SpriteMaterial({
   blending: THREE.AdditiveBlending,
   transparent: true,
   depthWrite: false,
-  depthTest: false
+  depthTest: true
 });
 const sunHalo = new THREE.Sprite(sunHaloMaterial);
 sunHalo.renderOrder = 1;
@@ -223,6 +224,10 @@ const params = {
   colorHigh: "#f2f6f5",
   atmosphereColor: "#7baeff",
   cloudsOpacity: 0.4,
+  cloudHeight: 0.03,
+  cloudDensity: 0.55,
+  cloudNoiseScale: 3.2,
+  cloudDriftSpeed: 0.02,
   axisTilt: 23,
   rotationSpeed: 0.12,
   simulationSpeed: 0.12,
@@ -461,6 +466,10 @@ const shareKeys = [
   "colorHigh",
   "atmosphereColor",
   "cloudsOpacity",
+  "cloudHeight",
+  "cloudDensity",
+  "cloudNoiseScale",
+  "cloudDriftSpeed",
   "axisTilt",
   "rotationSpeed",
   "simulationSpeed",
@@ -503,6 +512,9 @@ const palette = {
   high: new THREE.Color(params.colorHigh),
   atmosphere: new THREE.Color(params.atmosphereColor)
 };
+
+let cloudTexture = null;
+let cloudTextureDirty = true;
 
 const guiControllers = {};
 
@@ -787,6 +799,8 @@ function animate(timestamp) {
   const rotationDelta = params.rotationSpeed * simulationDelta * Math.PI * 2;
   spinGroup.rotation.y += rotationDelta;
   cloudsMesh.rotation.y += rotationDelta * 1.12;
+  // Additional independent cloud drift
+  cloudsMesh.rotation.y += delta * params.cloudDriftSpeed;
 
   const gravityFactor = Math.sqrt(params.gravity / 9.81);
   if (params.physicsEnabled) {
@@ -998,8 +1012,8 @@ function rebuildPlanet() {
   planetMesh.geometry.dispose();
   planetMesh.geometry = geometry;
 
-  const cloudScale = params.radius * (1.01 + profile.cloudLift);
-  const atmosphereScale = params.radius * (1.08 + profile.cloudLift * 0.75);
+  const cloudScale = params.radius * (1 + Math.max(0.0, params.cloudHeight || 0.03));
+  const atmosphereScale = params.radius * (1.06 + Math.max(0.0, (params.cloudHeight || 0.03)) * 0.8);
   cloudsMesh.scale.setScalar(cloudScale);
   atmosphereMesh.scale.setScalar(atmosphereScale);
 
@@ -1073,6 +1087,20 @@ function updatePalette() {
 function updateClouds() {
   cloudsMaterial.opacity = params.cloudsOpacity;
   atmosphereMaterial.opacity = THREE.MathUtils.clamp(params.cloudsOpacity * 0.55, 0.05, 0.6);
+  // Update cloud layer height/scale
+  const cloudScale = Math.max(0.1, params.radius * (1 + Math.max(0, params.cloudHeight || 0.03)));
+  cloudsMesh.scale.setScalar(cloudScale);
+  // Regenerate texture when any cloud parameter changes
+  cloudTextureDirty = true;
+  if (cloudTextureDirty || !cloudTexture) {
+    regenerateCloudTexture();
+  }
+  if (cloudTexture) {
+    cloudTexture.needsUpdate = true;
+    cloudsMaterial.map = cloudTexture;
+    cloudsMaterial.alphaMap = cloudTexture;
+    cloudsMaterial.needsUpdate = true;
+  }
 }
 
 function updateTilt() {
@@ -1109,8 +1137,8 @@ function updateSun() {
   sunGlow.scale.setScalar(sunGlow.userData.baseScale);
   sunHalo.scale.setScalar(sunHalo.userData.baseScale);
 
-  sunGlow.userData.baseOpacity = THREE.MathUtils.clamp(glowStrength * 0.4, 0.05, 1.8);
-  sunHalo.userData.baseOpacity = THREE.MathUtils.clamp(glowStrength * 0.25, 0.03, 1.2);
+  sunGlow.userData.baseOpacity = THREE.MathUtils.clamp(glowStrength * 0.4, 0.05, 1.0);
+  sunHalo.userData.baseOpacity = THREE.MathUtils.clamp(glowStrength * 0.25, 0.03, 0.9);
   sunGlow.material.opacity = sunGlow.userData.baseOpacity;
   sunHalo.material.opacity = sunHalo.userData.baseOpacity;
   sunPulsePhase = 0;
@@ -1546,6 +1574,7 @@ function updateStabilityDisplay(stable, total) {
 function handleSeedChanged({ skipShareUpdate = false } = {}) {
   updateSeedDisplay();
   regenerateStarfield();
+  cloudTextureDirty = true;
   markPlanetDirty();
   if (!skipShareUpdate) {
     scheduleShareUpdate();
@@ -1675,6 +1704,63 @@ function chunkCode(str, size) {
 }
 //#endregion
 //#region Helpers
+function regenerateCloudTexture() {
+  const width = 1024;
+  const height = 512;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  const img = ctx.createImageData(width, height);
+  const data = img.data;
+
+  const rng = new SeededRNG(`${params.seed || "default"}-clouds`);
+  const noise = createNoise3D(() => rng.next());
+  const scale = Math.max(0.2, params.cloudNoiseScale || 3.2);
+  const density = THREE.MathUtils.clamp(params.cloudDensity ?? 0.5, 0, 1);
+  const threshold = THREE.MathUtils.clamp(0.15 + (1 - density) * 0.75, 0.05, 0.9);
+  const feather = 0.12; // soft edges
+
+  for (let y = 0; y < height; y += 1) {
+    const v = y / (height - 1);
+    const yy = (v * 2 - 1) * scale;
+    for (let x = 0; x < width; x += 1) {
+      const u = x / (width - 1);
+      const theta = u * Math.PI * 2;
+      const nx = Math.cos(theta) * scale;
+      const nz = Math.sin(theta) * scale;
+
+      // 3-layer fBm for richer clouds
+      let val = 0;
+      let amp = 0.6;
+      let freq = 1;
+      for (let o = 0; o < 3; o += 1) {
+        const n = noise(nx * freq, yy * freq, nz * freq) * 0.5 + 0.5;
+        val += n * amp;
+        freq *= 2;
+        amp *= 0.5;
+      }
+      val = THREE.MathUtils.clamp(val, 0, 1);
+      // Threshold with feather to control coverage via density
+      const a = THREE.MathUtils.clamp((val - threshold) / Math.max(1e-6, feather), 0, 1);
+      const alpha = Math.pow(a, 1.2) * params.cloudsOpacity;
+
+      const i = (y * width + x) * 4;
+      data[i + 0] = 255;
+      data[i + 1] = 255;
+      data[i + 2] = 255;
+      data[i + 3] = Math.round(THREE.MathUtils.clamp(alpha, 0, 1) * 255);
+    }
+  }
+
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  cloudTexture = tex;
+  cloudTextureDirty = false;
+}
 function copyToClipboard(text) {
   if (navigator.clipboard && window.isSecureContext) {
     return navigator.clipboard.writeText(text);
@@ -2196,6 +2282,10 @@ function surpriseMe() {
   params.colorHigh = new THREE.Color().setHSL(hue3, 0.15, 0.92).getStyle();
   params.atmosphereColor = new THREE.Color().setHSL(hue2, 0.5, 0.7).getStyle();
   params.cloudsOpacity = THREE.MathUtils.lerp(0.1, 0.8, rng.next());
+  params.cloudHeight = THREE.MathUtils.lerp(0.01, 0.12, rng.next());
+  params.cloudDensity = THREE.MathUtils.lerp(0.25, 0.85, rng.next());
+  params.cloudNoiseScale = THREE.MathUtils.lerp(1.2, 5.0, rng.next());
+  params.cloudDriftSpeed = THREE.MathUtils.lerp(0, 0.06, rng.next());
 
   // Motion & environment
   params.axisTilt = THREE.MathUtils.lerp(0, 35, rng.next());
@@ -2214,6 +2304,16 @@ function surpriseMe() {
   params.starCount = Math.round(THREE.MathUtils.lerp(1500, 3600, rng.next()));
   params.starBrightness = THREE.MathUtils.lerp(0.6, 1.4, rng.next());
   params.starTwinkleSpeed = THREE.MathUtils.lerp(0.1, 1.6, rng.next());
+
+  // Explosions (effects)
+  params.explosionEnabled = true;
+  params.explosionColor = new THREE.Color().setHSL((hue + 0.04 + rng.next() * 0.1) % 1, 0.6, THREE.MathUtils.lerp(0.45, 0.7, rng.next())).getStyle();
+  params.explosionStrength = THREE.MathUtils.lerp(0.6, 2.2, rng.next());
+  params.explosionParticleBase = Math.round(THREE.MathUtils.lerp(60, 220, rng.next()));
+  params.explosionSize = THREE.MathUtils.lerp(0.5, 1.6, rng.next());
+  params.explosionGravity = THREE.MathUtils.lerp(1.2, 9.2, rng.next());
+  params.explosionDamping = THREE.MathUtils.lerp(0.78, 0.96, rng.next());
+  params.explosionLifetime = THREE.MathUtils.lerp(0.8, 2.8, rng.next());
 
   // Moons
   params.moonCount = Math.round(THREE.MathUtils.lerp(0, 4, rng.next()));

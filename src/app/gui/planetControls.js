@@ -147,7 +147,28 @@ export function setupPlanetControls({
     });
 
   guiControllers.cloudsOpacity = paletteFolder.add(params, "cloudsOpacity", 0, 1, 0.01)
-    .name("Clouds")
+    .name("Cloud Opacity")
+    .onChange(() => {
+      updateClouds();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.cloudHeight = paletteFolder.add(params, "cloudHeight", 0, 0.3, 0.005)
+    .name("Cloud Height")
+    .onChange(() => {
+      updateClouds();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.cloudDensity = paletteFolder.add(params, "cloudDensity", 0, 1, 0.01)
+    .name("Cloud Density")
+    .onChange(() => {
+      updateClouds();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.cloudNoiseScale = paletteFolder.add(params, "cloudNoiseScale", 0.5, 8, 0.05)
+    .name("Cloud Scale")
     .onChange(() => {
       updateClouds();
       scheduleShareUpdate();
@@ -170,6 +191,12 @@ export function setupPlanetControls({
 
   guiControllers.simulationSpeed = motionFolder.add(params, "simulationSpeed", 0.02, 2, 0.01)
     .name("Simulation Speed")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.cloudDriftSpeed = motionFolder.add(params, "cloudDriftSpeed", 0, 0.2, 0.001)
+    .name("Cloud Drift")
     .onChange(() => {
       scheduleShareUpdate();
     });
