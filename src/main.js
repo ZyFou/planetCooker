@@ -848,6 +848,11 @@ function animate(timestamp) {
       data.trueAnomaly = (data.trueAnomaly ?? (moon.phase ?? 0)) + baseSpeed * speedMultiplier * simulationDelta * gravityFactor;
       const angle = data.trueAnomaly;
       computeOrbitPosition(semiMajor, eccentricity, angle, mesh.position);
+      
+      // Track trajectory for non-physics mode too
+      pivot.updateMatrixWorld(true);
+      const worldPos = pivot.localToWorld(mesh.position.clone());
+      updateTrajectoryHistory(pivot, worldPos);
     });
     updateStabilityDisplay(moonSettings.length, moonSettings.length);
   }
@@ -1174,6 +1179,13 @@ function updateSun() {
 function updateMoons() {
   normalizeMoonSettings();
 
+  // Clear trajectory history when updating moons
+  moonsGroup.children.forEach((pivot) => {
+    if (pivot.userData.trajectoryHistory) {
+      pivot.userData.trajectoryHistory = [];
+    }
+  });
+
   while (moonsGroup.children.length > moonSettings.length) {
     const child = moonsGroup.children.pop();
     moonsGroup.remove(child);
@@ -1181,7 +1193,14 @@ function updateMoons() {
 
   while (moonsGroup.children.length < moonSettings.length) {
     const pivot = new THREE.Group();
-    pivot.userData = { mesh: null, orbit: null, physics: null, trueAnomaly: 0 };
+    pivot.userData = { 
+      mesh: null, 
+      orbit: null, 
+      physics: null, 
+      trueAnomaly: 0,
+      trajectoryHistory: [], // Store recent positions for trajectory visualization
+      maxTrajectoryPoints: 200 // Maximum number of points to keep in trajectory
+    };
     moonsGroup.add(pivot);
   }
 
@@ -1230,9 +1249,30 @@ function updateMoons() {
       orbitLinesGroup.add(orbit);
     }
 
-    updateOrbitLine(pivot.userData.orbit.geometry, moon);
-    updateOrbitMaterial(pivot, true);
+    // Initialize trajectory history if it doesn't exist
+    if (!pivot.userData.trajectoryHistory) {
+      pivot.userData.trajectoryHistory = [];
+      pivot.userData.maxTrajectoryPoints = 200;
+    }
+
+    // For non-physics mode, use the old elliptical orbit method
+    if (!params.physicsEnabled) {
+      updateOrbitLine(pivot.userData.orbit.geometry, moon);
+      updateOrbitMaterial(pivot, true);
+    // Keep classic alignment for non-physics (ellipse preview)
     alignOrbitLineWithPivot(pivot);
+    } else {
+      // For physics mode, we'll build the trajectory over time
+      updateOrbitMaterial(pivot, true);
+    // Ensure the trajectory line starts with identity transform in physics mode
+    const orbit = pivot.userData.orbit;
+    if (orbit) {
+      orbit.position.set(0, 0, 0);
+      orbit.quaternion.identity();
+      orbit.scale.set(1, 1, 1);
+      orbit.updateMatrixWorld(true);
+    }
+    }
   });
 
   if (params.physicsEnabled) {
@@ -1243,15 +1283,70 @@ function updateMoons() {
 }
 
 function createOrbitLine() {
-  const segments = 128;
+  const segments = 200; // Increased for better trajectory visualization
   const geometry = new THREE.BufferGeometry();
   const positions = new Float32Array(segments * 3);
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   const material = new THREE.LineBasicMaterial({ color: 0x88a1ff, transparent: true, opacity: 0.3, depthWrite: false });
   material.userData = { stableColor: new THREE.Color(0x88a1ff), unstableColor: new THREE.Color(0xff7666) };
-  const line = new THREE.LineLoop(geometry, material);
+  const line = new THREE.Line(geometry, material); // Changed from LineLoop to Line for trajectory
   line.frustumCulled = false;
   return line;
+}
+
+function updateTrajectoryHistory(pivot, worldPosition) {
+  if (!pivot.userData.trajectoryHistory) {
+    pivot.userData.trajectoryHistory = [];
+    pivot.userData.maxTrajectoryPoints = 200;
+  }
+  
+  const history = pivot.userData.trajectoryHistory;
+  const maxPoints = pivot.userData.maxTrajectoryPoints;
+  
+  // Add current position to history
+  history.push(worldPosition.clone());
+  
+  // Keep only the most recent points
+  if (history.length > maxPoints) {
+    history.shift(); // Remove oldest point
+  }
+}
+
+function updateTrajectoryLine(pivot) {
+  if (!pivot.userData.orbit || !pivot.userData.trajectoryHistory) return;
+  
+  const orbit = pivot.userData.orbit;
+  // Ensure the trajectory line has identity transform in the orbit group space
+  orbit.position.set(0, 0, 0);
+  orbit.quaternion.identity();
+  orbit.scale.set(1, 1, 1);
+  orbit.updateMatrixWorld(true);
+  const history = pivot.userData.trajectoryHistory;
+  const geometry = orbit.geometry;
+  const positions = geometry.attributes.position.array;
+  
+  // Clear the positions array
+  positions.fill(0);
+  
+  if (history.length < 2) {
+    geometry.attributes.position.needsUpdate = true;
+    return;
+  }
+  
+  // Convert world positions to local positions relative to the orbit line group
+  const localPos = new THREE.Vector3();
+  for (let i = 0; i < history.length && i < positions.length / 3; i++) {
+    const worldPos = history[i];
+    orbitLinesGroup.worldToLocal(localPos.copy(worldPos));
+    positions[i * 3 + 0] = localPos.x;
+    positions[i * 3 + 1] = localPos.y;
+    positions[i * 3 + 2] = localPos.z;
+  }
+  
+  // Set the count to the actual number of points we have
+  geometry.setDrawRange(0, Math.min(history.length, positions.length / 3));
+  geometry.attributes.position.needsUpdate = true;
+  geometry.computeBoundingSphere();
 }
 
 function updateOrbitLine(geometry, moon) {
@@ -1288,7 +1383,14 @@ function syncOrbitLinesWithPivots() {
   if (!params.showOrbitLines) return;
   moonsGroup.children.forEach((pivot) => {
     if (!pivot?.userData?.orbit) return;
-    alignOrbitLineWithPivot(pivot);
+    
+    // Update trajectory line based on actual moon movement
+    if (params.physicsEnabled && pivot.userData.trajectoryHistory && pivot.userData.trajectoryHistory.length > 1) {
+      updateTrajectoryLine(pivot);
+    } else {
+      // For non-physics mode or when no trajectory history exists, use the old method
+      alignOrbitLineWithPivot(pivot);
+    }
   });
 }
 
@@ -2188,6 +2290,12 @@ function initMoonPhysics() {
 }
 
 function resetMoonPhysics() {
+  // Clear trajectory history when resetting physics
+  moonsGroup.children.forEach((pivot) => {
+    if (pivot.userData.trajectoryHistory) {
+      pivot.userData.trajectoryHistory = [];
+    }
+  });
   initMoonPhysics();
 }
 
@@ -2229,6 +2337,9 @@ function stepMoonPhysics(dt) {
 
       pivot.updateMatrixWorld(true);
       mesh.position.copy(pivot.worldToLocal(phys.posWorld.clone()));
+
+      // Track trajectory for orbit line visualization
+      updateTrajectoryHistory(pivot, phys.posWorld.clone());
 
       const rVec = tmpVecA.copy(phys.posWorld).sub(planetWorld);
       const dist = Math.max(1e-5, rVec.length());
