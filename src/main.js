@@ -4,62 +4,16 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import GUI from "lil-gui";
 import { createNoise3D } from "simplex-noise";
 import { exportFBX } from "./export/fbx-exporter.js";
-
-//#region Utility functions
-function debounce(fn, delay = 150) {
-  let timer;
-  return function debounced(...args) {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn.apply(this, args), delay);
-  };
-}
+import { debounce, SeededRNG } from "./app/utils.js";
+import { initControlSearch } from "./app/gui/controlSearch.js";
+import { setupPlanetControls } from "./app/gui/planetControls.js";
+import { setupMoonControls } from "./app/gui/moonControls.js";
 
 const debounceShare = debounce(() => {
   if (!shareDirty) return;
   updateShareCode();
   shareDirty = false;
 }, 180);
-class SeededRNG {
-  constructor(seed) {
-    if (typeof seed === "string") {
-      this.state = hashString(seed);
-    } else {
-      this.state = seed >>> 0;
-    }
-    if (this.state === 0) {
-      this.state = 0x1a2b3c4d;
-    }
-  }
-
-  next() {
-    this.state |= 0;
-    this.state = (this.state + 0x6d2b79f5) | 0;
-    let t = Math.imul(this.state ^ (this.state >>> 15), 1 | this.state);
-    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  }
-
-  nextFloat(min, max) {
-    return min + this.next() * (max - min);
-  }
-
-  fork() {
-    let nextSeed = Math.floor(this.next() * 0xffffffff) >>> 0;
-    if (nextSeed === 0) nextSeed = 0x9e3779b9;
-    return new SeededRNG(nextSeed);
-  }
-}
-
-function hashString(str) {
-  let hash = 2166136261;
-  for (let i = 0; i < str.length; i += 1) {
-    hash ^= str.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
-//#endregion
 
 //#region Scene and renderer setup
 const sceneContainer = document.getElementById("scene");
@@ -508,139 +462,7 @@ const palette = {
   atmosphere: new THREE.Color(params.atmosphereColor)
 };
 
-const moonSettings = [];
 const guiControllers = {};
-const moonControlFolders = [];
-const guiFolders = new Set();
-let controlSearchTerm = "";
-let controlSearchRestoreState = null;
-
-function registerFolder(folder, { close = false } = {}) {
-  guiFolders.add(folder);
-  if (controlSearchRestoreState && !controlSearchRestoreState.has(folder)) {
-    controlSearchRestoreState.set(folder, close);
-    folder.open();
-  } else if (close) {
-    folder.close();
-  }
-  return folder;
-}
-
-function applyControlSearch({ scrollToFirst = false } = {}) {
-  const root = controlsContainer?.querySelector(".lil-gui.root");
-  if (!root) return;
-
-  const term = controlSearchTerm.trim().toLowerCase();
-  const hasTerm = term.length > 0;
-
-  if (hasTerm) {
-    if (!controlSearchRestoreState) {
-      controlSearchRestoreState = new Map();
-    }
-    guiFolders.forEach((folder) => {
-      if (!controlSearchRestoreState.has(folder)) {
-        controlSearchRestoreState.set(folder, folder._closed);
-      }
-      folder.open();
-    });
-  } else if (controlSearchRestoreState) {
-    controlSearchRestoreState.forEach((wasClosed, folder) => {
-      if (wasClosed) {
-        folder.close();
-      } else {
-        folder.open();
-      }
-    });
-    controlSearchRestoreState = null;
-  }
-
-  const controllers = Array.from(root.querySelectorAll(".controller"));
-  let firstMatch = null;
-  let matchCount = 0;
-
-  controllers.forEach((controllerEl) => {
-    const label = controllerEl.querySelector(".name")?.textContent?.toLowerCase() ?? "";
-    const isMatch = !hasTerm || label.includes(term);
-    controllerEl.classList.toggle("search-hidden", hasTerm && !isMatch);
-    controllerEl.classList.toggle("search-match", hasTerm && isMatch);
-    if (isMatch) {
-      matchCount += 1;
-      if (!firstMatch) {
-        firstMatch = controllerEl;
-      }
-    }
-  });
-
-  const folders = Array.from(root.querySelectorAll(".lil-gui"));
-  folders.forEach((folderEl) => {
-    if (folderEl.classList.contains("root")) return;
-    const hasVisibleControllers = folderEl.querySelector(".controller:not(.search-hidden)");
-    folderEl.classList.toggle("search-hidden", hasTerm && !hasVisibleControllers);
-  });
-
-  root.classList.toggle("search-active", hasTerm);
-
-  if (controlSearchBar) {
-    controlSearchBar.classList.toggle("has-value", hasTerm);
-  }
-  if (controlSearchClear) {
-    controlSearchClear.hidden = !hasTerm;
-  }
-  if (controlSearchEmpty) {
-    controlSearchEmpty.hidden = !hasTerm || matchCount > 0;
-  }
-
-  if (hasTerm && scrollToFirst && firstMatch) {
-    firstMatch.scrollIntoView({ block: "nearest" });
-  }
-}
-
-function setControlSearchTerm(value, { scrollToFirst = true } = {}) {
-  const previousTerm = controlSearchTerm;
-  controlSearchTerm = value ?? "";
-  const trimmedPrevious = previousTerm.trim();
-  const trimmedCurrent = controlSearchTerm.trim();
-  const shouldScroll = scrollToFirst && trimmedCurrent.length > 0 && trimmedPrevious.length === 0;
-  applyControlSearch({ scrollToFirst: shouldScroll });
-  if (trimmedCurrent.length === 0 && trimmedPrevious.length > 0 && infoPanel) {
-    infoPanel.scrollTop = 0;
-  } else if (shouldScroll && infoPanel) {
-    infoPanel.scrollTop = 0;
-  }
-}
-
-const handleControlSearchInput = debounce(() => {
-  if (!controlSearchInput) return;
-  setControlSearchTerm(controlSearchInput.value, { scrollToFirst: true });
-}, 120);
-
-if (controlSearchInput) {
-  controlSearchInput.addEventListener("input", handleControlSearchInput);
-  controlSearchInput.addEventListener("search", () => {
-    setControlSearchTerm(controlSearchInput.value, { scrollToFirst: true });
-  });
-  controlSearchInput.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
-      event.stopPropagation();
-      controlSearchInput.value = "";
-      setControlSearchTerm("", { scrollToFirst: false });
-      controlSearchInput.blur();
-    }
-  });
-}
-
-if (controlSearchClear) {
-  controlSearchClear.hidden = true;
-  controlSearchClear.addEventListener("click", () => {
-    if (controlSearchInput) {
-      controlSearchInput.value = "";
-      controlSearchInput.focus();
-    }
-    setControlSearchTerm("", { scrollToFirst: false });
-  });
-}
-
-setControlSearchTerm(controlSearchInput?.value ?? "", { scrollToFirst: false });
 
 let planetDirty = true;
 let moonsDirty = true;
@@ -650,308 +472,63 @@ let lastFrameTime = performance.now();
 let isApplyingPreset = false;
 let guiVisible = true;
 let sunPulsePhase = 0;
-//#endregion
 
-//#region GUI setup
+const { registerFolder, unregisterFolder, applyControlSearch } = initControlSearch({
+  controlsContainer,
+  searchInput: controlSearchInput,
+  clearButton: controlSearchClear,
+  emptyState: controlSearchEmpty,
+  searchBar: controlSearchBar,
+  infoPanel
+});
+
 const gui = registerFolder(new GUI({ title: "Planet Controls", width: 320, container: controlsContainer || undefined }));
 
-const presetController = gui.add(params, "preset", Object.keys(presets)).name("Preset");
-guiControllers.preset = presetController;
-
-const planetFolder = registerFolder(gui.addFolder("Planet"), { close: true });
-
-guiControllers.seed = planetFolder
-  .add(params, "seed")
-  .name("Seed")
-  .onFinishChange(() => {
-    if (isApplyingPreset) return;
-    handleSeedChanged();
-  });
-
-// ... (rest of code) ...
-
-guiControllers.radius = planetFolder.add(params, "radius", 0.4, 4.2, 0.02)
-    .name("Radius")
-    .onFinishChange(() => {
-      markPlanetDirty();
-      markMoonsDirty();
-      scheduleShareUpdate();
-    });
-
-guiControllers.subdivisions = planetFolder.add(params, "subdivisions", 2, 6, 1)
-    .name("Surface Detail")
-    .onFinishChange(() => {
-      markPlanetDirty();
-      scheduleShareUpdate();
-    });
-
-guiControllers.noiseLayers = planetFolder.add(params, "noiseLayers", 1, 8, 1)
-    .name("Noise Layers")
-    .onFinishChange(() => {
-      markPlanetDirty();
-      scheduleShareUpdate();
-    });
-
-guiControllers.noiseFrequency = planetFolder.add(params, "noiseFrequency", 0.3, 8, 0.05)
-    .name("Noise Frequency")
-    .onFinishChange(() => {
-      markPlanetDirty();
-      scheduleShareUpdate();
-    });
-
-guiControllers.noiseAmplitude = planetFolder.add(params, "noiseAmplitude", 0, 1.4, 0.01)
-    .name("Terrain Height")
-    .onFinishChange(() => {
-      markPlanetDirty();
-      scheduleShareUpdate();
-    });
-
-guiControllers.persistence = planetFolder.add(params, "persistence", 0.2, 0.9, 0.01)
-    .name("Persistence")
-    .onFinishChange(() => {
-      markPlanetDirty();
-      scheduleShareUpdate();
-    });
-
-guiControllers.lacunarity = planetFolder.add(params, "lacunarity", 1.2, 3.8, 0.01)
-    .name("Lacunarity")
-    .onFinishChange(() => {
-      markPlanetDirty();
-      scheduleShareUpdate();
-    });
-
-guiControllers.oceanLevel = planetFolder.add(params, "oceanLevel", 0, 0.95, 0.01)
-    .name("Ocean Level")
-    .onFinishChange(() => {
-      markPlanetDirty();
-      scheduleShareUpdate();
-    });
-
-const paletteFolder = registerFolder(gui.addFolder("Palette"), { close: true });
-
-guiControllers.colorOcean = paletteFolder.addColor(params, "colorOcean")
-    .name("Deep Water")
-    .onChange(() => {
-      updatePalette();
-      markPlanetDirty();
-      scheduleShareUpdate();
-    });
-
-guiControllers.colorShallow = paletteFolder.addColor(params, "colorShallow")
-    .name("Shallow Water")
-    .onChange(() => {
-      updatePalette();
-      markPlanetDirty();
-      scheduleShareUpdate();
-    });
-
-guiControllers.colorLow = paletteFolder.addColor(params, "colorLow")
-    .name("Lowlands")
-    .onChange(() => {
-      updatePalette();
-      markPlanetDirty();
-      scheduleShareUpdate();
-    });
-
-guiControllers.colorMid = paletteFolder.addColor(params, "colorMid")
-    .name("Highlands")
-    .onChange(() => {
-      updatePalette();
-      markPlanetDirty();
-      scheduleShareUpdate();
-    });
-
-guiControllers.colorHigh = paletteFolder.addColor(params, "colorHigh")
-    .name("Peaks")
-    .onChange(() => {
-      updatePalette();
-      markPlanetDirty();
-      scheduleShareUpdate();
-    });
-
-guiControllers.atmosphereColor = paletteFolder.addColor(params, "atmosphereColor")
-    .name("Atmosphere")
-    .onChange(() => {
-      updatePalette();
-      markPlanetDirty();
-      scheduleShareUpdate();
-    });
-
-guiControllers.cloudsOpacity = paletteFolder.add(params, "cloudsOpacity", 0, 1, 0.01)
-    .name("Clouds")
-    .onChange(() => {
-      updateClouds();
-      scheduleShareUpdate();
-    });
-
-const motionFolder = registerFolder(gui.addFolder("Motion"), { close: true });
-
-guiControllers.axisTilt = motionFolder.add(params, "axisTilt", 0, 45, 0.5)
-    .name("Axis Tilt")
-    .onChange(() => {
-      updateTilt();
-      scheduleShareUpdate();
-    });
-
-guiControllers.rotationSpeed = motionFolder.add(params, "rotationSpeed", 0, 0.7, 0.005)
-    .name("Rotation Speed")
-    .onChange(() => {
-      scheduleShareUpdate();
-    });
-
-guiControllers.simulationSpeed = motionFolder.add(params, "simulationSpeed", 0, 2.5, 0.01)
-    .name("Sim Speed")
-    .onChange(() => {
-      scheduleShareUpdate();
-    });
-
-const environmentFolder = registerFolder(gui.addFolder("Environment"), { close: true });
-
-guiControllers.gravity = environmentFolder.add(params, "gravity", 0.1, 40, 0.1)
-    .name("Gravity m/s^2")
-    .onChange(() => {
-      updateGravityDisplay();
-      initMoonPhysics();
-      scheduleShareUpdate();
-    });
-
-const sunFolder = registerFolder(environmentFolder.addFolder("Star"), { close: true });
-
-guiControllers.sunColor = sunFolder.addColor(params, "sunColor")
-    .name("Color")
-    .onChange(() => {
-      updateSun();
-      scheduleShareUpdate();
-    });
-
-guiControllers.sunIntensity = sunFolder.add(params, "sunIntensity", 0.2, 4, 0.05)
-    .name("Intensity")
-    .onChange(() => {
-      updateSun();
-      scheduleShareUpdate();
-    });
-
-guiControllers.sunDistance = sunFolder.add(params, "sunDistance", 10, 160, 1)
-    .name("Distance")
-    .onChange(() => {
-      updateSun();
-      scheduleShareUpdate();
-    });
-
-guiControllers.sunSize = sunFolder.add(params, "sunSize", 0.5, 4, 0.05)
-    .name("Core Size")
-    .onChange(() => {
-      updateSun();
-      scheduleShareUpdate();
-    });
-
-guiControllers.sunHaloSize = sunFolder.add(params, "sunHaloSize", 2, 18, 0.1)
-    .name("Halo Radius")
-    .onChange(() => {
-      updateSun();
-      scheduleShareUpdate();
-    });
-
-guiControllers.sunGlowStrength = sunFolder.add(params, "sunGlowStrength", 0.1, 3.5, 0.05)
-    .name("Glow Strength")
-    .onChange(() => {
-      updateSun();
-      scheduleShareUpdate();
-    });
-
-guiControllers.sunPulseSpeed = sunFolder.add(params, "sunPulseSpeed", 0, 2.5, 0.05)
-    .name("Pulse Speed")
-    .onChange(() => {
-      updateSun();
-      scheduleShareUpdate();
-    });
-
-const spaceFolder = registerFolder(environmentFolder.addFolder("Sky"), { close: true });
-
-guiControllers.starCount = spaceFolder.add(params, "starCount", 500, 4000, 50)
-    .name("Star Count")
-    .onFinishChange(() => {
-      params.starCount = Math.round(params.starCount);
-      regenerateStarfield();
-      scheduleShareUpdate();
-    });
-
-guiControllers.starBrightness = spaceFolder.add(params, "starBrightness", 0.2, 2, 0.01)
-    .name("Brightness")
-    .onChange(() => {
-      updateStarfieldUniforms();
-      scheduleShareUpdate();
-    });
-
-guiControllers.starTwinkleSpeed = spaceFolder.add(params, "starTwinkleSpeed", 0, 2.5, 0.01)
-    .name("Twinkle Speed")
-    .onChange(() => {
-      updateStarfieldUniforms();
-      scheduleShareUpdate();
-    });
-
-const moonsFolder = registerFolder(gui.addFolder("Moons"));
-moonsFolder.open();
-
-guiControllers.moonCount = moonsFolder.add(params, "moonCount", 0, 5, 1)
-    .name("Count")
-    .onChange(() => {
-      if (isApplyingPreset) return;
-      syncMoonSettings();
-      scheduleShareUpdate();
-    });
-
-guiControllers.showOrbitLines = moonsFolder.add(params, "showOrbitLines")
-  .name("Show Orbit Lines")
-  .onChange(() => {
-    updateOrbitLinesVisibility();
-    scheduleShareUpdate();
-  });
-
-const physicsFolder = registerFolder(gui.addFolder("Physics"), { close: true });
-
-guiControllers.physicsEnabled = physicsFolder.add(params, "physicsEnabled")
-  .name("Enable Physics")
-  .onChange(() => {
-    initMoonPhysics();
-    scheduleShareUpdate();
-  });
-
-guiControllers.physicsTwoWay = physicsFolder.add(params, "physicsTwoWay")
-  .name("Two-way Gravity")
-  .onChange(() => {
-    initMoonPhysics();
-    scheduleShareUpdate();
-  });
-
-guiControllers.moonMassScale = physicsFolder.add(params, "moonMassScale", 0.1, 5, 0.05)
-  .name("Moon Mass Scale")
-  .onChange(() => {
-    initMoonPhysics();
-    scheduleShareUpdate();
-  });
-
-guiControllers.physicsDamping = physicsFolder.add(params, "physicsDamping", 0, 0.02, 0.0005)
-  .name("Damping")
-  .onChange(() => {
-    scheduleShareUpdate();
-  });
-
-guiControllers.physicsSubsteps = physicsFolder.add(params, "physicsSubsteps", 1, 8, 1)
-  .name("Substeps")
-  .onChange(() => {
-    scheduleShareUpdate();
-  });
-
-physicsFolder.add({ reset: () => resetMoonPhysics() }, "reset").name("Reset Orbits");
-
-applyControlSearch({ scrollToFirst: false });
-
-presetController.onChange((value) => {
-  if (isApplyingPreset) return;
-  applyPreset(value);
+setupPlanetControls({
+  gui,
+  params,
+  presets,
+  guiControllers,
+  registerFolder,
+  scheduleShareUpdate,
+  markPlanetDirty,
+  markMoonsDirty,
+  handleSeedChanged,
+  updatePalette,
+  updateClouds,
+  updateTilt,
+  updateSun,
+  updateStarfieldUniforms,
+  regenerateStarfield,
+  updateGravityDisplay,
+  initMoonPhysics,
+  getIsApplyingPreset: () => isApplyingPreset,
+  onPresetChange: (value) => applyPreset(value)
 });
+
+const {
+  moonSettings,
+  createDefaultMoon,
+  normalizeMoonSettings,
+  rebuildMoonControls,
+  syncMoonSettings
+} = setupMoonControls({
+  gui,
+  params,
+  guiControllers,
+  registerFolder,
+  unregisterFolder,
+  applyControlSearch,
+  scheduleShareUpdate,
+  markMoonsDirty,
+  updateOrbitLinesVisibility,
+  initMoonPhysics,
+  resetMoonPhysics,
+  getIsApplyingPreset: () => isApplyingPreset
+});
+
 //#endregion
+
 randomizeSeedButton?.addEventListener("click", () => {
   const nextSeed = generateSeed();
   params.seed = nextSeed;
@@ -1531,106 +1108,6 @@ function updateOrbitLinesVisibility() {
   orbitLinesGroup.visible = params.showOrbitLines;
 }
 
-function normalizeMoonSettings() {
-  moonSettings.forEach((moon, index) => {
-    if (typeof moon.size !== "number" || Number.isNaN(moon.size)) {
-      moon.size = 0.18;
-    }
-    if (typeof moon.distance !== "number" || Number.isNaN(moon.distance)) {
-      moon.distance = 3.5;
-    }
-    if (typeof moon.orbitSpeed !== "number" || Number.isNaN(moon.orbitSpeed)) {
-      moon.orbitSpeed = 0.4;
-    }
-    if (typeof moon.inclination !== "number" || Number.isNaN(moon.inclination)) {
-      moon.inclination = 0;
-    }
-    if (typeof moon.phase !== "number" || Number.isNaN(moon.phase)) {
-      moon.phase = 0;
-    }
-    if (!moon.color) {
-      moon.color = "#cfcfcf";
-    }
-    if (typeof moon.eccentricity !== "number" || Number.isNaN(moon.eccentricity)) {
-      const rng = new SeededRNG(`${params.seed || "moon"}-ecc-${index}`);
-      moon.eccentricity = THREE.MathUtils.lerp(0.02, 0.35, rng.next());
-    }
-    moon.eccentricity = THREE.MathUtils.clamp(moon.eccentricity, 0, 0.95);
-    moon.phase = ((moon.phase % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-  });
-}
-
-function syncMoonSettings() {
-  while (moonSettings.length < params.moonCount) {
-    moonSettings.push(createDefaultMoon(moonSettings.length));
-  }
-  while (moonSettings.length > params.moonCount) {
-    moonSettings.pop();
-  }
-  normalizeMoonSettings();
-  rebuildMoonControls();
-  markMoonsDirty();
-}
-
-function rebuildMoonControls() {
-  moonControlFolders.splice(0, moonControlFolders.length).forEach((folder) => {
-    guiFolders.delete(folder);
-    folder.destroy();
-  });
-  moonSettings.forEach((moon, index) => {
-    const folder = registerFolder(gui.addFolder(`Moon ${index + 1}`));
-    folder
-      .add(moon, "size", 0.05, 0.9, 0.01)
-      .name("Size (radii)")
-      .onChange(() => {
-        markMoonsDirty();
-        scheduleShareUpdate();
-      });
-    folder
-      .add(moon, "distance", 1.5, 20, 0.1)
-      .name("Distance")
-      .onChange(() => {
-        markMoonsDirty();
-        scheduleShareUpdate();
-      });
-    folder
-      .add(moon, "orbitSpeed", 0, 2, 0.01)
-      .name("Orbit Speed")
-      .onChange(() => {
-        scheduleShareUpdate();
-      });
-    folder
-      .add(moon, "inclination", -45, 45, 0.5)
-      .name("Inclination")
-      .onChange(() => {
-        markMoonsDirty();
-        scheduleShareUpdate();
-      });
-    folder
-      .addColor(moon, "color")
-      .name("Color")
-      .onChange(() => {
-        markMoonsDirty();
-        scheduleShareUpdate();
-      });
-    folder
-      .add(moon, "eccentricity", 0, 0.95, 0.01)
-      .name("Eccentricity")
-      .onChange(() => {
-        markMoonsDirty();
-        scheduleShareUpdate();
-      });
-    folder
-      .add(moon, "phase", 0, Math.PI * 2, 0.01)
-      .name("Phase")
-      .onChange(() => {
-        markMoonsDirty();
-        scheduleShareUpdate();
-      });
-    moonControlFolders.push(folder);
-  });
-  applyControlSearch({ scrollToFirst: false });
-}
 //#endregion
 //#region Presets and sharing
 function applyPreset(name, { skipShareUpdate = false, keepSeed = false } = {}) {
@@ -1921,24 +1398,6 @@ function flashShareFeedback() {
   setTimeout(() => shareDisplay?.classList.remove("copied"), 400);
 }
 
-function createDefaultMoon(index = 0) {
-  const basePhase = (index / Math.max(1, params.moonCount || 1)) * Math.PI * 2;
-  const rng = new SeededRNG(`${params.seed || "moon"}-${index}`);
-  const color = new THREE.Color().setHSL(
-    (0.5 + rng.next() * 0.3) % 1,
-    0.15 + rng.next() * 0.35,
-    0.5 + rng.next() * 0.3
-  );
-  return {
-    size: THREE.MathUtils.lerp(0.08, 0.36, rng.next()),
-    distance: THREE.MathUtils.lerp(2.4, 11.5, rng.next()),
-    orbitSpeed: THREE.MathUtils.lerp(0.2, 0.75, rng.next()),
-    inclination: THREE.MathUtils.lerp(-25, 25, rng.next()),
-    color: color.getStyle(),
-    phase: basePhase + rng.next() * Math.PI * 2,
-    eccentricity: THREE.MathUtils.lerp(0.02, 0.4, rng.next())
-  };
-}
 
 function generateSeed() {
   const alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";

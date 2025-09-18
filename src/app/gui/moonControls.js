@@ -1,0 +1,208 @@
+// Manages moon-related controls and provides helpers to rebuild dynamic moon folders.
+import * as THREE from "three";
+import { SeededRNG } from "../utils.js";
+
+export function setupMoonControls({
+  gui,
+  params,
+  guiControllers,
+  registerFolder,
+  unregisterFolder,
+  applyControlSearch,
+  scheduleShareUpdate,
+  markMoonsDirty,
+  updateOrbitLinesVisibility,
+  initMoonPhysics,
+  resetMoonPhysics,
+  getIsApplyingPreset
+}) {
+  const moonSettings = [];
+  const moonControlFolders = [];
+
+  function createDefaultMoon(index = 0) {
+    const basePhase = (index / Math.max(1, params.moonCount || 1)) * Math.PI * 2;
+    const rng = new SeededRNG(`${params.seed || "moon"}-${index}`);
+    const color = new THREE.Color().setHSL(
+      (0.5 + rng.next() * 0.3) % 1,
+      0.15 + rng.next() * 0.35,
+      0.5 + rng.next() * 0.3
+    );
+    return {
+      size: THREE.MathUtils.lerp(0.08, 0.36, rng.next()),
+      distance: THREE.MathUtils.lerp(2.4, 11.5, rng.next()),
+      orbitSpeed: THREE.MathUtils.lerp(0.2, 0.75, rng.next()),
+      inclination: THREE.MathUtils.lerp(-25, 25, rng.next()),
+      color: color.getStyle(),
+      phase: basePhase + rng.next() * Math.PI * 2,
+      eccentricity: THREE.MathUtils.lerp(0.02, 0.4, rng.next())
+    };
+  }
+
+  function normalizeMoonSettings() {
+    moonSettings.forEach((moon, index) => {
+      if (typeof moon.size !== "number" || Number.isNaN(moon.size)) {
+        moon.size = 0.18;
+      }
+      if (typeof moon.distance !== "number" || Number.isNaN(moon.distance)) {
+        moon.distance = 3.5;
+      }
+      if (typeof moon.orbitSpeed !== "number" || Number.isNaN(moon.orbitSpeed)) {
+        moon.orbitSpeed = 0.4;
+      }
+      if (typeof moon.inclination !== "number" || Number.isNaN(moon.inclination)) {
+        moon.inclination = 0;
+      }
+      if (typeof moon.phase !== "number" || Number.isNaN(moon.phase)) {
+        moon.phase = 0;
+      }
+      if (!moon.color) {
+        moon.color = "#cfcfcf";
+      }
+      if (typeof moon.eccentricity !== "number" || Number.isNaN(moon.eccentricity)) {
+        const rng = new SeededRNG(`${params.seed || "moon"}-ecc-${index}`);
+        moon.eccentricity = THREE.MathUtils.lerp(0.02, 0.35, rng.next());
+      }
+      moon.eccentricity = THREE.MathUtils.clamp(moon.eccentricity, 0, 0.95);
+      moon.phase = ((moon.phase % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    });
+  }
+
+  function rebuildMoonControls() {
+    moonControlFolders.splice(0, moonControlFolders.length).forEach((folder) => {
+      unregisterFolder(folder);
+      folder.destroy();
+    });
+
+    moonSettings.forEach((moon, index) => {
+      const folder = registerFolder(gui.addFolder(`Moon ${index + 1}`));
+      folder
+        .add(moon, "size", 0.05, 0.9, 0.01)
+        .name("Size (radii)")
+        .onChange(() => {
+          markMoonsDirty();
+          scheduleShareUpdate();
+        });
+      folder
+        .add(moon, "distance", 1.5, 20, 0.1)
+        .name("Distance")
+        .onChange(() => {
+          markMoonsDirty();
+          scheduleShareUpdate();
+        });
+      folder
+        .add(moon, "orbitSpeed", 0, 2, 0.01)
+        .name("Orbit Speed")
+        .onChange(() => {
+          scheduleShareUpdate();
+        });
+      folder
+        .add(moon, "inclination", -45, 45, 0.5)
+        .name("Inclination")
+        .onChange(() => {
+          markMoonsDirty();
+          scheduleShareUpdate();
+        });
+      folder
+        .addColor(moon, "color")
+        .name("Color")
+        .onChange(() => {
+          markMoonsDirty();
+          scheduleShareUpdate();
+        });
+      folder
+        .add(moon, "eccentricity", 0, 0.95, 0.01)
+        .name("Eccentricity")
+        .onChange(() => {
+          markMoonsDirty();
+          scheduleShareUpdate();
+        });
+      folder
+        .add(moon, "phase", 0, Math.PI * 2, 0.01)
+        .name("Phase")
+        .onChange(() => {
+          markMoonsDirty();
+          scheduleShareUpdate();
+        });
+      moonControlFolders.push(folder);
+    });
+
+    applyControlSearch({ scrollToFirst: false });
+  }
+
+  function syncMoonSettings() {
+    while (moonSettings.length < params.moonCount) {
+      moonSettings.push(createDefaultMoon(moonSettings.length));
+    }
+    while (moonSettings.length > params.moonCount) {
+      moonSettings.pop();
+    }
+    normalizeMoonSettings();
+    rebuildMoonControls();
+    markMoonsDirty();
+  }
+
+  const moonsFolder = registerFolder(gui.addFolder("Moons"));
+  moonsFolder.open();
+
+  guiControllers.moonCount = moonsFolder.add(params, "moonCount", 0, 5, 1)
+    .name("Count")
+    .onChange(() => {
+      if (getIsApplyingPreset()) return;
+      syncMoonSettings();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.showOrbitLines = moonsFolder.add(params, "showOrbitLines")
+    .name("Show Orbit Lines")
+    .onChange(() => {
+      updateOrbitLinesVisibility();
+      scheduleShareUpdate();
+    });
+
+  const physicsFolder = registerFolder(gui.addFolder("Physics"), { close: true });
+
+  guiControllers.physicsEnabled = physicsFolder.add(params, "physicsEnabled")
+    .name("Enable Physics")
+    .onChange(() => {
+      initMoonPhysics();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.physicsTwoWay = physicsFolder.add(params, "physicsTwoWay")
+    .name("Two-way Gravity")
+    .onChange(() => {
+      initMoonPhysics();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.moonMassScale = physicsFolder.add(params, "moonMassScale", 0.1, 5, 0.05)
+    .name("Moon Mass Scale")
+    .onChange(() => {
+      initMoonPhysics();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.physicsDamping = physicsFolder.add(params, "physicsDamping", 0, 0.02, 0.0005)
+    .name("Damping")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.physicsSubsteps = physicsFolder.add(params, "physicsSubsteps", 1, 8, 1)
+    .name("Substeps")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  physicsFolder.add({ reset: () => resetMoonPhysics() }, "reset").name("Reset Orbits");
+
+  return {
+    moonSettings,
+    moonControlFolders,
+    createDefaultMoon,
+    normalizeMoonSettings,
+    rebuildMoonControls,
+    syncMoonSettings
+  };
+}
+
