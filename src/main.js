@@ -584,6 +584,8 @@ const blackHoleState = {
 let starField = null;
 // Active particle explosions
 const activeExplosions = [];
+// Planet destruction state
+let planetDestroyed = false;
 //#endregion
 
 //#region UI bindings
@@ -4230,6 +4232,51 @@ function updateExplosions(dt) {
   }
 }
 
+// Trigger a one-shot, huge planet explosion using the current palette colors
+function explodePlanet({ reason = "coreCollision" } = {}) {
+  if (planetDestroyed) return;
+  planetDestroyed = true;
+
+  const center = planetRoot.getWorldPosition(new THREE.Vector3());
+
+  // Hide primary planet visuals
+  if (planetMesh) planetMesh.visible = false;
+  if (coreMesh) coreMesh.visible = false;
+  if (cloudsMesh) cloudsMesh.visible = false;
+  if (atmosphereMesh) atmosphereMesh.visible = false;
+  if (ringMesh) ringMesh.visible = false;
+
+  // Use palette-driven colors for a multi-hue detonation
+  const paletteColors = [
+    palette.core.clone(),
+    palette.high.clone(),
+    palette.mid.clone(),
+    palette.low.clone(),
+    palette.ocean.clone(),
+    palette.shallow.clone(),
+    palette.atmosphere.clone()
+  ];
+
+  // Scale strength by planet size for a dramatic effect
+  const baseStrength = Math.max(3, params.radius * 2.5);
+
+  // Central stacked blasts
+  for (let i = 0; i < paletteColors.length; i += 1) {
+    const c = paletteColors[i];
+    const s = baseStrength * (1.6 - i * 0.1);
+    spawnExplosion(center, c, s);
+  }
+
+  // Peripheral bursts around the planet
+  for (let i = 0; i < 8; i += 1) {
+    const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+    const pos = center.clone().add(dir.multiplyScalar(Math.max(0.5, params.radius) * 0.6));
+    const c = paletteColors[Math.floor(Math.random() * paletteColors.length)];
+    const s = baseStrength * THREE.MathUtils.lerp(0.8, 1.3, Math.random());
+    spawnExplosion(pos, c, s);
+  }
+}
+
 
 //#endregion
 //#region Export
@@ -4421,8 +4468,8 @@ function stepMoonPhysics(dt) {
         collidedIndices.add(index);
       }
       
-      // Core collision detection
-      if (params.coreEnabled && coreMesh) {
+      // Core collision detection (disabled after planet destruction)
+      if (!planetDestroyed && params.coreEnabled && coreMesh) {
         const coreRadius = params.radius * params.coreSize;
         const coreDist = Math.max(1e-5, phys.posWorld.length());
         if (coreDist <= coreRadius + moonRadius * 0.8) {
@@ -4513,9 +4560,8 @@ function stepMoonPhysics(dt) {
 
       // Different explosion for core vs surface collisions
       if (isCoreCollision) {
-        // Core collision: more dramatic explosion with core color
-        const coreColor = new THREE.Color(params.colorCore);
-        spawnExplosion(pos, coreColor, 3 * strength);
+        // Trigger global planet explosion on first core hit
+        explodePlanet({ reason: "coreCollision" });
       } else {
         // Surface collision: normal explosion
         spawnExplosion(pos, color, 2 * strength);
