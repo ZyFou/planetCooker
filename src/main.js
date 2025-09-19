@@ -130,6 +130,22 @@ planetMesh.castShadow = true;
 planetMesh.receiveShadow = true;
 spinGroup.add(planetMesh);
 
+// Core sphere (solid collision object)
+const coreGeometry = new THREE.SphereGeometry(1, 16, 16);
+const coreMaterial = new THREE.MeshStandardMaterial({
+  color: 0x8b4513, // Default brown color
+  roughness: 0.8,
+  metalness: 0.2,
+  transparent: false, // Solid material
+  opacity: 1, // Always solid when visible
+  flatShading: false
+});
+const coreMesh = new THREE.Mesh(coreGeometry, coreMaterial);
+coreMesh.castShadow = true;
+coreMesh.receiveShadow = true;
+coreMesh.userData = { isCore: true };
+spinGroup.add(coreMesh);
+
 const cloudsMaterial = new THREE.MeshStandardMaterial({
   color: 0xffffff,
   transparent: true,
@@ -608,6 +624,10 @@ const params = {
   colorLow: "#305a33",
   colorMid: "#b49e74",
   colorHigh: "#f2f6f5",
+  colorCore: "#8b4513",
+  coreEnabled: true,
+  coreSize: 0.4,
+  coreVisible: true,
   atmosphereColor: "#7baeff",
   cloudsOpacity: 0.4,
   cloudHeight: 0.03,
@@ -667,9 +687,9 @@ const params = {
   // Physics options
   impactDeformation: true,
   // Impact tuning
-  impactStrengthMul: 1,
-  impactSpeedMul: 0.55,
-  impactMassMul: 1,
+  impactStrengthMul: 2.5,
+  impactSpeedMul: 1.2,
+  impactMassMul: 2.0,
   impactElongationMul: 1.6,
   // Effects: explosion customization
   explosionEnabled: true,
@@ -734,7 +754,11 @@ const presets = {
     starTwinkleSpeed: 0.6,
     moons: [
       { size: 0.27, distance: 4.2, orbitSpeed: 0.38, inclination: 6, color: "#cfd0d4", phase: 1.1, eccentricity: 0.055 }
-    ]
+    ],
+    impactDeformation: true,
+    impactStrengthMul: 2.5,
+    impactSpeedMul: 1.2,
+    impactMassMul: 2.0
   },
   "Mars": {
     seed: "MARS",
@@ -751,6 +775,10 @@ const presets = {
     colorLow: "#7a3e27",
     colorMid: "#b25a32",
     colorHigh: "#e4c7a1",
+    colorCore: "#8b4513",
+    coreEnabled: true,
+    coreSize: 0.4,
+    coreVisible: true,
     atmosphereColor: "#ffb382",
     cloudsOpacity: 0.0,
     axisTilt: 25,
@@ -788,6 +816,10 @@ const presets = {
     colorLow: "#6a6f9a",
     colorMid: "#c7b59a",
     colorHigh: "#efe7dd",
+    colorCore: "#8b4513",
+    coreEnabled: true,
+    coreSize: 0.4,
+    coreVisible: true,
     atmosphereColor: "#d9c7a0",
     cloudsOpacity: 0.7,
     axisTilt: 3,
@@ -827,6 +859,10 @@ const presets = {
     colorLow: "#a38f6e",
     colorMid: "#d4c3a8",
     colorHigh: "#efe8dc",
+    colorCore: "#8b4513",
+    coreEnabled: true,
+    coreSize: 0.4,
+    coreVisible: true,
     atmosphereColor: "#e2d2b6",
     cloudsOpacity: 0.6,
     axisTilt: 27,
@@ -865,6 +901,10 @@ const presets = {
     colorLow: "#5c4a3e",
     colorMid: "#8a705d",
     colorHigh: "#d1c0af",
+    colorCore: "#8b4513",
+    coreEnabled: true,
+    coreSize: 0.4,
+    coreVisible: true,
     atmosphereColor: "#b9b2a8",
     cloudsOpacity: 0.0,
     axisTilt: 0.03,
@@ -899,6 +939,10 @@ const presets = {
     colorLow: "#6f513f",
     colorMid: "#b38a6c",
     colorHigh: "#f0e6d9",
+    colorCore: "#8b4513",
+    coreEnabled: true,
+    coreSize: 0.4,
+    coreVisible: true,
     atmosphereColor: "#e3c6a2",
     cloudsOpacity: 0.85,
     axisTilt: 177,
@@ -933,6 +977,10 @@ const presets = {
     colorLow: "#6aa9c8",
     colorMid: "#a8d4e8",
     colorHigh: "#e7f7fb",
+    colorCore: "#8b4513",
+    coreEnabled: true,
+    coreSize: 0.4,
+    coreVisible: true,
     atmosphereColor: "#a8d7ea",
     cloudsOpacity: 0.6,
     axisTilt: 98,
@@ -969,6 +1017,10 @@ const presets = {
     colorLow: "#5e86c0",
     colorMid: "#94b7f7",
     colorHigh: "#eaf2ff",
+    colorCore: "#8b4513",
+    coreEnabled: true,
+    coreSize: 0.4,
+    coreVisible: true,
     atmosphereColor: "#9ec2ff",
     cloudsOpacity: 0.6,
     axisTilt: 28,
@@ -1005,6 +1057,10 @@ const presets = {
     colorLow: "#a56d32",
     colorMid: "#d8b06b",
     colorHigh: "#f6e5c8",
+    colorCore: "#8b4513",
+    coreEnabled: true,
+    coreSize: 0.4,
+    coreVisible: true,
     atmosphereColor: "#f4aa5a",
     cloudsOpacity: 0.1,
     axisTilt: 12,
@@ -1042,6 +1098,10 @@ const presets = {
     colorLow: "#2e5e9c",
     colorMid: "#88b5ff",
     colorHigh: "#f6fbff",
+    colorCore: "#8b4513",
+    coreEnabled: true,
+    coreSize: 0.4,
+    coreVisible: true,
     atmosphereColor: "#9ed7ff",
     cloudsOpacity: 0.6,
     axisTilt: 28,
@@ -1080,6 +1140,10 @@ const presets = {
     colorLow: "#8a3217",
     colorMid: "#d55c27",
     colorHigh: "#ffd79c",
+    colorCore: "#8b4513",
+    coreEnabled: true,
+    coreSize: 0.4,
+    coreVisible: true,
     atmosphereColor: "#ff7a3a",
     cloudsOpacity: 0.18,
     axisTilt: 8,
@@ -1116,6 +1180,10 @@ const presets = {
     colorLow: "#34527f",
     colorMid: "#8f9ec8",
     colorHigh: "#dcdff7",
+    colorCore: "#8b4513",
+    coreEnabled: true,
+    coreSize: 0.4,
+    coreVisible: true,
     atmosphereColor: "#c1d6ff",
     cloudsOpacity: 0.7,
     axisTilt: 12,
@@ -1328,6 +1396,7 @@ const palette = {
   low: new THREE.Color(params.colorLow),
   mid: new THREE.Color(params.colorMid),
   high: new THREE.Color(params.colorHigh),
+  core: new THREE.Color(params.colorCore),
   atmosphere: new THREE.Color(params.atmosphereColor)
 };
 
@@ -1665,6 +1734,7 @@ async function applyConfigurationFromAPI(apiResult) {
   console.log("🔄 Updating all systems...");
   updatePalette();
   updateClouds();
+  updateCore();
   updateSun();
   updateRings();
   updateTilt();
@@ -2011,6 +2081,7 @@ async function initializeApp() {
   if (!loadedFromHash) {
     updatePalette();
     updateClouds();
+    updateCore();
     updateSun();
     updateRings();
     updateTilt();
@@ -2370,7 +2441,7 @@ function rebuildPlanet() {
     vertex.copy(normal).multiplyScalar(finalRadius);
     positions.setXYZ(i, vertex.x, vertex.y, vertex.z);
 
-    const color = sampleColor(normalized);
+    const color = sampleColor(normalized, finalRadius);
     colors[i * 3 + 0] = color.r;
     colors[i * 3 + 1] = color.g;
     colors[i * 3 + 2] = color.b;
@@ -2386,6 +2457,10 @@ function rebuildPlanet() {
   const atmosphereScale = params.radius * (1.06 + Math.max(0.0, (params.cloudHeight || 0.03)) * 0.8);
   cloudsMesh.scale.setScalar(cloudScale);
   atmosphereMesh.scale.setScalar(atmosphereScale);
+  
+  // Update core sphere
+  updateCore();
+  
   updateRings();
 
   scheduleShareUpdate();
@@ -2425,23 +2500,25 @@ function deriveTerrainProfile(seed) {
   };
 }
 
-function sampleColor(elevation) {
+function sampleColor(elevation, radius) {
+  let baseColor;
+  
   if (elevation <= params.oceanLevel) {
     const oceanT = params.oceanLevel <= 0 ? 0 : THREE.MathUtils.clamp(elevation / Math.max(params.oceanLevel, 1e-6), 0, 1);
-    scratchColor.copy(palette.ocean).lerp(palette.shallow, Math.pow(oceanT, 0.65));
-    return scratchColor;
+    baseColor = palette.ocean.clone().lerp(palette.shallow, Math.pow(oceanT, 0.65));
+  } else {
+    const landT = THREE.MathUtils.clamp((elevation - params.oceanLevel) / Math.max(1 - params.oceanLevel, 1e-6), 0, 1);
+
+    if (landT < 0.5) {
+      const t = Math.pow(landT / 0.5, 1.1);
+      baseColor = palette.low.clone().lerp(palette.mid, t);
+    } else {
+      const highT = Math.pow((landT - 0.5) / 0.5, 1.3);
+      baseColor = palette.mid.clone().lerp(palette.high, highT);
+    }
   }
 
-  const landT = THREE.MathUtils.clamp((elevation - params.oceanLevel) / Math.max(1 - params.oceanLevel, 1e-6), 0, 1);
-
-  if (landT < 0.5) {
-    const t = Math.pow(landT / 0.5, 1.1);
-    scratchColor.copy(palette.low).lerp(palette.mid, t);
-    return scratchColor;
-  }
-
-  const highT = Math.pow((landT - 0.5) / 0.5, 1.3);
-  scratchColor.copy(palette.mid).lerp(palette.high, highT);
+  // No core color blending - using physical core sphere instead
   return scratchColor;
 }
 
@@ -2451,8 +2528,23 @@ function updatePalette() {
   palette.low.set(params.colorLow);
   palette.mid.set(params.colorMid);
   palette.high.set(params.colorHigh);
+  palette.core.set(params.colorCore);
   palette.atmosphere.set(params.atmosphereColor);
   atmosphereMaterial.color.copy(palette.atmosphere);
+}
+
+function updateCore() {
+  if (coreMesh) {
+    const coreScale = params.radius * params.coreSize;
+    coreMesh.scale.setScalar(coreScale);
+    coreMesh.material.color.set(params.colorCore);
+    
+    // Core is solid when enabled and visible
+    coreMesh.visible = params.coreEnabled && params.coreVisible;
+    
+    // Update material properties for better rendering
+    coreMesh.material.needsUpdate = true;
+  }
 }
 
 function updateClouds() {
@@ -4230,9 +4322,10 @@ function initMoonPhysics() {
     const moonMass = getMoonMass(moon);
     const mu = getGravParameter(planetMass, params.physicsTwoWay ? moonMass : 0);
     const velLocal = computeOrbitVelocity(semiMajor, eccentricity, phase, mu, tmpVecA);
+    // Apply orbit speed scaling to match non-physics mode behavior
     const rawSpeedSetting = moon.orbitSpeed ?? 0.4;
-    const speedFactor = (Math.sign(rawSpeedSetting) || 1) * (THREE.MathUtils.clamp(Math.abs(rawSpeedSetting), 0.2, 4) / 0.4);
-    velLocal.multiplyScalar(speedFactor);
+    const speedMultiplier = (Math.sign(rawSpeedSetting) || 1) * Math.max(0.2, Math.abs(rawSpeedSetting));
+    velLocal.multiplyScalar(speedMultiplier);
     const velWorld = velLocal.clone().applyMatrix3(rotMatrix);
     if (params.physicsTwoWay) {
       totalMomentum.add(tmpVecE.copy(velWorld).multiplyScalar(moonMass));
@@ -4327,6 +4420,17 @@ function stepMoonPhysics(dt) {
         pivot.userData._collided = true;
         collidedIndices.add(index);
       }
+      
+      // Core collision detection
+      if (params.coreEnabled && coreMesh) {
+        const coreRadius = params.radius * params.coreSize;
+        const coreDist = Math.max(1e-5, phys.posWorld.length());
+        if (coreDist <= coreRadius + moonRadius * 0.8) {
+          pivot.userData._collided = true;
+          collidedIndices.add(index);
+          pivot.userData._hitCore = true; // Mark as core collision
+        }
+      }
     });
 
   }
@@ -4356,9 +4460,10 @@ function stepMoonPhysics(dt) {
       const color = mesh?.material?.color || new THREE.Color(0xffaa66);
       const pos = phys?.posWorld || pivot.getWorldPosition(new THREE.Vector3());
       const strength = Math.max(0.3, (mesh?.scale?.x || 0.2) / Math.max(0.1, params.radius));
+      const isCoreCollision = pivot.userData._hitCore;
 
-      // Apply local crater deformation to the planet surface at impact
-      if (params.impactDeformation && mesh) {
+      // Apply local crater deformation to the planet surface at impact (only for surface collisions)
+      if (params.impactDeformation && mesh && !isCoreCollision) {
         try {
           const moonRadius = mesh.scale.x; // in world units (approx projectile radius)
           const planetWorldPos = planetRoot.getWorldPosition(new THREE.Vector3());
@@ -4406,7 +4511,15 @@ function stepMoonPhysics(dt) {
         }
       }
 
-      spawnExplosion(pos, color, 2 * strength);
+      // Different explosion for core vs surface collisions
+      if (isCoreCollision) {
+        // Core collision: more dramatic explosion with core color
+        const coreColor = new THREE.Color(params.colorCore);
+        spawnExplosion(pos, coreColor, 3 * strength);
+      } else {
+        // Surface collision: normal explosion
+        spawnExplosion(pos, color, 2 * strength);
+      }
 
       // Clean up orbit line for this moon
       if (pivot.userData.orbit) {
@@ -4494,6 +4607,10 @@ function surpriseMe() {
   params.colorLow = `#${new THREE.Color().setHSL(hue2, 0.42, 0.3).getHexString()}`;
   params.colorMid = `#${new THREE.Color().setHSL(hue2, 0.36, 0.58).getHexString()}`;
   params.colorHigh = `#${new THREE.Color().setHSL(hue3, 0.15, 0.92).getHexString()}`;
+  params.colorCore = `#${new THREE.Color().setHSL(hue, 0.4, 0.3).getHexString()}`;
+  params.coreEnabled = rng.next() > 0; // 70% chance of having a core
+  params.coreSize = THREE.MathUtils.lerp(0.2, 0.6, rng.next());
+  params.coreVisible = rng.next() > 0; // 20% chance of being visible
   params.atmosphereColor = `#${new THREE.Color().setHSL(hue2, 0.5, 0.7).getHexString()}`;
   params.cloudsOpacity = THREE.MathUtils.lerp(0.1, 0.8, rng.next());
   params.cloudHeight = THREE.MathUtils.lerp(0.01, 0.12, rng.next());
@@ -4600,6 +4717,11 @@ function surpriseMe() {
   params.explosionColorVariation = THREE.MathUtils.lerp(0.2, 0.8, rng.next()); // How much color variation
   params.explosionSpeedVariation = THREE.MathUtils.lerp(0.5, 2.0, rng.next()); // Speed variation multiplier
   params.explosionSizeVariation = THREE.MathUtils.lerp(0.3, 1.5, rng.next()); // Size variation multiplier
+  
+  // Impact settings for surprise me
+  params.impactStrengthMul = THREE.MathUtils.lerp(1.5, 4.0, rng.next());
+  params.impactSpeedMul = THREE.MathUtils.lerp(0.8, 2.0, rng.next());
+  params.impactMassMul = THREE.MathUtils.lerp(1.2, 3.0, rng.next());
 
   // Moons
   params.moonCount = Math.round(THREE.MathUtils.lerp(0, 4, rng.next()));
@@ -4609,7 +4731,7 @@ function surpriseMe() {
     moonSettings.push({
       size: THREE.MathUtils.lerp(0.08, 0.4, rng.next()),
       distance: THREE.MathUtils.lerp(2.4, 12.5, rng.next()),
-      orbitSpeed: THREE.MathUtils.lerp(0.15, 0.8, rng.next()),
+      orbitSpeed: THREE.MathUtils.lerp(0.4, 1.2, rng.next()),
       inclination: THREE.MathUtils.lerp(-25, 25, rng.next()),
       color: `#${new THREE.Color().setHSL((hue + 0.5 + rng.next() * 0.2) % 1, 0.15 + rng.next() * 0.3, 0.6 + rng.next() * 0.2).getHexString()}`,
       phase: rng.next() * Math.PI * 2,

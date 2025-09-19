@@ -166,6 +166,35 @@ export function setupPlanetControls({
       scheduleShareUpdate();
     });
 
+  guiControllers.colorCore = paletteFolder.addColor(params, "colorCore")
+    .name("Core")
+    .onChange(() => {
+      updatePalette();
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.coreEnabled = paletteFolder.add(params, "coreEnabled")
+    .name("Enable Core")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.coreSize = paletteFolder.add(params, "coreSize", 0.05, 1.0, 0.01)
+    .name("Core Size")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.coreVisible = paletteFolder.add(params, "coreVisible")
+    .name("Show Core")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
   guiControllers.atmosphereColor = paletteFolder.addColor(params, "atmosphereColor")
     .name("Atmosphere")
     .onChange(() => {
