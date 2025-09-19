@@ -7,7 +7,7 @@ const rateLimit = require('express-rate-limit');
 const { nanoid } = require('nanoid');
 
 // DB
-const { initDatabase, saveConfiguration, getConfiguration, deleteConfiguration } = require('./database');
+const { initDatabase, saveConfiguration, getConfiguration, deleteConfiguration, getConfigurationCount } = require('./database');
 
 const app = express();
 
@@ -85,6 +85,17 @@ router.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
     version: '1.0.0'
   });
+});
+
+// Stats - total configurations
+router.get('/api/stats/count', async (req, res) => {
+  try {
+    const total = await getConfigurationCount();
+    res.json({ total });
+  } catch (e) {
+    console.error('Error getting configuration count:', e);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Save

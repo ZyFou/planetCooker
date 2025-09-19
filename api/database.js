@@ -134,6 +134,22 @@ function updateAccessStats(id) {
   });
 }
 
+// Get total configuration count
+function getConfigurationCount() {
+  return new Promise((resolve, reject) => {
+    const sql = 'SELECT COUNT(*) as count FROM configurations';
+
+    db.get(sql, [], (err, row) => {
+      if (err) {
+        console.error('Error counting configurations:', err.message);
+        reject(err);
+      } else {
+        resolve(row?.count ?? 0);
+      }
+    });
+  });
+}
+
 // Delete a configuration
 function deleteConfiguration(id) {
   return new Promise((resolve, reject) => {
@@ -241,6 +257,7 @@ module.exports = {
   initDatabase,
   saveConfiguration,
   getConfiguration,
+  getConfigurationCount,
   deleteConfiguration,
   getRecentConfigurations,
   getDatabaseStats,

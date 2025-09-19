@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -28,13 +28,19 @@
           </p>
           <div class="hero__actions">
             <a class="btn btn-primary" href="/studio.html" data-launch-studio>Launch The Studio</a>
-            <a
+            <!-- <a
               class="btn btn-ghost"
               href="https://github.com/zyfod/planetCooker"
               target="_blank"
               rel="noopener noreferrer"
               >View Source</a
-            >
+            > -->
+          </div>
+          <div class="hero__meta" aria-live="polite">
+            <dl class="hero__stat">
+              <dt>Total Systems Shared</dt>
+              <dd id="systems-count" data-loaded="false">—</dd>
+            </dl>
           </div>
         </section>
 
@@ -81,6 +87,30 @@
           });
         }
       })();
+    </script>
+    <script type="module">
+      import { API_BASE_URL } from './src/app/config.js';
+
+      const countTarget = document.getElementById('systems-count');
+      if (countTarget) {
+        const endpoint = `${API_BASE_URL.replace(/\/?$/, '')}/stats/count`;
+
+        fetch(endpoint, { cache: 'no-store' })
+          .then((response) => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return response.json();
+          })
+          .then((payload) => {
+            const total = Number(payload?.total);
+            if (Number.isFinite(total)) {
+              countTarget.textContent = total.toLocaleString();
+              countTarget.dataset.loaded = 'true';
+            }
+          })
+          .catch((err) => {
+            console.warn('Unable to retrieve system count', err);
+          });
+      }
     </script>
   </body>
 </html>

@@ -105,6 +105,9 @@ Delete a configuration (optional cleanup).
 ### `GET /api/recent?limit=10`
 Get recent configurations (for admin/debugging).
 
+### `GET /api/stats/count`
+Return the total number of stored configurations.
+
 ### `GET /api/health`
 Health check endpoint.
 
