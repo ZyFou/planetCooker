@@ -8,9 +8,9 @@ import { debounce, SeededRNG } from "./app/utils.js";
 import { initControlSearch } from "./app/gui/controlSearch.js";
 import { setupPlanetControls } from "./app/gui/planetControls.js";
 import { setupMoonControls } from "./app/gui/moonControls.js";
-
-// API configuration - defined early to avoid initialization issues
-const API_BASE_URL = 'https://zyfod.dev/planetApi/api';
+import { createStarfield as createStarfieldExt, createSunTexture as createSunTextureExt } from "./app/stars.js";
+import { generateRingTexture as generateRingTextureExt, generateAnnulusTexture as generateAnnulusTextureExt } from "./app/textures.js";
+import { encodeShare as encodeShareExt, decodeShare as decodeShareExt, padBase64 as padBase64Ext, saveConfigurationToAPI as saveConfigurationToAPIExt, loadConfigurationFromAPI as loadConfigurationFromAPIExt } from "./app/shareCore.js";
 
 const debounceShare = debounce(() => {
   if (!shareDirty) return;
@@ -2912,206 +2912,12 @@ function updateStarParticles(dt) {
 }
 
 function generateRingTexture(innerRatio) {
-  const size = 512;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) {
-    const fallback = new THREE.CanvasTexture(canvas);
-    fallback.colorSpace = THREE.SRGBColorSpace;
-    fallback.wrapS = THREE.ClampToEdgeWrapping;
-    fallback.wrapT = THREE.ClampToEdgeWrapping;
-    fallback.anisotropy = 4;
-    fallback.generateMipmaps = false;
-    fallback.minFilter = THREE.LinearFilter;
-    fallback.magFilter = THREE.LinearFilter;
-    fallback.needsUpdate = true;
-    return fallback;
-  }
-  const image = ctx.createImageData(size, size);
-  const data = image.data;
-  const center = size * 0.5;
-
-  const baseColor = new THREE.Color(params.ringColor || 0xc7b299);
-  const highlight = baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.45);
-  const shadow = baseColor.clone().lerp(new THREE.Color(0, 0, 0), 0.4);
-  const baseOpacity = THREE.MathUtils.clamp(params.ringOpacity ?? 0.6, 0, 1);
-  const noiseStrength = THREE.MathUtils.clamp(params.ringNoiseStrength ?? 0.55, 0, 1);
-  const freq = Math.max(0.2, params.ringNoiseScale ?? 3.2);
-  const rng = new SeededRNG(`${params.seed || "ring"}-${freq.toFixed(2)}-${noiseStrength.toFixed(2)}`);
-  const noise = createNoise3D(() => rng.next());
-
-  const inner = THREE.MathUtils.clamp(innerRatio, 0, 0.98);
-  const innerFeather = 0.03;
-  const outerFeather = 0.04;
-
-  for (let y = 0; y < size; y += 1) {
-    const dy = (y - center) / center;
-    for (let x = 0; x < size; x += 1) {
-      const dx = (x - center) / center;
-      const radius = Math.sqrt(dx * dx + dy * dy);
-      const idx = (y * size + x) * 4;
-
-      if (radius <= inner || radius >= 1) {
-        data[idx + 3] = 0;
-        continue;
-      }
-
-      const innerFade = THREE.MathUtils.smoothstep(radius, inner, inner + innerFeather);
-      const outerFade = 1 - THREE.MathUtils.smoothstep(radius, 1 - outerFeather, 1);
-      const radialFade = THREE.MathUtils.clamp(innerFade * outerFade, 0, 1);
-      if (radialFade <= 0) {
-        data[idx + 3] = 0;
-        continue;
-      }
-
-      const angle = (Math.atan2(dy, dx) + Math.PI) / (Math.PI * 2);
-      // Make angular noise seamless by mapping angle to periodic coordinates
-      const theta = angle * Math.PI * 2;
-      const ax = Math.cos(theta);
-      const ay = Math.sin(theta);
-
-      // Use periodic (ax, ay) so angle 0 and 2π sample identical noise space
-      const radialComponent = noise(radius * freq, ax * freq * 0.8, ay * freq * 0.8) * 0.5 + 0.5;
-      const angularComponent = noise(ax * freq * 1.6, ay * freq * 1.6, radius * freq) * 0.5 + 0.5;
-      const combined = THREE.MathUtils.clamp(radialComponent * 0.6 + angularComponent * 0.4, 0, 1);
-      const mix = THREE.MathUtils.lerp(0.5, combined, noiseStrength);
-
-      const r = THREE.MathUtils.lerp(shadow.r, highlight.r, mix) * 255;
-      const g = THREE.MathUtils.lerp(shadow.g, highlight.g, mix) * 255;
-      const b = THREE.MathUtils.lerp(shadow.b, highlight.b, mix) * 255;
-      const alpha = radialFade * baseOpacity * THREE.MathUtils.lerp(0.6, 1, mix);
-
-      data[idx + 0] = Math.max(0, Math.min(255, Math.round(r)));
-      data[idx + 1] = Math.max(0, Math.min(255, Math.round(g)));
-      data[idx + 2] = Math.max(0, Math.min(255, Math.round(b)));
-      data[idx + 3] = Math.max(0, Math.min(255, Math.round(alpha * 255)));
-    }
-  }
-
-  // Ensure the first and last columns are identical to remove any residual seam
-  for (let y = 0; y < size; y += 1) {
-    const idx0 = (y * size + 0) * 4;
-    const idx1 = (y * size + (size - 1)) * 4;
-    data[idx1 + 0] = data[idx0 + 0];
-    data[idx1 + 1] = data[idx0 + 1];
-    data[idx1 + 2] = data[idx0 + 2];
-    data[idx1 + 3] = data[idx0 + 3];
-  }
-
-  ctx.putImageData(image, 0, 0);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.wrapS = THREE.ClampToEdgeWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.anisotropy = 4;
-  texture.generateMipmaps = false;
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.needsUpdate = true;
-  return texture;
+  return generateRingTextureExt(innerRatio, params);
 }
 
 // Generate an annulus texture with supplied color/noise parameters (for black hole disk/halo Texture style)
-function generateAnnulusTexture({ innerRatio, color, opacity = 1, noiseScale = 3.0, noiseStrength = 0.5, seedKey = "bh" }) {
-  const size = 512;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) {
-    const fallback = new THREE.CanvasTexture(canvas);
-    fallback.colorSpace = THREE.SRGBColorSpace;
-    fallback.wrapS = THREE.ClampToEdgeWrapping;
-    fallback.wrapT = THREE.ClampToEdgeWrapping;
-    fallback.anisotropy = 4;
-    fallback.generateMipmaps = false;
-    fallback.minFilter = THREE.LinearFilter;
-    fallback.magFilter = THREE.LinearFilter;
-    fallback.needsUpdate = true;
-    return fallback;
-  }
-  const image = ctx.createImageData(size, size);
-  const data = image.data;
-  const center = size * 0.5;
-
-  const baseColor = new THREE.Color(color || 0xffffff);
-  const highlight = baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.45);
-  const shadow = baseColor.clone().lerp(new THREE.Color(0, 0, 0), 0.4);
-  const baseOpacity = THREE.MathUtils.clamp(opacity ?? 1, 0, 1);
-  const nStrength = THREE.MathUtils.clamp(noiseStrength ?? 0.5, 0, 1);
-  const freq = Math.max(0.2, noiseScale ?? 3.0);
-  const rng = new SeededRNG(`${params.seed || seedKey}-annulus-${freq.toFixed(2)}-${nStrength.toFixed(2)}`);
-  const noise = createNoise3D(() => rng.next());
-
-  const inner = THREE.MathUtils.clamp(innerRatio, 0, 0.98);
-  const innerFeather = 0.03;
-  const outerFeather = 0.04;
-
-  for (let y = 0; y < size; y += 1) {
-    const dy = (y - center) / center;
-    for (let x = 0; x < size; x += 1) {
-      const dx = (x - center) / center;
-      const radius = Math.sqrt(dx * dx + dy * dy);
-      const idx = (y * size + x) * 4;
-
-      if (radius <= inner || radius >= 1) {
-        data[idx + 3] = 0;
-        continue;
-      }
-
-      const innerFade = THREE.MathUtils.smoothstep(radius, inner, inner + innerFeather);
-      const outerFade = 1 - THREE.MathUtils.smoothstep(radius, 1 - outerFeather, 1);
-      const radialFade = THREE.MathUtils.clamp(innerFade * outerFade, 0, 1);
-      if (radialFade <= 0) {
-        data[idx + 3] = 0;
-        continue;
-      }
-
-      const angle = (Math.atan2(dy, dx) + Math.PI) / (Math.PI * 2);
-      const theta = angle * Math.PI * 2;
-      const ax = Math.cos(theta);
-      const ay = Math.sin(theta);
-
-      const radialComponent = noise(radius * freq, ax * freq * 0.8, ay * freq * 0.8) * 0.5 + 0.5;
-      const angularComponent = noise(ax * freq * 1.6, ay * freq * 1.6, radius * freq) * 0.5 + 0.5;
-      const combined = THREE.MathUtils.clamp(radialComponent * 0.6 + angularComponent * 0.4, 0, 1);
-      const mix = THREE.MathUtils.lerp(0.5, combined, nStrength);
-
-      const r = THREE.MathUtils.lerp(shadow.r, highlight.r, mix) * 255;
-      const g = THREE.MathUtils.lerp(shadow.g, highlight.g, mix) * 255;
-      const b = THREE.MathUtils.lerp(shadow.b, highlight.b, mix) * 255;
-      const alpha = radialFade * baseOpacity * THREE.MathUtils.lerp(0.6, 1, mix);
-
-      data[idx + 0] = Math.max(0, Math.min(255, Math.round(r)));
-      data[idx + 1] = Math.max(0, Math.min(255, Math.round(g)));
-      data[idx + 2] = Math.max(0, Math.min(255, Math.round(b)));
-      data[idx + 3] = Math.max(0, Math.min(255, Math.round(alpha * 255)));
-    }
-  }
-
-  // Ensure seam-free
-  for (let y = 0; y < size; y += 1) {
-    const idx0 = (y * size + 0) * 4;
-    const idx1 = (y * size + (size - 1)) * 4;
-    data[idx1 + 0] = data[idx0 + 0];
-    data[idx1 + 1] = data[idx0 + 1];
-    data[idx1 + 2] = data[idx0 + 2];
-    data[idx1 + 3] = data[idx0 + 3];
-  }
-
-  ctx.putImageData(image, 0, 0);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.wrapS = THREE.ClampToEdgeWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.anisotropy = 4;
-  texture.generateMipmaps = false;
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.needsUpdate = true;
-  return texture;
+function generateAnnulusTexture(opts) {
+  return generateAnnulusTextureExt({ ...opts, seed: params.seed });
 }
 function updateRings() {
   if (!ringGroup) return;
@@ -3946,77 +3752,24 @@ function buildSharePayload() {
 }
 
 
-// Save configuration to API and get short ID
+// Save/Load via API helpers
 async function saveConfigurationToAPI(configData, metadata = {}) {
-  try {
-    const response = await fetch(`${API_BASE_URL}/share`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        data: configData,
-        metadata: {
-          ...metadata,
-          preset: params.preset,
-          moonCount: params.moonCount,
-          timestamp: new Date().toISOString()
-        }
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-
-    const result = await response.json();
-    return result;
-  } catch (error) {
-    console.error('Error saving to API:', error);
-    throw error;
-  }
+  return saveConfigurationToAPIExt({
+    ...configData,
+  }, {
+    ...metadata,
+    preset: params.preset,
+    moonCount: params.moonCount,
+  });
 }
 
-// Load configuration from API by ID
 async function loadConfigurationFromAPI(id) {
-  try {
-    const response = await fetch(`${API_BASE_URL}/share/${id}`);
-    
-    if (!response.ok) {
-      if (response.status === 404) {
-        throw new Error('Configuration not found');
-      }
-      throw new Error(`API error: ${response.status}`);
-    }
-
-    const result = await response.json();
-    return result;
-  } catch (error) {
-    console.error('Error loading from API:', error);
-    throw error;
-  }
+  return loadConfigurationFromAPIExt(id);
 }
 
-function encodeShare(payload) {
-  const json = JSON.stringify(payload);
-  const base64 = btoa(json)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-  return base64;
-}
-
-function decodeShare(code) {
-  const padded = padBase64(code.replace(/-/g, "+").replace(/_/g, "/"));
-  const json = atob(padded);
-  return JSON.parse(json);
-}
-
-function padBase64(str) {
-  const pad = str.length % 4;
-  if (pad === 0) return str;
-  return `${str}${"=".repeat(4 - pad)}`;
-}
+function encodeShare(payload) { return encodeShareExt(payload); }
+function decodeShare(code) { return decodeShareExt(code); }
+function padBase64(str) { return padBase64Ext(str); }
 
 function chunkCode(str, size) {
   const chunks = [];
@@ -4155,79 +3908,8 @@ function updateStarfieldUniforms() {
   uniforms.uPixelRatio.value = Math.min(window.devicePixelRatio, 2);
 }
 
-function createStarfield({ seed, count }) {
-  const starCount = Math.max(100, Math.round(count || 2000));
-  const geometry = new THREE.BufferGeometry();
-  const positions = new Float32Array(starCount * 3);
-  const colors = new Float32Array(starCount * 3);
-  const sizes = new Float32Array(starCount);
-  const phases = new Float32Array(starCount);
-  const rng = new SeededRNG(`${seed || "default"}-stars`);
-  const color = new THREE.Color();
-
-  for (let i = 0; i < starCount; i += 1) {
-    const radius = THREE.MathUtils.lerp(90, 280, rng.next());
-    const u = rng.next() * 2 - 1;
-    const theta = rng.next() * Math.PI * 2;
-    const phi = Math.acos(THREE.MathUtils.clamp(u, -1, 1));
-    const sinPhi = Math.sin(phi);
-    positions[i * 3 + 0] = radius * sinPhi * Math.cos(theta);
-    positions[i * 3 + 1] = radius * Math.cos(phi);
-    positions[i * 3 + 2] = radius * sinPhi * Math.sin(theta);
-
-    const hue = (0.52 + rng.next() * 0.22) % 1;
-    const saturation = 0.15 + rng.next() * 0.35;
-    const lightness = 0.65 + rng.next() * 0.3;
-    color.setHSL(hue, saturation, lightness);
-    colors[i * 3 + 0] = color.r;
-    colors[i * 3 + 1] = color.g;
-    colors[i * 3 + 2] = color.b;
-
-    sizes[i] = THREE.MathUtils.lerp(0.6, 2.1, rng.next());
-    phases[i] = rng.next() * Math.PI * 2;
-  }
-
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-  geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
-  geometry.setAttribute("aPhase", new THREE.BufferAttribute(phases, 1));
-
-  const pointTexture = createSunTexture({ inner: 0.0, outer: 0.5, innerAlpha: 1, outerAlpha: 0 });
-  const material = new THREE.PointsMaterial({
-    size: 1.6,
-    map: pointTexture,
-    vertexColors: true,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    sizeAttenuation: true
-  });
-
-  const points = new THREE.Points(geometry, material);
-  points.frustumCulled = false;
-  return points;
-}
-function createSunTexture({ inner = 0.1, outer = 1, innerAlpha = 1, outerAlpha = 0 } = {}) {
-  const size = 256;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  const innerRadius = Math.max(0, inner) * size * 0.5;
-  const outerRadius = Math.max(innerRadius + 1, outer * size * 0.5);
-  const gradient = ctx.createRadialGradient(size / 2, size / 2, innerRadius, size / 2, size / 2, outerRadius);
-  gradient.addColorStop(0, `rgba(255,255,255,${innerAlpha})`);
-  gradient.addColorStop(0.5, `rgba(255,255,255,${innerAlpha * 0.7})`);
-  gradient.addColorStop(1, `rgba(255,255,255,${outerAlpha})`);
-  ctx.clearRect(0, 0, size, size);
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, size, size);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.needsUpdate = true;
-  texture.anisotropy = 2;
-  return texture;
-}
+function createStarfield({ seed, count }) { return createStarfieldExt({ seed, count }); }
+function createSunTexture(opts) { return createSunTextureExt(opts); }
 
 // Explosion particles when a moon is destroyed
 function spawnExplosion(position, color = new THREE.Color(0xffaa66), strength = 1) {
