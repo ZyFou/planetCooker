@@ -257,6 +257,9 @@ export function setupPlanetControls({
     });
   };
 
+  // Expose to main so programmatic variant changes can update visibility
+  guiControllers.refreshStarVariantVisibility = refreshStarVariantVisibility;
+
   guiControllers.sunVariant = sunFolder.add(params, "sunVariant", ["Star", "Black Hole"])
     .name("Star Type")
     .onChange((value) => {
@@ -401,6 +404,24 @@ export function setupPlanetControls({
     });
   blackHoleControllers.push(guiControllers.blackHoleCoreSize);
 
+  guiControllers.blackHoleDiskEnabled = sunFolder.add(params, "blackHoleDiskEnabled")
+    .name("Show Disk")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+  blackHoleControllers.push(guiControllers.blackHoleDiskEnabled);
+
+  guiControllers.blackHoleHaloEnabled = sunFolder.add(params, "blackHoleHaloEnabled")
+    .name("Show Halo")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+  blackHoleControllers.push(guiControllers.blackHoleHaloEnabled);
+
   guiControllers.blackHoleDiskRadius = sunFolder.add(params, "blackHoleDiskRadius", 0.6, 6.5, 0.05)
     .name("Disk Radius")
     .onChange(() => {
@@ -427,6 +448,32 @@ export function setupPlanetControls({
       scheduleShareUpdate();
     });
   blackHoleControllers.push(guiControllers.blackHoleDiskIntensity);
+
+  guiControllers.blackHoleHaloIntensity = sunFolder.add(params, "blackHoleHaloIntensity", 0, 4, 0.05)
+    .name("Halo Brightness")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+  blackHoleControllers.push(guiControllers.blackHoleHaloIntensity);
+
+  // Styles for disk and halo
+  guiControllers.blackHoleDiskStyle = sunFolder.add(params, "blackHoleDiskStyle", ["Noise", "Texture", "Flat"]).name("Disk Style")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+  blackHoleControllers.push(guiControllers.blackHoleDiskStyle);
+
+  guiControllers.blackHoleHaloStyle = sunFolder.add(params, "blackHoleHaloStyle", ["Noise", "Texture", "Flat"]).name("Halo Style")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+  blackHoleControllers.push(guiControllers.blackHoleHaloStyle);
 
   guiControllers.blackHoleDiskTilt = sunFolder.add(params, "blackHoleDiskTilt", -90, 90, 1)
     .name("Disk Tilt")
@@ -463,6 +510,15 @@ export function setupPlanetControls({
       scheduleShareUpdate();
     });
   blackHoleControllers.push(guiControllers.blackHoleSpinSpeed);
+
+  guiControllers.blackHoleHaloSpinSpeed = sunFolder.add(params, "blackHoleHaloSpinSpeed", -2, 2, 0.01)
+    .name("Halo Spin Speed")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+  blackHoleControllers.push(guiControllers.blackHoleHaloSpinSpeed);
 
   guiControllers.blackHoleDiskNoiseScale = sunFolder.add(params, "blackHoleDiskNoiseScale", 0.1, 4, 0.05)
     .name("Disk Noise Scale")

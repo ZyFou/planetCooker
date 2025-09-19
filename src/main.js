@@ -496,6 +496,13 @@ blackHoleSpinGroup.add(blackHoleHaloSecondary);
 
 const blackHoleHaloMaterials = [blackHoleHaloMaterial, blackHoleHaloSecondary.material];
 
+// Optional basic materials/textures when using Texture style
+let blackHoleDiskBasicMaterial = null;
+let blackHoleDiskTexture = null;
+let blackHoleHaloBasicMaterial = null;
+let blackHoleHaloSecondaryBasicMaterial = null;
+let blackHoleHaloTexture = null;
+
 let starParticleState = {
   points: null,
   geometry: null,
@@ -529,6 +536,7 @@ const blackHoleState = {
   lastHaloNoiseStrength: null,
   baseTwist: 0,
   spinAngle: 0,
+  haloSpinAngle: 0,
   lastColor: new THREE.Color()
 };
 
@@ -608,6 +616,11 @@ const params = {
   blackHoleDiskYaw: 0,
   blackHoleDiskTwist: 0,
   blackHoleSpinSpeed: 0.12,
+  blackHoleHaloSpinSpeed: 0,
+  blackHoleDiskEnabled: true,
+  blackHoleHaloEnabled: true,
+  blackHoleDiskStyle: "Noise", // Noise | Texture | Flat
+  blackHoleHaloStyle: "Noise", // Noise | Texture | Flat
   blackHoleDiskNoiseScale: 1.3,
   blackHoleDiskNoiseStrength: 0.35,
   blackHoleHaloRadius: 3.2,
@@ -1230,6 +1243,9 @@ const shareKeys = [
   "blackHoleDiskYaw",
   "blackHoleDiskTwist",
   "blackHoleSpinSpeed",
+  "blackHoleHaloSpinSpeed",
+  "blackHoleDiskStyle",
+  "blackHoleHaloStyle",
   "blackHoleDiskNoiseScale",
   "blackHoleDiskNoiseStrength",
   "blackHoleHaloRadius",
@@ -2095,6 +2111,14 @@ function animate(timestamp) {
       blackHoleState.spinAngle = 0;
       applyBlackHoleSpinRotation();
     }
+    const haloSpin = params.blackHoleHaloSpinSpeed ?? 0;
+    if (Math.abs(haloSpin) > 1e-4) {
+      blackHoleState.haloSpinAngle = (blackHoleState.haloSpinAngle || 0) + delta * haloSpin;
+      applyBlackHoleHaloSpinRotation();
+    } else if (blackHoleState.haloSpinAngle) {
+      blackHoleState.haloSpinAngle = 0;
+      applyBlackHoleHaloSpinRotation();
+    }
   } else if (blackHoleState.spinAngle) {
     blackHoleState.spinAngle = 0;
     applyBlackHoleSpinRotation();
@@ -2505,17 +2529,94 @@ function updateBlackHole(baseColor) {
     blackHoleState.lastDiskRadius = diskRadius;
   }
 
-  const diskUniforms = blackHoleDiskMaterial.uniforms;
-  diskUniforms.uScale.value = diskRadius;
-  diskUniforms.uOuterRadius.value = diskRadius;
-  diskUniforms.uInnerRadius.value = diskInner;
-  diskUniforms.uFeather.value = diskFeather;
-  diskUniforms.uIntensity.value = diskIntensity;
-  diskUniforms.uNoiseScale.value = diskNoiseScale;
-  diskUniforms.uNoiseStrength.value = diskNoiseStrength;
-  diskUniforms.uColor.value.copy(color);
+  // Update materials based on selected style
+  blackHoleDisk.visible = params.blackHoleDiskEnabled !== false;
+  const diskStyle = params.blackHoleDiskStyle || "Noise"; // Noise | Flat | Texture
+  if (diskStyle === "Noise") {
+    if (!(blackHoleDisk.material && blackHoleDisk.material.uniforms)) {
+      // switch back to shader material if needed
+      blackHoleDisk.material = new THREE.ShaderMaterial({
+        uniforms: THREE.UniformsUtils.clone(blackHoleDiskUniforms),
+        vertexShader: blackHoleDiskVertexShader,
+        fragmentShader: blackHoleDiskFragmentShader,
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false
+      });
+    }
+    const diskUniforms = blackHoleDisk.material.uniforms;
+    diskUniforms.uScale.value = diskRadius;
+    diskUniforms.uOuterRadius.value = diskRadius;
+    diskUniforms.uInnerRadius.value = diskInner;
+    diskUniforms.uFeather.value = diskFeather;
+    diskUniforms.uIntensity.value = diskIntensity;
+    diskUniforms.uNoiseScale.value = diskNoiseScale;
+    diskUniforms.uNoiseStrength.value = diskNoiseStrength;
+    diskUniforms.uColor.value.copy(color);
+    blackHoleDisk.material.opacity = 1;
+    blackHoleDisk.material.needsUpdate = true;
+  } else if (diskStyle === "Flat") {
+    // Flat ring: color-only band using alphaMap annulus (no noise)
+    if (blackHoleDiskTexture) { try { blackHoleDiskTexture.dispose(); } catch {} }
+    blackHoleDiskTexture = generateAnnulusTexture({
+      innerRatio: THREE.MathUtils.clamp(diskInner / Math.max(0.0001, diskRadius), 0, 0.98),
+      color: color,
+      opacity: THREE.MathUtils.clamp(diskIntensity, 0, 1),
+      noiseScale: 1.0,
+      noiseStrength: 0.0,
+      seedKey: "bh-disk-flat"
+    });
+    if (!blackHoleDiskBasicMaterial || !blackHoleDiskBasicMaterial.isMeshBasicMaterial) {
+      blackHoleDiskBasicMaterial = new THREE.MeshBasicMaterial({
+        color: color.clone(),
+        transparent: true,
+        opacity: 1,
+        alphaMap: blackHoleDiskTexture,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false
+      });
+    } else {
+      blackHoleDiskBasicMaterial.color.copy(color);
+      blackHoleDiskBasicMaterial.opacity = 1;
+      blackHoleDiskBasicMaterial.alphaMap = blackHoleDiskTexture;
+      blackHoleDiskBasicMaterial.needsUpdate = true;
+    }
+    blackHoleDiskBasicMaterial.map = null;
+    blackHoleDisk.material = blackHoleDiskBasicMaterial;
+  } else {
+    // Texture
+    if (blackHoleDiskTexture) blackHoleDiskTexture.dispose();
+    blackHoleDiskTexture = generateAnnulusTexture({
+      innerRatio: THREE.MathUtils.clamp(diskInner / Math.max(0.0001, diskRadius), 0, 0.98),
+      color,
+      opacity: THREE.MathUtils.clamp(diskIntensity, 0, 1),
+      noiseScale: diskNoiseScale,
+      noiseStrength: diskNoiseStrength,
+      seedKey: "bh-disk"
+    });
+    if (!blackHoleDiskBasicMaterial || !blackHoleDiskBasicMaterial.isMeshBasicMaterial) {
+      blackHoleDiskBasicMaterial = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(0xffffff),
+        map: blackHoleDiskTexture,
+        alphaMap: blackHoleDiskTexture,
+        transparent: true,
+        opacity: 1,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      });
+    } else {
+      blackHoleDiskBasicMaterial.map = blackHoleDiskTexture;
+      blackHoleDiskBasicMaterial.alphaMap = blackHoleDiskTexture;
+      blackHoleDiskBasicMaterial.needsUpdate = true;
+    }
+    blackHoleDisk.material = blackHoleDiskBasicMaterial;
+  }
 
-  const haloRadius = Math.max(diskRadius * 1.05, params.blackHoleHaloRadius || diskRadius * 1.35);
+  const haloRadius = Math.max(diskRadius * 0.8, params.blackHoleHaloRadius || diskRadius * 1.35);
   const haloThickness = THREE.MathUtils.clamp(params.blackHoleHaloThickness ?? 0.45, 0.05, 0.95);
   const haloInner = THREE.MathUtils.clamp(haloRadius * (1 - haloThickness), diskRadius * 0.65, haloRadius - 0.02);
   const haloIntensity = Math.max(0, params.blackHoleHaloIntensity ?? 0.85);
@@ -2526,20 +2627,87 @@ function updateBlackHole(baseColor) {
   blackHoleHalo.scale.setScalar(haloRadius);
   blackHoleHaloSecondary.scale.setScalar(haloRadius);
 
-  blackHoleHaloMaterials.forEach((material) => {
-    material.uniforms.uScale.value = haloRadius;
-    material.uniforms.uOuterRadius.value = haloRadius;
-    material.uniforms.uInnerRadius.value = haloInner;
-    material.uniforms.uFeather.value = haloFeather;
-    material.uniforms.uIntensity.value = haloIntensity;
-    material.uniforms.uNoiseScale.value = haloNoiseScale;
-    material.uniforms.uNoiseStrength.value = haloNoiseStrength;
-    material.uniforms.uColor.value.copy(color);
-  });
+  const haloStyle = params.blackHoleHaloStyle || "Noise";
+  const haloEnabled = params.blackHoleHaloEnabled !== false;
+  blackHoleHalo.visible = haloEnabled;
+  blackHoleHaloSecondary.visible = haloEnabled;
+  if (haloStyle === "Noise") {
+    // ensure shader materials
+    if (!(blackHoleHalo.material && blackHoleHalo.material.uniforms)) {
+      blackHoleHalo.material = new THREE.ShaderMaterial({
+        uniforms: THREE.UniformsUtils.clone(blackHoleHaloUniforms),
+        vertexShader: blackHoleDiskVertexShader,
+        fragmentShader: blackHoleHaloFragmentShader,
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false
+      });
+    }
+    if (!(blackHoleHaloSecondary.material && blackHoleHaloSecondary.material.uniforms)) {
+      blackHoleHaloSecondary.material = blackHoleHalo.material.clone();
+    }
+    [blackHoleHalo.material, blackHoleHaloSecondary.material].forEach((material) => {
+      material.uniforms.uScale.value = haloRadius;
+      material.uniforms.uOuterRadius.value = haloRadius;
+      material.uniforms.uInnerRadius.value = haloInner;
+      material.uniforms.uFeather.value = haloFeather;
+      material.uniforms.uIntensity.value = haloIntensity;
+      material.uniforms.uNoiseScale.value = haloNoiseScale;
+      material.uniforms.uNoiseStrength.value = haloNoiseStrength;
+      material.uniforms.uColor.value.copy(color);
+    });
+  } else if (haloStyle === "Flat") {
+    // basic semi-transparent colored halos
+    if (!blackHoleHaloBasicMaterial || !blackHoleHaloBasicMaterial.isMeshBasicMaterial) {
+      blackHoleHaloBasicMaterial = new THREE.MeshBasicMaterial({
+        color: color.clone(),
+        transparent: true,
+        opacity: THREE.MathUtils.clamp(haloIntensity, 0, 1),
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false
+      });
+      blackHoleHaloSecondaryBasicMaterial = blackHoleHaloBasicMaterial.clone();
+    } else {
+      blackHoleHaloBasicMaterial.color.copy(color);
+      blackHoleHaloBasicMaterial.opacity = THREE.MathUtils.clamp(haloIntensity, 0, 1);
+      blackHoleHaloSecondaryBasicMaterial.color.copy(color);
+      blackHoleHaloSecondaryBasicMaterial.opacity = THREE.MathUtils.clamp(haloIntensity, 0, 1);
+    }
+    blackHoleHalo.material = blackHoleHaloBasicMaterial;
+    blackHoleHaloSecondary.material = blackHoleHaloSecondaryBasicMaterial;
+  } else {
+    // Texture style using ring texture generator
+    if (blackHoleHaloTexture) blackHoleHaloTexture.dispose();
+    blackHoleHaloTexture = generateAnnulusTexture({
+      innerRatio: THREE.MathUtils.clamp(haloInner / Math.max(0.0001, haloRadius), 0, 0.98),
+      color,
+      opacity: THREE.MathUtils.clamp(haloIntensity, 0, 1),
+      noiseScale: haloNoiseScale,
+      noiseStrength: haloNoiseStrength,
+      seedKey: "bh-halo"
+    });
+    const matTex = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(color),
+      map: blackHoleHaloTexture,
+      alphaMap: blackHoleHaloTexture,
+      transparent: true,
+      opacity: 1,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      toneMapped: false
+    });
+    blackHoleHalo.material = matTex;
+    blackHoleHaloSecondary.material = matTex.clone();
+  }
 
   const haloAngle = THREE.MathUtils.degToRad(THREE.MathUtils.clamp(params.blackHoleHaloAngle ?? 68, 0, 170));
-  blackHoleHalo.rotation.set(haloAngle, Math.PI / 2, 0);
-  blackHoleHaloSecondary.rotation.set(-haloAngle, -Math.PI / 2, 0);
+  blackHoleHalo.rotation.set(haloAngle, Math.PI / 2, (blackHoleState.haloSpinAngle || 0));
+  blackHoleHaloSecondary.rotation.set(-haloAngle, -Math.PI / 2, -(blackHoleState.haloSpinAngle || 0));
 
   const diskTilt = THREE.MathUtils.degToRad(params.blackHoleDiskTilt ?? 0);
   const diskYaw = THREE.MathUtils.degToRad(params.blackHoleDiskYaw ?? 0);
@@ -2574,6 +2742,13 @@ function applyBlackHoleSpinRotation() {
   if (!blackHoleDisk) return;
   // Spin only the noisy disk mesh around its own axis; keep halos static
   blackHoleDisk.rotation.z = (blackHoleState.baseTwist || 0) + (blackHoleState.spinAngle || 0);
+}
+
+function applyBlackHoleHaloSpinRotation() {
+  if (!blackHoleHalo || !blackHoleHaloSecondary) return;
+  // Spin halos in place around their local normal (Z here after set)
+  blackHoleHalo.rotation.z = (blackHoleState.haloSpinAngle || 0);
+  blackHoleHaloSecondary.rotation.z = -(blackHoleState.haloSpinAngle || 0);
 }
 
 function disposeStarParticles() {
@@ -2838,6 +3013,106 @@ function generateRingTexture(innerRatio) {
   return texture;
 }
 
+// Generate an annulus texture with supplied color/noise parameters (for black hole disk/halo Texture style)
+function generateAnnulusTexture({ innerRatio, color, opacity = 1, noiseScale = 3.0, noiseStrength = 0.5, seedKey = "bh" }) {
+  const size = 512;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    const fallback = new THREE.CanvasTexture(canvas);
+    fallback.colorSpace = THREE.SRGBColorSpace;
+    fallback.wrapS = THREE.ClampToEdgeWrapping;
+    fallback.wrapT = THREE.ClampToEdgeWrapping;
+    fallback.anisotropy = 4;
+    fallback.generateMipmaps = false;
+    fallback.minFilter = THREE.LinearFilter;
+    fallback.magFilter = THREE.LinearFilter;
+    fallback.needsUpdate = true;
+    return fallback;
+  }
+  const image = ctx.createImageData(size, size);
+  const data = image.data;
+  const center = size * 0.5;
+
+  const baseColor = new THREE.Color(color || 0xffffff);
+  const highlight = baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.45);
+  const shadow = baseColor.clone().lerp(new THREE.Color(0, 0, 0), 0.4);
+  const baseOpacity = THREE.MathUtils.clamp(opacity ?? 1, 0, 1);
+  const nStrength = THREE.MathUtils.clamp(noiseStrength ?? 0.5, 0, 1);
+  const freq = Math.max(0.2, noiseScale ?? 3.0);
+  const rng = new SeededRNG(`${params.seed || seedKey}-annulus-${freq.toFixed(2)}-${nStrength.toFixed(2)}`);
+  const noise = createNoise3D(() => rng.next());
+
+  const inner = THREE.MathUtils.clamp(innerRatio, 0, 0.98);
+  const innerFeather = 0.03;
+  const outerFeather = 0.04;
+
+  for (let y = 0; y < size; y += 1) {
+    const dy = (y - center) / center;
+    for (let x = 0; x < size; x += 1) {
+      const dx = (x - center) / center;
+      const radius = Math.sqrt(dx * dx + dy * dy);
+      const idx = (y * size + x) * 4;
+
+      if (radius <= inner || radius >= 1) {
+        data[idx + 3] = 0;
+        continue;
+      }
+
+      const innerFade = THREE.MathUtils.smoothstep(radius, inner, inner + innerFeather);
+      const outerFade = 1 - THREE.MathUtils.smoothstep(radius, 1 - outerFeather, 1);
+      const radialFade = THREE.MathUtils.clamp(innerFade * outerFade, 0, 1);
+      if (radialFade <= 0) {
+        data[idx + 3] = 0;
+        continue;
+      }
+
+      const angle = (Math.atan2(dy, dx) + Math.PI) / (Math.PI * 2);
+      const theta = angle * Math.PI * 2;
+      const ax = Math.cos(theta);
+      const ay = Math.sin(theta);
+
+      const radialComponent = noise(radius * freq, ax * freq * 0.8, ay * freq * 0.8) * 0.5 + 0.5;
+      const angularComponent = noise(ax * freq * 1.6, ay * freq * 1.6, radius * freq) * 0.5 + 0.5;
+      const combined = THREE.MathUtils.clamp(radialComponent * 0.6 + angularComponent * 0.4, 0, 1);
+      const mix = THREE.MathUtils.lerp(0.5, combined, nStrength);
+
+      const r = THREE.MathUtils.lerp(shadow.r, highlight.r, mix) * 255;
+      const g = THREE.MathUtils.lerp(shadow.g, highlight.g, mix) * 255;
+      const b = THREE.MathUtils.lerp(shadow.b, highlight.b, mix) * 255;
+      const alpha = radialFade * baseOpacity * THREE.MathUtils.lerp(0.6, 1, mix);
+
+      data[idx + 0] = Math.max(0, Math.min(255, Math.round(r)));
+      data[idx + 1] = Math.max(0, Math.min(255, Math.round(g)));
+      data[idx + 2] = Math.max(0, Math.min(255, Math.round(b)));
+      data[idx + 3] = Math.max(0, Math.min(255, Math.round(alpha * 255)));
+    }
+  }
+
+  // Ensure seam-free
+  for (let y = 0; y < size; y += 1) {
+    const idx0 = (y * size + 0) * 4;
+    const idx1 = (y * size + (size - 1)) * 4;
+    data[idx1 + 0] = data[idx0 + 0];
+    data[idx1 + 1] = data[idx0 + 1];
+    data[idx1 + 2] = data[idx0 + 2];
+    data[idx1 + 3] = data[idx0 + 3];
+  }
+
+  ctx.putImageData(image, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.anisotropy = 4;
+  texture.generateMipmaps = false;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
 function updateRings() {
   if (!ringGroup) return;
   // Remove ring if disabled
@@ -4408,11 +4683,6 @@ function surpriseMe() {
         ringSpinSpeed: params.ringSpinSpeed
       }
     : null;
-  const starPresetNames = Object.keys(starPresets);
-  if (starPresetNames.length) {
-    const pickedStarPreset = starPresetNames[Math.floor(rng.next() * starPresetNames.length)];
-    applyStarPreset(pickedStarPreset, { skipShareUpdate: true });
-  }
   isApplyingPreset = true;
   applyPreset(pickPreset, { skipShareUpdate: true, keepSeed: true });
   isApplyingPreset = false;
@@ -4492,6 +4762,49 @@ function surpriseMe() {
       params.ringNoiseStrength = THREE.MathUtils.lerp(0.35, 0.85, rng.next());
       const spinSign = rng.next() > 0.5 ? 1 : -1;
       params.ringSpinSpeed = spinSign * THREE.MathUtils.lerp(0.01, 0.35, rng.next());
+    }
+  }
+
+  // Randomly choose Star or Black Hole variant
+  if (rng.next() > 0.5) {
+    params.sunVariant = "Black Hole";
+    guiControllers.sunVariant?.setValue?.("Black Hole");
+    guiControllers.refreshStarVariantVisibility?.("Black Hole");
+    // Clear star preset when using black hole
+    params.sunPreset = "";
+    guiControllers.sunPreset?.setValue?.("");
+    // Randomize black hole visuals
+    params.blackHoleCoreSize = THREE.MathUtils.lerp(0.4, 1.6, rng.next());
+    params.blackHoleDiskRadius = THREE.MathUtils.lerp(1.2, 4.2, rng.next());
+    params.blackHoleDiskThickness = THREE.MathUtils.lerp(0.08, 0.8, rng.next());
+    params.blackHoleDiskIntensity = THREE.MathUtils.lerp(0.6, 2.4, rng.next());
+    params.blackHoleDiskTilt = THREE.MathUtils.lerp(-40, 40, rng.next());
+    params.blackHoleDiskYaw = THREE.MathUtils.lerp(-180, 180, rng.next());
+    params.blackHoleDiskTwist = THREE.MathUtils.lerp(-30, 30, rng.next());
+    params.blackHoleSpinSpeed = THREE.MathUtils.lerp(-1.2, 1.2, rng.next());
+    params.blackHoleHaloSpinSpeed = THREE.MathUtils.lerp(-0.8, 0.8, rng.next());
+    params.blackHoleDiskNoiseScale = THREE.MathUtils.lerp(0.6, 3.2, rng.next());
+    params.blackHoleDiskNoiseStrength = THREE.MathUtils.lerp(0.15, 0.8, rng.next());
+    params.blackHoleHaloRadius = THREE.MathUtils.lerp(1.4, 5.8, rng.next());
+    params.blackHoleHaloAngle = THREE.MathUtils.lerp(20, 85, rng.next());
+    params.blackHoleHaloThickness = THREE.MathUtils.lerp(0.12, 0.8, rng.next());
+    params.blackHoleHaloIntensity = THREE.MathUtils.lerp(0.4, 1.8, rng.next());
+    params.blackHoleHaloNoiseScale = THREE.MathUtils.lerp(0.6, 2.6, rng.next());
+    params.blackHoleHaloNoiseStrength = THREE.MathUtils.lerp(0.15, 0.9, rng.next());
+    params.blackHoleDiskEnabled = rng.next() > 0.1;
+    params.blackHoleHaloEnabled = rng.next() > 0.15;
+    const stylePick = (arr) => arr[Math.floor(rng.next() * arr.length)];
+    params.blackHoleDiskStyle = stylePick(["Noise", "Texture", "Flat"]);
+    params.blackHoleHaloStyle = stylePick(["Noise", "Texture", "Flat"]);
+  } else {
+    params.sunVariant = "Star";
+    guiControllers.sunVariant?.setValue?.("Star");
+    guiControllers.refreshStarVariantVisibility?.("Star");
+    // Apply star preset only when using Star variant
+    const starPresetNames = Object.keys(starPresets);
+    if (starPresetNames.length) {
+      const pickedStarPreset = starPresetNames[Math.floor(rng.next() * starPresetNames.length)];
+      applyStarPreset(pickedStarPreset, { skipShareUpdate: true });
     }
   }
 
