@@ -44,6 +44,7 @@ const debugHudFpsToggle = document.getElementById("debug-hud-fps");
 const cameraModeButton = document.getElementById("camera-mode");
 const returnHomeButton = document.getElementById("return-home");
 const mobileHomeButton = document.getElementById("mobile-home");
+const exitOverlay = document.getElementById("exit-overlay");
 const previewMode = new URLSearchParams(window.location.search).get("preview") === "1";
 if (previewMode) {
   document.body.classList.add("preview-mode");
@@ -1499,10 +1500,24 @@ mobileReset?.addEventListener("click", () => {
   closeMobileMenu();
 });
 
+let exitRedirectHandle = null;
+
 function navigateToLanding() {
   const code = getCurrentShareCode();
   const target = code ? `/?previewCode=${encodeURIComponent(code)}` : "/";
-  window.location.href = target;
+  if (!previewMode && exitOverlay) {
+    exitOverlay.hidden = false;
+    // trigger transition
+    requestAnimationFrame(() => exitOverlay.classList.add("visible"));
+    if (exitRedirectHandle) {
+      clearTimeout(exitRedirectHandle);
+    }
+    exitRedirectHandle = setTimeout(() => {
+      window.location.href = target;
+    }, 900);
+  } else {
+    window.location.href = target;
+  }
 }
 
 returnHomeButton?.addEventListener("click", () => {
@@ -2004,9 +2019,7 @@ async function initializeApp() {
     updateSeedDisplay();
     updateGravityDisplay();
   }
-  if (!previewMode) {
-    setupMobilePanelToggle();
-  }
+  setupMobilePanelToggle();
 }
 
 // Start the app
@@ -3718,7 +3731,6 @@ function openMobilePanel() {
 }
 
 function closeMobilePanel(force = false) {
-  if (!isMobileLayout() && !force) return;
   infoPanel?.classList.remove("open");
   if (panelScrim) panelScrim.hidden = true;
   if (mobileToggleButton) mobileToggleButton.setAttribute("aria-expanded", "false");
@@ -3732,8 +3744,34 @@ function setupMobilePanelToggle() {
       openMobilePanel();
     }
   });
+  mobileToggleButton?.addEventListener("touchstart", () => {
+    if (infoPanel?.classList.contains("open")) {
+      closeMobilePanel();
+    } else {
+      openMobilePanel();
+    }
+  }, { passive: true });
 
   panelScrim?.addEventListener("click", () => closeMobilePanel());
+  panelScrim?.addEventListener("touchstart", () => closeMobilePanel(), { passive: true });
+
+  // Also allow tapping anywhere in the scene to close on mobile
+  sceneContainer?.addEventListener("click", () => {
+    if (isMobileLayout() && infoPanel?.classList.contains("open")) closeMobilePanel();
+  });
+  sceneContainer?.addEventListener("touchstart", () => {
+    if (isMobileLayout() && infoPanel?.classList.contains("open")) closeMobilePanel();
+  }, { passive: true });
+
+  // Capture any outside clicks to close the panel on mobile
+  document.addEventListener("click", (e) => {
+    if (!isMobileLayout()) return;
+    const target = e.target;
+    if (!infoPanel || !infoPanel.classList.contains("open")) return;
+    if (infoPanel.contains(target)) return;
+    if (mobileToggleButton && (target === mobileToggleButton || mobileToggleButton.contains(target))) return;
+    closeMobilePanel();
+  }, true);
 }
 //#endregion
 //#region Dirty flags & share codes
