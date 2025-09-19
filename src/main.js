@@ -1303,6 +1303,11 @@ const shareKeys = [
   "colorLow",
   "colorMid",
   "colorHigh",
+  // Palette/core additions
+  "colorCore",
+  "coreEnabled",
+  "coreSize",
+  "coreVisible",
   "atmosphereColor",
   "cloudsOpacity",
   "cloudHeight",
@@ -2519,7 +2524,8 @@ function sampleColor(elevation, radius) {
   }
 
   // No core color blending - using physical core sphere instead
-  return scratchColor;
+  // Apply the sampled baseColor to the shared scratch color and return it
+  return scratchColor.copy(baseColor);
 }
 
 function updatePalette() {
@@ -2550,6 +2556,9 @@ function updateCore() {
 function updateClouds() {
   cloudsMaterial.opacity = params.cloudsOpacity;
   atmosphereMaterial.opacity = THREE.MathUtils.clamp(params.cloudsOpacity * 0.55, 0.05, 0.6);
+  // Toggle visibility based on opacity for reliability
+  cloudsMesh.visible = params.cloudsOpacity > 0.001;
+  atmosphereMesh.visible = params.cloudsOpacity > 0.001;
   // Update cloud layer height/scale
   const cloudScale = Math.max(0.1, params.radius * (1 + Math.max(0, params.cloudHeight || 0.03)));
   cloudsMesh.scale.setScalar(cloudScale);
