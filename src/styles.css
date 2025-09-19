@@ -737,3 +737,50 @@ canvas {
   color: rgba(169, 195, 237, 0.6);
 }
 
+/* Preview-embed layout */
+body.preview-mode {
+  margin: 0;
+  overflow: hidden;
+  background: radial-gradient(circle at top, #0b1428 0%, #02040a 75%);
+}
+
+body.preview-mode #app {
+  min-height: 100vh;
+  height: 100vh;
+  background: transparent;
+}
+
+body.preview-mode #header,
+body.preview-mode #info,
+body.preview-mode .hint,
+body.preview-mode #panel-scrim,
+body.preview-mode .mobile-menu,
+body.preview-mode .mobile-controls-toggle,
+body.preview-mode .desktop-only,
+body.preview-mode .header-actions,
+body.preview-mode #control-search-bar {
+  display: none !important;
+}
+
+body.preview-mode #main {
+  flex-direction: column;
+  padding: 0;
+}
+
+body.preview-mode #scene {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  min-height: 100vh;
+}
+
+body.preview-mode #scene canvas {
+  pointer-events: none;
+}
+
+body.preview-mode #hud-fps,
+body.preview-mode #camera-mode,
+body.preview-mode #panel-scrim {
+  display: none !important;
+}
+

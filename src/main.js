@@ -42,6 +42,21 @@ const debugMoonSpeedList = document.getElementById("debug-moon-speed-list");
 const loadingOverlay = document.getElementById("loading");
 const debugHudFpsToggle = document.getElementById("debug-hud-fps");
 const cameraModeButton = document.getElementById("camera-mode");
+const returnHomeButton = document.getElementById("return-home");
+const mobileHomeButton = document.getElementById("mobile-home");
+const previewMode = new URLSearchParams(window.location.search).get("preview") === "1";
+if (previewMode) {
+  document.body.classList.add("preview-mode");
+}
+const loadShareParam = new URLSearchParams(window.location.search).get("load");
+if (loadShareParam) {
+  try {
+    const cleaned = loadShareParam.trim();
+    if (cleaned.length) {
+      window.location.hash = `#${cleaned}`;
+    }
+  } catch {}
+}
 if (!sceneContainer) {
   throw new Error("Missing scene container element");
 }
@@ -70,6 +85,12 @@ controls.dampingFactor = 0.045;
 controls.rotateSpeed = 0.7;
 controls.minDistance = 2;
 controls.maxDistance = 80;
+if (previewMode) {
+  controls.enablePan = false;
+  controls.enableZoom = false;
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 0.35;
+}
 
 const ambientLight = new THREE.AmbientLight(0x6f87b6, 0.35);
 scene.add(ambientLight);
@@ -1478,6 +1499,21 @@ mobileReset?.addEventListener("click", () => {
   closeMobileMenu();
 });
 
+function navigateToLanding() {
+  const code = getCurrentShareCode();
+  const target = code ? `/?previewCode=${encodeURIComponent(code)}` : "/";
+  window.location.href = target;
+}
+
+returnHomeButton?.addEventListener("click", () => {
+  navigateToLanding();
+});
+
+mobileHomeButton?.addEventListener("click", () => {
+  navigateToLanding();
+  closeMobileMenu();
+});
+
 function getCurrentShareCode() {
   const fromDataset = shareDisplay?.dataset?.code;
   if (fromDataset && fromDataset.length) return fromDataset;
@@ -1924,19 +1960,21 @@ exportButton?.addEventListener("click", () => {
 
 window.addEventListener("resize", onWindowResize);
 
-document.addEventListener("keydown", (event) => {
-  if (event.key.toLowerCase() === "h") {
-    guiVisible = !guiVisible;
-    if (guiVisible) {
-      gui.show();
-    } else {
-      gui.hide();
+if (!previewMode) {
+  document.addEventListener("keydown", (event) => {
+    if (event.key.toLowerCase() === "h") {
+      guiVisible = !guiVisible;
+      if (guiVisible) {
+        gui.show();
+      } else {
+        gui.hide();
+      }
     }
-  }
-  if (event.key === "Escape") {
-    closeMobilePanel();
-  }
-});
+    if (event.key === "Escape") {
+      closeMobilePanel();
+    }
+  });
+}
 //#endregion
 
 const tmpVecA = new THREE.Vector3();
@@ -1966,7 +2004,9 @@ async function initializeApp() {
     updateSeedDisplay();
     updateGravityDisplay();
   }
-  setupMobilePanelToggle();
+  if (!previewMode) {
+    setupMobilePanelToggle();
+  }
 }
 
 // Start the app

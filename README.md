@@ -4,7 +4,7 @@ A browser-based procedural planet generator built with Three.js. Create stylised
 
 ## Quick Start
 
-1. Open `index.html` in a modern desktop browser (Chrome, Edge, Firefox, or Safari).
+1. Open `index.html` in a modern desktop browser (Chrome, Edge, Firefox, or Safari) and click **Launch Studio** – or load `studio.html` directly to skip the landing page.
 2. Use the control panel (press **H** to hide/show) to tweak the planet or choose one of the bundled presets.
 3. Randomise or enter a custom seed to share exact results with others. The share code updates automatically in the info panel.
 4. Click **Export FBX** to download the current planet (plus any moons) for import into Unity or Blender.

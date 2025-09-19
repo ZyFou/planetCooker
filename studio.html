@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Procedural Planet Studio</title>
+    <link rel="icon" href="/favicon.ico" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="header">
+        <h1>Procedural Planet Studio</h1>
+        <div class="header-actions">
+          <button id="toggle-controls" class="mobile-controls-toggle" aria-controls="info" aria-expanded="false" title="Toggle controls">Controls</button>
+          <!-- <button id="export-fbx">Export FBX</button> -->
+
+          <button id="randomize-seed" class="desktop-only">Randomize Seed</button>
+          <button id="surprise-me" class="desktop-only">Surprise Me</button>
+          <button id="copy-share" class="desktop-only">Copy Share Code</button>
+          <button id="return-home" class="desktop-only">Back to Landing</button>
+          <!-- <button id="import-share" title="Import a shared code">Import Code</button> -->
+          <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-controls="mobile-menu" aria-expanded="false" title="Menu">&#9776;</button>
+        </div>
+        <div id="mobile-menu" class="mobile-menu" hidden>
+          <button id="mobile-randomize">Randomize Seed</button>
+          <button id="mobile-surprise">Surprise Me</button>
+          <button id="mobile-copy">Copy Share Code</button>
+          <button id="mobile-reset">Reset All</button>
+          <button id="mobile-home">Back to Landing</button>
+        </div>
+      </header>
+      <main id="main">
+        <section id="info">
+          <div class="stat">
+            <span class="label">Seed</span>
+            <span id="seed-display" class="value">-</span>
+          </div>
+          <div class="stat">
+            <span class="label">Gravity</span>
+            <span id="gravity-display" class="value">-</span>
+          </div>
+          <div class="stat">
+            <span class="label">System Age</span>
+            <span id="time-display" class="value">0y</span>
+          </div>
+          <div class="stat">
+            <span class="label">Stable Moons</span>
+            <span id="orbit-stability" class="value">-</span>
+          </div>
+          <div class="stat">
+            <span class="label">Share Code</span>
+            <div class="share-row">
+              <!-- <span id="share-display" class="value"></span> -->
+              <!-- <button id="copy-share-inline" class="copy-inline" title="Copy share code">Copy</button> -->
+            </div>
+            <div id="import-share-container" class="share-row">
+              <input id="import-share-input" type="text" inputmode="text" spellcheck="false" autocomplete="off" placeholder="Paste share code..." aria-label="Paste share code" style="flex:1; min-width: 0;" />
+              <button id="import-share-load" class="copy-inline">Load</button>
+              <button id="import-share-cancel" class="copy-inline" title="Cancel import">Cancel</button>
+            </div>
+          </div>
+          <div class="control-search-bar" id="control-search-bar">
+            <input type="search" id="control-search" placeholder="Search controls..." autocomplete="off" spellcheck="false" aria-label="Search controls" />
+            <button id="control-search-clear" type="button" title="Clear search" aria-label="Clear search">
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+          <p id="control-search-empty" class="control-search-empty" hidden>No controls match your search.</p>
+          <div id="controls"></div>
+          <section id="debug-panel" class="debug-panel">
+            <h2 class="debug-title">Debug Info</h2>
+            <div class="debug-option">
+              <span class="debug-metric">FPS: <span id="debug-fps">0</span></span>
+            </div>
+            <div class="debug-option">
+              <label class="debug-toggle">
+                <input type="checkbox" id="debug-planet-vector" />
+                <span>Planet velocity vector</span>
+              </label>
+              <span class="debug-metric">Speed: <span id="debug-planet-speed">0.000</span></span>
+            </div>
+            <div class="debug-option">
+              <label class="debug-toggle">
+                <input type="checkbox" id="debug-moon-vectors" />
+                <span>Moon velocity vectors</span>
+              </label>
+            </div>
+            <div class="debug-option">
+              <label class="debug-toggle">
+                <input type="checkbox" id="debug-hud-fps" checked />
+                <span>HUD FPS</span>
+              </label>
+            </div>
+            <ul id="debug-moon-speed-list" class="debug-moon-speed-list"></ul>
+          <button id="reset-all" title="Reset to defaults">Reset All</button>
+
+          </section>
+          <p class="hint">Use the sliders on the left to tweak the planet. Press H to hide/show the panel.</p>
+        </section>
+        <section id="scene">
+          <!-- <div id="loading" hidden>
+            <div class="spinner"></div>
+            <div class="loading-text">Generating...</div>
+          </div> -->
+          <!-- <button id="camera-mode" class="camera-mode-btn" title="Change camera mode">Camera: Orbit</button> -->
+          <div id="hud-fps" class="hud-fps" aria-live="polite">FPS: 0</div>
+        </section>
+      </main>
+      <div id="panel-scrim" hidden></div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
+
+
