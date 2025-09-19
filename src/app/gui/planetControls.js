@@ -762,6 +762,117 @@ export function setupPlanetControls({
       scheduleShareUpdate();
     });
 
+  // Meteor Impact System
+  const meteorFolder = registerFolder(effectsFolder.addFolder("Meteor Impacts"), { close: true });
+
+  guiControllers.meteorEnabled = meteorFolder.add(params, "meteorEnabled")
+    .name("Enable Meteors")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.meteorFrequency = meteorFolder.add(params, "meteorFrequency", 0.01, 1, 0.01)
+    .name("Spawn Frequency")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.meteorSize = meteorFolder.add(params, "meteorSize", 0.05, 0.5, 0.01)
+    .name("Meteor Size")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.meteorSpeed = meteorFolder.add(params, "meteorSpeed", 2, 20, 0.5)
+    .name("Meteor Speed")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.meteorColor = meteorFolder.addColor(params, "meteorColor")
+    .name("Meteor Color")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.meteorTrailLength = meteorFolder.add(params, "meteorTrailLength", 5, 50, 1)
+    .name("Trail Length")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.meteorTrailOpacity = meteorFolder.add(params, "meteorTrailOpacity", 0.1, 1, 0.05)
+    .name("Trail Opacity")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  // Voxel Destruction
+  const voxelFolder = registerFolder(meteorFolder.addFolder("Voxel Destruction"), { close: true });
+
+  guiControllers.voxelDestructionEnabled = voxelFolder.add(params, "voxelDestructionEnabled")
+    .name("Enable Voxel Destruction")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.voxelSize = voxelFolder.add(params, "voxelSize", 0.01, 0.1, 0.005)
+    .name("Voxel Size")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.destructionAnimationDuration = voxelFolder.add(params, "destructionAnimationDuration", 0.5, 5, 0.1)
+    .name("Animation Duration (s)")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.destructionParticleCount = voxelFolder.add(params, "destructionParticleCount", 10, 200, 5)
+    .name("Particle Count")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.destructionParticleSize = voxelFolder.add(params, "destructionParticleSize", 0.005, 0.05, 0.005)
+    .name("Particle Size")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.destructionParticleSpeed = voxelFolder.add(params, "destructionParticleSpeed", 1, 10, 0.5)
+    .name("Particle Speed")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.destructionParticleLifetime = voxelFolder.add(params, "destructionParticleLifetime", 0.5, 3, 0.1)
+    .name("Particle Lifetime (s)")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  // Crater Generation
+  const craterFolder = registerFolder(meteorFolder.addFolder("Crater Generation"), { close: true });
+
+  guiControllers.craterDepthMultiplier = craterFolder.add(params, "craterDepthMultiplier", 0.1, 3, 0.1)
+    .name("Depth Multiplier")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.craterRadiusMultiplier = craterFolder.add(params, "craterRadiusMultiplier", 0.1, 3, 0.1)
+    .name("Radius Multiplier")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
+  guiControllers.craterRimHeight = craterFolder.add(params, "craterRimHeight", 0.005, 0.1, 0.005)
+    .name("Rim Height")
+    .onChange(() => {
+      scheduleShareUpdate();
+    });
+
   return {
     presetController,
     folders: {
@@ -771,7 +882,10 @@ export function setupPlanetControls({
       environmentFolder,
       sunFolder,
       spaceFolder,
-      effectsFolder
+      effectsFolder,
+      meteorFolder,
+      voxelFolder,
+      craterFolder
     }
   };
 }

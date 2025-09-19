@@ -568,6 +568,13 @@ const blackHoleState = {
 let starField = null;
 // Active particle explosions
 const activeExplosions = [];
+
+// Meteor Impact System
+const activeMeteors = [];
+const activeVoxelDestructions = [];
+const voxelGrid = new Map(); // 3D grid of voxels
+const voxelSize = 0.05;
+let lastMeteorSpawn = 0;
 //#endregion
 
 //#region UI bindings
@@ -684,6 +691,26 @@ const params = {
   explosionColorVariation: 0.5,
   explosionSpeedVariation: 1.0,
   explosionSizeVariation: 1.0,
+  // Meteor Impact System
+  meteorEnabled: true,
+  meteorFrequency: 0.1, // How often meteors spawn (0-1)
+  meteorSize: 0.15,
+  meteorSpeed: 8.0,
+  meteorColor: "#ff6b35",
+  meteorTrailLength: 20,
+  meteorTrailOpacity: 0.8,
+  // Voxel Destruction
+  voxelDestructionEnabled: true,
+  voxelSize: 0.05, // Size of individual voxels
+  destructionAnimationDuration: 2.0, // How long destruction takes
+  destructionParticleCount: 50,
+  destructionParticleSize: 0.02,
+  destructionParticleSpeed: 3.0,
+  destructionParticleLifetime: 1.5,
+  // Crater Generation
+  craterDepthMultiplier: 1.0,
+  craterRadiusMultiplier: 1.0,
+  craterRimHeight: 0.02,
   // Rings
   ringEnabled: false,
   ringColor: "#c7b299",
@@ -732,6 +759,24 @@ const presets = {
     starCount: 2200,
     starBrightness: 0.92,
     starTwinkleSpeed: 0.6,
+    // Meteor Impact System
+    meteorEnabled: true,
+    meteorFrequency: 0.1,
+    meteorSize: 0.15,
+    meteorSpeed: 8.0,
+    meteorColor: "#ff6b35",
+    meteorTrailLength: 20,
+    meteorTrailOpacity: 0.8,
+    voxelDestructionEnabled: true,
+    voxelSize: 0.05,
+    destructionAnimationDuration: 2.0,
+    destructionParticleCount: 50,
+    destructionParticleSize: 0.02,
+    destructionParticleSpeed: 3.0,
+    destructionParticleLifetime: 1.5,
+    craterDepthMultiplier: 1.0,
+    craterRadiusMultiplier: 1.0,
+    craterRimHeight: 0.02,
     moons: [
       { size: 0.27, distance: 4.2, orbitSpeed: 0.38, inclination: 6, color: "#cfd0d4", phase: 1.1, eccentricity: 0.055 }
     ]
@@ -2225,6 +2270,11 @@ function animate(timestamp) {
 
   // Update explosion particles after physics
   updateExplosions(simulationDelta);
+
+  // Update meteor impact system
+  updateMeteorSpawning(simulationDelta);
+  updateMeteors(simulationDelta);
+  updateVoxelDestructions(simulationDelta);
 
   syncOrbitLinesWithPivots();
 
@@ -4742,6 +4792,308 @@ function applyImpactDeformation(worldPosition, impactRadius, { strength = 1, dir
   if (geometry.attributes.normal) geometry.attributes.normal.needsUpdate = true;
   geometry.computeBoundingSphere();
 }
+
+//#region Meteor Impact System with Voxel Destruction
+
+// Create a meteor that will impact the planet
+function spawnMeteor() {
+  if (!params.meteorEnabled) return;
+  
+  // Random spawn position around the planet
+  const spawnDistance = params.radius * 3;
+  const spawnPosition = new THREE.Vector3(
+    (Math.random() - 0.5) * spawnDistance * 2,
+    (Math.random() - 0.5) * spawnDistance * 2,
+    (Math.random() - 0.5) * spawnDistance * 2
+  );
+  
+  // Point towards planet center with some randomness
+  const planetCenter = new THREE.Vector3(0, 0, 0);
+  const direction = planetCenter.clone().sub(spawnPosition).normalize();
+  
+  // Add some randomness to the trajectory
+  direction.add(new THREE.Vector3(
+    (Math.random() - 0.5) * 0.3,
+    (Math.random() - 0.5) * 0.3,
+    (Math.random() - 0.5) * 0.3
+  )).normalize();
+  
+  const meteor = {
+    position: spawnPosition.clone(),
+    velocity: direction.multiplyScalar(params.meteorSpeed),
+    size: params.meteorSize,
+    color: new THREE.Color(params.meteorColor),
+    trail: [],
+    mesh: null,
+    trailMesh: null,
+    life: 0,
+    maxLife: 10 // Maximum lifetime before removal
+  };
+  
+  // Create meteor mesh
+  const geometry = new THREE.SphereGeometry(meteor.size, 8, 8);
+  const material = new THREE.MeshBasicMaterial({ 
+    color: meteor.color,
+    emissive: meteor.color.clone().multiplyScalar(0.3)
+  });
+  meteor.mesh = new THREE.Mesh(geometry, material);
+  meteor.mesh.position.copy(meteor.position);
+  scene.add(meteor.mesh);
+  
+  // Create trail mesh
+  const trailGeometry = new THREE.BufferGeometry();
+  const trailPositions = new Float32Array(params.meteorTrailLength * 3);
+  trailGeometry.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+  
+  const trailMaterial = new THREE.LineBasicMaterial({
+    color: meteor.color,
+    transparent: true,
+    opacity: params.meteorTrailOpacity,
+    linewidth: 2
+  });
+  meteor.trailMesh = new THREE.Line(trailGeometry, trailMaterial);
+  scene.add(meteor.trailMesh);
+  
+  activeMeteors.push(meteor);
+}
+
+// Update meteor positions and check for impacts
+function updateMeteors(deltaTime) {
+  for (let i = activeMeteors.length - 1; i >= 0; i--) {
+    const meteor = activeMeteors[i];
+    meteor.life += deltaTime;
+    
+    // Remove old meteors
+    if (meteor.life > meteor.maxLife) {
+      scene.remove(meteor.mesh);
+      scene.remove(meteor.trailMesh);
+      meteor.mesh.geometry.dispose();
+      meteor.mesh.material.dispose();
+      meteor.trailMesh.geometry.dispose();
+      meteor.trailMesh.material.dispose();
+      activeMeteors.splice(i, 1);
+      continue;
+    }
+    
+    // Update position
+    meteor.position.add(meteor.velocity.clone().multiplyScalar(deltaTime));
+    meteor.mesh.position.copy(meteor.position);
+    
+    // Update trail
+    meteor.trail.push(meteor.position.clone());
+    if (meteor.trail.length > params.meteorTrailLength) {
+      meteor.trail.shift();
+    }
+    
+    // Update trail mesh
+    const trailPositions = meteor.trailMesh.geometry.attributes.position.array;
+    for (let j = 0; j < meteor.trail.length; j++) {
+      const pos = meteor.trail[j];
+      trailPositions[j * 3] = pos.x;
+      trailPositions[j * 3 + 1] = pos.y;
+      trailPositions[j * 3 + 2] = pos.z;
+    }
+    meteor.trailMesh.geometry.setDrawRange(0, meteor.trail.length);
+    meteor.trailMesh.geometry.attributes.position.needsUpdate = true;
+    
+    // Check for impact with planet
+    const distanceToCenter = meteor.position.length();
+    if (distanceToCenter <= params.radius + meteor.size) {
+      // Impact detected!
+      const impactPoint = meteor.position.clone().normalize().multiplyScalar(params.radius);
+      const impactDirection = meteor.velocity.clone().normalize();
+      
+      // Create explosion
+      spawnExplosion(impactPoint, meteor.color, meteor.size * 2);
+      
+      // Create voxel destruction
+      if (params.voxelDestructionEnabled) {
+        createVoxelDestruction(impactPoint, impactDirection, meteor.size);
+      }
+      
+      // Create crater
+      if (params.impactDeformation) {
+        const craterRadius = meteor.size * params.craterRadiusMultiplier;
+        const craterStrength = meteor.size * params.craterDepthMultiplier;
+        applyImpactDeformation(impactPoint, craterRadius, {
+          strength: craterStrength,
+          directionWorld: impactDirection
+        });
+      }
+      
+      // Remove meteor
+      scene.remove(meteor.mesh);
+      scene.remove(meteor.trailMesh);
+      meteor.mesh.geometry.dispose();
+      meteor.mesh.material.dispose();
+      meteor.trailMesh.geometry.dispose();
+      meteor.trailMesh.material.dispose();
+      activeMeteors.splice(i, 1);
+    }
+  }
+}
+
+// Create animated voxel destruction at impact point
+function createVoxelDestruction(impactPoint, impactDirection, meteorSize) {
+  const destructionRadius = meteorSize * 2;
+  const voxelCount = Math.floor((destructionRadius / params.voxelSize) ** 3);
+  const actualCount = Math.min(voxelCount, params.destructionParticleCount);
+  
+  const destruction = {
+    position: impactPoint.clone(),
+    direction: impactDirection.clone(),
+    voxels: [],
+    particles: [],
+    life: 0,
+    maxLife: params.destructionAnimationDuration,
+    mesh: null
+  };
+  
+  // Create voxel particles
+  const geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(actualCount * 3);
+  const colors = new Float32Array(actualCount * 3);
+  const velocities = new Float32Array(actualCount * 3);
+  const sizes = new Float32Array(actualCount);
+  
+  for (let i = 0; i < actualCount; i++) {
+    // Random position within destruction radius
+    const angle = Math.random() * Math.PI * 2;
+    const phi = Math.random() * Math.PI;
+    const radius = Math.random() * destructionRadius;
+    
+    const voxelPos = new THREE.Vector3(
+      Math.sin(phi) * Math.cos(angle) * radius,
+      Math.cos(phi) * radius,
+      Math.sin(phi) * Math.sin(angle) * radius
+    ).add(impactPoint);
+    
+    positions[i * 3] = voxelPos.x;
+    positions[i * 3 + 1] = voxelPos.y;
+    positions[i * 3 + 2] = voxelPos.z;
+    
+    // Random velocity with impact direction bias
+    const randomDir = new THREE.Vector3(
+      (Math.random() - 0.5) * 2,
+      (Math.random() - 0.5) * 2,
+      (Math.random() - 0.5) * 2
+    ).normalize();
+    
+    const velocity = randomDir.lerp(impactDirection, 0.3).multiplyScalar(
+      params.destructionParticleSpeed * (0.5 + Math.random() * 0.5)
+    );
+    
+    velocities[i * 3] = velocity.x;
+    velocities[i * 3 + 1] = velocity.y;
+    velocities[i * 3 + 2] = velocity.z;
+    
+    // Random color based on terrain
+    const terrainColor = sampleColor(Math.random());
+    colors[i * 3] = terrainColor.r;
+    colors[i * 3 + 1] = terrainColor.g;
+    colors[i * 3 + 2] = terrainColor.b;
+    
+    // Random size
+    sizes[i] = params.destructionParticleSize * (0.5 + Math.random() * 0.5);
+    
+    destruction.voxels.push({
+      position: voxelPos.clone(),
+      velocity: velocity.clone(),
+      color: terrainColor.clone(),
+      size: sizes[i],
+      life: 0
+    });
+  }
+  
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geometry.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
+  geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+  
+  const material = new THREE.PointsMaterial({
+    size: params.destructionParticleSize,
+    vertexColors: true,
+    transparent: true,
+    opacity: 1,
+    sizeAttenuation: true
+  });
+  
+  destruction.mesh = new THREE.Points(geometry, material);
+  scene.add(destruction.mesh);
+  
+  activeVoxelDestructions.push(destruction);
+}
+
+// Update voxel destruction animations
+function updateVoxelDestructions(deltaTime) {
+  for (let i = activeVoxelDestructions.length - 1; i >= 0; i--) {
+    const destruction = activeVoxelDestructions[i];
+    destruction.life += deltaTime;
+    
+    if (destruction.life >= destruction.maxLife) {
+      // Remove completed destruction
+      scene.remove(destruction.mesh);
+      destruction.mesh.geometry.dispose();
+      destruction.mesh.material.dispose();
+      activeVoxelDestructions.splice(i, 1);
+      continue;
+    }
+    
+    // Update voxel positions
+    const positions = destruction.mesh.geometry.attributes.position.array;
+    const colors = destruction.mesh.geometry.attributes.color.array;
+    const velocities = destruction.mesh.geometry.attributes.velocity.array;
+    
+    for (let j = 0; j < destruction.voxels.length; j++) {
+      const voxel = destruction.voxels[j];
+      voxel.life += deltaTime;
+      
+      // Update position
+      voxel.position.add(voxel.velocity.clone().multiplyScalar(deltaTime));
+      
+      // Apply gravity
+      voxel.velocity.y -= 9.81 * deltaTime;
+      
+      // Apply damping
+      voxel.velocity.multiplyScalar(0.98);
+      
+      // Update mesh
+      positions[j * 3] = voxel.position.x;
+      positions[j * 3 + 1] = voxel.position.y;
+      positions[j * 3 + 2] = voxel.position.z;
+      
+      // Fade out over time
+      const alpha = 1 - (voxel.life / params.destructionParticleLifetime);
+      colors[j * 3] = voxel.color.r * alpha;
+      colors[j * 3 + 1] = voxel.color.g * alpha;
+      colors[j * 3 + 2] = voxel.color.b * alpha;
+    }
+    
+    destruction.mesh.geometry.attributes.position.needsUpdate = true;
+    destruction.mesh.geometry.attributes.color.needsUpdate = true;
+  }
+}
+
+// Spawn meteors based on frequency
+function updateMeteorSpawning(deltaTime) {
+  if (!params.meteorEnabled) return;
+  
+  lastMeteorSpawn += deltaTime;
+  const spawnInterval = 1.0 / params.meteorFrequency;
+  
+  if (lastMeteorSpawn >= spawnInterval) {
+    spawnMeteor();
+    lastMeteorSpawn = 0;
+  }
+}
+
+// Manual meteor spawn for testing (exposed to global scope)
+window.spawnTestMeteor = function() {
+  spawnMeteor();
+  console.log("Test meteor spawned!");
+};
+
+//#endregion
 
 function saveArrayBuffer(data, filename) {
   const blob = data instanceof Blob ? data : new Blob([data], { type: "application/octet-stream" });
