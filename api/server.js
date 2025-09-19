@@ -7,7 +7,40 @@ const rateLimit = require('express-rate-limit');
 const { nanoid } = require('nanoid');
 
 // DB
-const { initDatabase, saveConfiguration, getConfiguration, deleteConfiguration, getConfigurationCount } = require('./database');
+const {
+  initDatabase,
+  saveConfiguration,
+  getConfiguration,
+  deleteConfiguration,
+  getConfigurationCount,
+  getConfigurationsPage,
+  getRecentConfigurations
+} = require('./database');
+
+const CACHE_TTL_MS = Number(process.env.API_CACHE_TTL_MS || 30_000);
+const responseCache = new Map();
+
+function makeCacheKey(namespace, params) {
+  return `${namespace}:${JSON.stringify(params)}`;
+}
+
+function getCachedResponse(key) {
+  const entry = responseCache.get(key);
+  if (!entry) return null;
+  if (entry.expires <= Date.now()) {
+    responseCache.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCachedResponse(key, data) {
+  responseCache.set(key, { data, expires: Date.now() + CACHE_TTL_MS });
+}
+
+function clearCache() {
+  responseCache.clear();
+}
 
 const app = express();
 
@@ -98,6 +131,39 @@ router.get('/api/stats/count', async (req, res) => {
   }
 });
 
+// Recent configurations list (lightweight)
+router.get('/api/recent', async (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(Number.parseInt(req.query.limit, 10) || 6, 12));
+    const preset = (req.query.preset || '').trim() || undefined;
+    const seed = (req.query.seed || '').trim() || undefined;
+    const cacheKey = makeCacheKey('recent', { limit, preset, seed });
+    const cached = getCachedResponse(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
+
+    const options = { preset, seed };
+    const [items, total] = await Promise.all([
+      getRecentConfigurations(limit, options),
+      getConfigurationCount(options)
+    ]);
+
+    const payload = {
+      items,
+      total,
+      limit,
+      filters: options,
+      fetchedAt: new Date().toISOString()
+    };
+    setCachedResponse(cacheKey, payload);
+    res.json(payload);
+  } catch (e) {
+    console.error('Error getting recent configurations:', e);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Save
 router.post('/api/share', async (req, res) => {
   try {
@@ -120,14 +186,120 @@ router.post('/api/share', async (req, res) => {
     if (!success) return res.status(500).json({ error: 'Failed to save configuration' });
 
     const host = `${req.protocol}://${req.get('host')}${BASE_PATH}`;
-    res.json({
+    const responseBody = {
       id,
       url: `${host}/api/share/${id}`,
       shortUrl: `${host}/${id}`,
       message: 'Configuration saved successfully'
-    });
+    };
+    clearCache();
+    res.json(responseBody);
   } catch (e) {
     console.error('Error saving configuration:', e);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// List configurations with pagination
+router.get('/api/share', async (req, res) => {
+  try {
+    const requestedLimit = Number.parseInt(req.query.limit, 10);
+    const safeLimit = Math.max(1, Math.min(Number.isNaN(requestedLimit) ? 20 : requestedLimit, 50));
+
+    const pageParam = Number.parseInt(req.query.page, 10);
+    const offsetParam = Number.parseInt(req.query.offset, 10);
+
+    let offset = Number.isNaN(offsetParam) ? undefined : Math.max(0, offsetParam);
+    if (!Number.isNaN(pageParam) && pageParam > 0) {
+      offset = (pageParam - 1) * safeLimit;
+    }
+    if (offset === undefined) offset = 0;
+
+    const preset = (req.query.preset || '').trim() || undefined;
+    const seed = (req.query.seed || '').trim() || undefined;
+    const sort = req.query.sort === 'popular' ? 'popular' : 'recent';
+    const options = { preset, seed, sort };
+
+    const cacheKey = makeCacheKey('share', { limit: safeLimit, offset, preset, seed, sort });
+    const cached = getCachedResponse(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
+
+    const [items, total] = await Promise.all([
+      getConfigurationsPage(safeLimit, offset, options),
+      getConfigurationCount(options)
+    ]);
+
+    const page = Math.floor(offset / safeLimit) + 1;
+    const pageCount = Math.max(1, Math.ceil(total / safeLimit));
+    const payload = {
+      items,
+      total,
+      limit: safeLimit,
+      offset,
+      page,
+      pageCount,
+      sort,
+      filters: { preset, seed },
+      fetchedAt: new Date().toISOString()
+    };
+    setCachedResponse(cacheKey, payload);
+    res.json(payload);
+  } catch (e) {
+    console.error('Error listing configurations:', e);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Explore endpoint (alias for /api/share with different defaults)
+router.get('/api/explore', async (req, res) => {
+  try {
+    const requestedLimit = Number.parseInt(req.query.limit, 10);
+    const safeLimit = Math.max(1, Math.min(Number.isNaN(requestedLimit) ? 12 : requestedLimit, 50));
+
+    const pageParam = Number.parseInt(req.query.page, 10);
+    const offsetParam = Number.parseInt(req.query.offset, 10);
+
+    let offset = Number.isNaN(offsetParam) ? undefined : Math.max(0, offsetParam);
+    if (!Number.isNaN(pageParam) && pageParam > 0) {
+      offset = (pageParam - 1) * safeLimit;
+    }
+    if (offset === undefined) offset = 0;
+
+    const preset = (req.query.preset || '').trim() || undefined;
+    const seed = (req.query.seed || '').trim() || undefined;
+    const sort = req.query.sort === 'popular' ? 'popular' : 'recent';
+    const options = { preset, seed, sort };
+
+    const cacheKey = makeCacheKey('explore', { limit: safeLimit, offset, preset, seed, sort });
+    const cached = getCachedResponse(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
+
+    const [items, total] = await Promise.all([
+      getConfigurationsPage(safeLimit, offset, options),
+      getConfigurationCount(options)
+    ]);
+
+    const page = Math.floor(offset / safeLimit) + 1;
+    const pageCount = Math.max(1, Math.ceil(total / safeLimit));
+    const payload = {
+      items,
+      total,
+      limit: safeLimit,
+      offset,
+      page,
+      pageCount,
+      sort,
+      filters: { preset, seed },
+      fetchedAt: new Date().toISOString()
+    };
+    setCachedResponse(cacheKey, payload);
+    res.json(payload);
+  } catch (e) {
+    console.error('Error listing configurations for explore:', e);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -182,19 +354,10 @@ router.delete('/api/share/:id', async (req, res) => {
     const { id } = req.params;
     const success = await deleteConfiguration(id);
     if (!success) return res.status(404).json({ error: 'Configuration not found' });
+    clearCache();
     res.json({ message: 'Configuration deleted successfully' });
   } catch (e) {
     console.error('Error deleting configuration:', e);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Recent (stub)
-router.get('/api/recent', async (req, res) => {
-  try {
-    res.json({ configurations: [], count: 0 });
-  } catch (e) {
-    console.error('Error getting recent configurations:', e);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

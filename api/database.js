@@ -3,6 +3,52 @@ const path = require('path');
 
 let db;
 
+function parseJsonSafe(payload, fallback = {}) {
+  try {
+    const parsed = JSON.parse(payload);
+    return typeof parsed === 'object' && parsed !== null ? parsed : fallback;
+  } catch (err) {
+    return fallback;
+  }
+}
+
+function sanitizeMetadata(metadata = {}) {
+  if (typeof metadata !== 'object' || metadata === null) return {};
+  const clone = { ...metadata };
+  delete clone.ip;
+  delete clone.userAgent;
+  return clone;
+}
+
+function buildConfigurationSummary(row) {
+  const rawMetadata = parseJsonSafe(row.metadata, {});
+  const rawData = parseJsonSafe(row.data, {});
+  const metadata = sanitizeMetadata(rawMetadata);
+
+  const moonCount = Array.isArray(rawData.moons)
+    ? rawData.moons.length
+    : typeof rawData.moonCount === 'number'
+      ? rawData.moonCount
+      : undefined;
+
+  const summary = {
+    name: metadata.name || rawData.name || undefined,
+    description: metadata.description || undefined,
+    preset: metadata.preset || metadata.presetName || rawData.preset || undefined,
+    seed: rawData.seed || metadata.seed || undefined,
+    moonCount,
+    radius: typeof rawData.radius === 'number' ? rawData.radius : undefined
+  };
+
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    accessCount: row.access_count,
+    metadata,
+    summary
+  };
+}
+
 // Initialize database connection
 function initDatabase() {
   const dbPath = path.join(__dirname, 'planet_configs.db');
@@ -135,11 +181,29 @@ function updateAccessStats(id) {
 }
 
 // Get total configuration count
-function getConfigurationCount() {
+function getConfigurationCount(options = {}) {
   return new Promise((resolve, reject) => {
-    const sql = 'SELECT COUNT(*) as count FROM configurations';
+    const { preset, seed } = options;
 
-    db.get(sql, [], (err, row) => {
+    const conditions = [];
+    const params = [];
+
+    if (typeof preset === 'string' && preset.trim().length) {
+      conditions.push(
+        "LOWER(COALESCE(json_extract(metadata, '$.preset'), json_extract(metadata, '$.presetName'), json_extract(data, '$.preset'))) = LOWER(?)"
+      );
+      params.push(preset.trim());
+    }
+
+    if (typeof seed === 'string' && seed.trim().length) {
+      conditions.push("LOWER(COALESCE(json_extract(data, '$.seed'), json_extract(metadata, '$.seed'))) = LOWER(?)");
+      params.push(seed.trim());
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const sql = `SELECT COUNT(*) as count FROM configurations ${whereClause}`;
+
+    db.get(sql, params, (err, row) => {
       if (err) {
         console.error('Error counting configurations:', err.message);
         reject(err);
@@ -169,31 +233,58 @@ function deleteConfiguration(id) {
   });
 }
 
-// Get recent configurations
-function getRecentConfigurations(limit = 10) {
+// Get configurations with pagination
+function getConfigurationsPage(limit = 20, offset = 0, options = {}) {
   return new Promise((resolve, reject) => {
+    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 100) : 20;
+    const safeOffset = Number.isFinite(offset) && offset >= 0 ? offset : 0;
+
+    const { preset, seed, sort } = options;
+
+    const conditions = [];
+    const params = [];
+
+    if (typeof preset === 'string' && preset.trim().length) {
+      conditions.push(
+        "LOWER(COALESCE(json_extract(metadata, '$.preset'), json_extract(metadata, '$.presetName'), json_extract(data, '$.preset'))) = LOWER(?)"
+      );
+      params.push(preset.trim());
+    }
+
+    if (typeof seed === 'string' && seed.trim().length) {
+      conditions.push("LOWER(COALESCE(json_extract(data, '$.seed'), json_extract(metadata, '$.seed'))) = LOWER(?)");
+      params.push(seed.trim());
+    }
+
+    let orderBy = 'datetime(created_at) DESC';
+    if (sort === 'popular') {
+      orderBy = 'access_count DESC, datetime(created_at) DESC';
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
     const sql = `
-      SELECT id, metadata, created_at, access_count
-      FROM configurations 
-      ORDER BY created_at DESC 
-      LIMIT ?
+      SELECT id, data, metadata, created_at, access_count
+      FROM configurations
+      ${whereClause}
+      ORDER BY ${orderBy}
+      LIMIT ? OFFSET ?
     `;
 
-    db.all(sql, [limit], (err, rows) => {
+    db.all(sql, [...params, safeLimit, safeOffset], (err, rows) => {
       if (err) {
-        console.error('Error getting recent configurations:', err.message);
+        console.error('Error getting configurations:', err.message);
         reject(err);
       } else {
-        const configs = rows.map(row => ({
-          id: row.id,
-          metadata: JSON.parse(row.metadata),
-          createdAt: row.created_at,
-          accessCount: row.access_count
-        }));
-        resolve(configs);
+        resolve(rows.map(buildConfigurationSummary));
       }
     });
   });
+}
+
+// Get recent configurations (convenience)
+function getRecentConfigurations(limit = 10, options = {}) {
+  return getConfigurationsPage(limit, 0, options);
 }
 
 // Get database statistics
@@ -258,6 +349,7 @@ module.exports = {
   saveConfiguration,
   getConfiguration,
   getConfigurationCount,
+  getConfigurationsPage,
   deleteConfiguration,
   getRecentConfigurations,
   getDatabaseStats,

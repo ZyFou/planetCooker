@@ -99,11 +99,48 @@ Load a planet configuration by ID.
 ### `GET /:id`
 Short URL redirect. Redirects to the frontend with the configuration ID.
 
+### `GET /api/share`
+List recent configurations with pagination.
+
+Query parameters:
+- `limit` (optional): items per page (default 20, max 50)
+- `page` (optional): 1-indexed page number
+- `offset` (optional): raw offset, ignored if `page` is supplied
+- `preset` (optional): exact preset name (case-insensitive)
+- `seed` (optional): exact seed value (case-insensitive)
+- `sort` (optional): `recent` (default) or `popular`
+
+**Response:**
+```json
+{
+  "items": [
+    {
+      "id": "abc123",
+      "createdAt": "2024-01-15T10:30:00.000Z",
+      "accessCount": 7,
+      "metadata": {
+        "name": "My Awesome Planet"
+      },
+      "summary": {
+        "seed": "my-planet",
+        "preset": "Earth-like",
+        "moonCount": 2
+      }
+    }
+  ],
+  "total": 128,
+  "limit": 20,
+  "page": 1,
+  "pageCount": 7,
+  "fetchedAt": "2024-02-01T12:00:00.000Z"
+}
+```
+
 ### `DELETE /api/share/:id`
 Delete a configuration (optional cleanup).
 
 ### `GET /api/recent?limit=10`
-Get recent configurations (for admin/debugging).
+Get the latest configurations for lightweight UIs. Supports optional `preset` and `seed` filters (case-insensitive). Returns the same item shape as `/api/share` but only the first `limit` entries (default 6, max 12).
 
 ### `GET /api/stats/count`
 Return the total number of stored configurations.

@@ -14,9 +14,10 @@
           <span class="logo-dot" aria-hidden="true"></span>
           <span class="logo-text">Procedural Planet Studio</span>
         </div>
-        <nav class="landing__actions">
+        <!-- <nav class="landing__actions">
+          <a class="btn btn-ghost" href="/explore.html">Explore Systems</a>
           <a class="btn btn-secondary" href="/studio.html" data-launch-studio>Launch Studio</a>
-        </nav>
+        </nav> -->
       </header>
 
       <main class="landing__main">
@@ -28,6 +29,7 @@
           </p>
           <div class="hero__actions">
             <a class="btn btn-primary" href="/studio.html" data-launch-studio>Launch The Studio</a>
+            <a class="btn btn-ghost" href="/explore.html">Explore Systems</a>
             <!-- <a
               class="btn btn-ghost"
               href="https://github.com/zyfod/planetCooker"
@@ -58,6 +60,15 @@
             ></iframe>
             <div class="preview__label">Preview Mode</div>
           </div>
+        </section>
+
+        <section class="recent" aria-labelledby="recent-title">
+          <div class="recent__header">
+            <h2 id="recent-title">Latest Shared Systems</h2>
+            <a class="recent__view" href="/explore.html">See All Systems →</a>
+          </div>
+          <ul class="recent__list" id="recent-systems" aria-live="polite"></ul>
+          <p class="recent__empty" id="recent-empty" hidden>No shared systems yet—save one from the studio to appear here.</p>
         </section>
       </main>
 
@@ -109,6 +120,145 @@
           })
           .catch((err) => {
             console.warn('Unable to retrieve system count', err);
+          });
+      }
+
+      const recentList = document.getElementById('recent-systems');
+      const recentEmpty = document.getElementById('recent-empty');
+
+      function formatRelativeTime(value) {
+        try {
+          const now = Date.now();
+          const target = new Date(value).getTime();
+          if (Number.isNaN(target)) return '';
+          const diff = Math.max(0, now - target);
+
+          const minute = 60 * 1000;
+          const hour = 60 * minute;
+          const day = 24 * hour;
+          const week = 7 * day;
+
+          if (diff < minute) return 'Just now';
+          if (diff < hour) {
+            const mins = Math.round(diff / minute);
+            return `${mins} min${mins === 1 ? '' : 's'} ago`;
+          }
+          if (diff < day) {
+            const hours = Math.round(diff / hour);
+            return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+          }
+          if (diff < week) {
+            const days = Math.round(diff / day);
+            return `${days} day${days === 1 ? '' : 's'} ago`;
+          }
+          const weeks = Math.round(diff / week);
+          return `${weeks} week${weeks === 1 ? '' : 's'} ago`;
+        } catch {
+          return '';
+        }
+      }
+
+      function renderRecent(items) {
+        if (!recentList) return;
+        recentList.innerHTML = '';
+
+        if (!items || items.length === 0) {
+          if (recentEmpty) recentEmpty.hidden = false;
+          return;
+        }
+
+        if (recentEmpty) recentEmpty.hidden = true;
+
+        items.forEach((item) => {
+          const li = document.createElement('li');
+          li.className = 'recent__item';
+
+          const card = document.createElement('article');
+          card.className = 'recent__card';
+
+          const header = document.createElement('div');
+          header.className = 'recent__card-header';
+
+          const title = document.createElement('h3');
+          title.className = 'recent__title';
+          const displayName = item?.metadata?.name || item?.summary?.preset || `System ${item.id}`;
+          title.textContent = displayName;
+
+          const code = document.createElement('span');
+          code.className = 'recent__code';
+          code.textContent = `#${item.id}`;
+
+          header.appendChild(title);
+          header.appendChild(code);
+
+          const metaList = document.createElement('dl');
+          metaList.className = 'recent__meta';
+
+          const seedLabel = document.createElement('dt');
+          seedLabel.textContent = 'Seed';
+          const seedValue = document.createElement('dd');
+          seedValue.textContent = item?.summary?.seed || '—';
+
+          const presetLabel = document.createElement('dt');
+          presetLabel.textContent = 'Preset';
+          const presetValue = document.createElement('dd');
+          presetValue.textContent = item?.summary?.preset || 'Custom';
+
+          const ageLabel = document.createElement('dt');
+          ageLabel.textContent = 'Shared';
+          const ageValue = document.createElement('dd');
+          ageValue.textContent = formatRelativeTime(item.createdAt) || 'Recently';
+
+          metaList.append(seedLabel, seedValue, presetLabel, presetValue, ageLabel, ageValue);
+
+          const actions = document.createElement('div');
+          actions.className = 'recent__actions';
+
+          const loadButton = document.createElement('button');
+          loadButton.type = 'button';
+          loadButton.className = 'recent__action';
+          loadButton.textContent = 'Load in Studio';
+          loadButton.addEventListener('click', () => {
+            window.location.href = `/studio.html#${item.id}`;
+          });
+
+          const copyButton = document.createElement('button');
+          copyButton.type = 'button';
+          copyButton.className = 'recent__action recent__action--ghost';
+          copyButton.textContent = 'Copy Code';
+          copyButton.addEventListener('click', async () => {
+            try {
+              await navigator.clipboard.writeText(item.id);
+              copyButton.textContent = 'Copied!';
+              setTimeout(() => {
+                copyButton.textContent = 'Copy Code';
+              }, 2000);
+            } catch (err) {
+              console.warn('Clipboard copy failed', err);
+            }
+          });
+
+          actions.append(loadButton, copyButton);
+
+          card.append(header, metaList, actions);
+          li.append(card);
+          recentList.append(li);
+        });
+      }
+
+      if (recentList) {
+        const endpoint = `${API_BASE_URL.replace(/\/?$/, '')}/recent?limit=6`;
+        fetch(endpoint, { cache: 'no-store' })
+          .then((response) => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return response.json();
+          })
+          .then((payload) => {
+            renderRecent(payload?.items || []);
+          })
+          .catch((err) => {
+            console.warn('Unable to retrieve recent systems', err);
+            if (recentEmpty) recentEmpty.hidden = false;
           });
       }
     </script>
