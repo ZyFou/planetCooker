@@ -274,6 +274,144 @@ const starCoronaFragmentShader = `
   }
 `;
 
+const blackHoleDiskUniforms = {
+  uColor: { value: new THREE.Color(0xffb378) },
+  uInnerRadius: { value: 0.6 },
+  uOuterRadius: { value: 2.4 },
+  uFeather: { value: 0.25 },
+  uIntensity: { value: 1.5 },
+  uScale: { value: 1 },
+  uNoiseScale: { value: 1.0 },
+  uNoiseStrength: { value: 0.25 }
+};
+
+const blackHoleHaloUniforms = {
+  uColor: { value: new THREE.Color(0xffd6a6) },
+  uInnerRadius: { value: 1.2 },
+  uOuterRadius: { value: 3.1 },
+  uFeather: { value: 0.35 },
+  uIntensity: { value: 0.9 },
+  uScale: { value: 1 },
+  uNoiseScale: { value: 1.0 },
+  uNoiseStrength: { value: 0.35 }
+};
+
+const blackHoleDiskVertexShader = `
+  varying vec2 vLocalPos;
+  varying vec3 vWorldPos;
+  void main() {
+    vLocalPos = position.xy;
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    vWorldPos = world.xyz;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const blackHoleDiskFragmentShader = `
+  varying vec2 vLocalPos;
+  varying vec3 vWorldPos;
+  uniform vec3 uColor;
+  uniform float uInnerRadius;
+  uniform float uOuterRadius;
+  uniform float uFeather;
+  uniform float uIntensity;
+  uniform float uScale;
+  uniform float uNoiseScale;
+  uniform float uNoiseStrength;
+
+  float hash(vec3 p) {
+    return fract(sin(dot(p, vec3(13.9898, 78.233, 37.719))) * 43758.5453);
+  }
+
+  float fbm(vec3 p) {
+    float value = 0.0;
+    float amplitude = 0.6;
+    float frequency = 1.0;
+    for (int i = 0; i < 4; i++) {
+      value += amplitude * (hash(p * frequency) * 2.0 - 1.0);
+      frequency *= 2.1;
+      amplitude *= 0.55;
+      p += vec3(17.0, 9.0, 13.0);
+    }
+    return value;
+  }
+
+  void main() {
+    float radius = length(vLocalPos) * uScale;
+    float inner = max(0.0, uInnerRadius);
+    float outer = max(inner + 0.0001, uOuterRadius);
+    float feather = max(0.0001, uFeather);
+
+    float innerEdge = smoothstep(inner - feather, inner, radius);
+    float outerEdge = 1.0 - smoothstep(outer, outer + feather, radius);
+    float band = clamp(innerEdge * outerEdge, 0.0, 1.0);
+
+    if (band <= 0.0001) discard;
+
+    float t = clamp((radius - inner) / max(0.0001, outer - inner), 0.0, 1.0);
+    float baseBrightness = mix(1.3, 0.35, t) * uIntensity;
+
+    vec3 coord = normalize(vWorldPos) * uNoiseScale;
+    float turbulence = fbm(coord) * uNoiseStrength;
+
+    vec3 color = uColor * (baseBrightness + turbulence);
+    float alpha = band * clamp(uIntensity + turbulence * 0.5, 0.0, 1.4);
+    gl_FragColor = vec4(color, alpha);
+  }
+`;
+
+const blackHoleHaloFragmentShader = `
+  varying vec2 vLocalPos;
+  varying vec3 vWorldPos;
+  uniform vec3 uColor;
+  uniform float uInnerRadius;
+  uniform float uOuterRadius;
+  uniform float uFeather;
+  uniform float uIntensity;
+  uniform float uScale;
+  uniform float uNoiseScale;
+  uniform float uNoiseStrength;
+
+  float hash(vec3 p) {
+    return fract(sin(dot(p, vec3(4.898, 7.23, 3.17))) * 43758.5453);
+  }
+
+  float fbm(vec3 p) {
+    float value = 0.0;
+    float amplitude = 0.6;
+    float frequency = 1.0;
+    for (int i = 0; i < 4; i++) {
+      value += amplitude * (hash(p * frequency) * 2.0 - 1.0);
+      frequency *= 2.1;
+      amplitude *= 0.55;
+      p += vec3(11.0, 5.0, 19.0);
+    }
+    return value;
+  }
+
+  void main() {
+    float radius = length(vLocalPos) * uScale;
+    float inner = max(0.0, uInnerRadius);
+    float outer = max(inner + 0.0001, uOuterRadius);
+    float feather = max(0.0001, uFeather);
+
+    float core = smoothstep(inner - feather, inner, radius);
+    float halo = 1.0 - smoothstep(outer - feather, outer + feather, radius);
+    float band = clamp(core * halo, 0.0, 1.0);
+
+    if (band <= 0.0001) discard;
+
+    vec3 coord = normalize(vWorldPos) * uNoiseScale;
+    float turbulence = fbm(coord) * uNoiseStrength;
+
+    float heightFade = exp(-abs(vLocalPos.y) * 1.2);
+    float brightness = (0.6 + 0.6 * heightFade + turbulence) * uIntensity;
+    vec3 color = uColor * brightness;
+    float alpha = band * clamp(uIntensity + turbulence * 0.4, 0.0, 1.2);
+    gl_FragColor = vec4(color, alpha);
+  }
+`;
+
 const sunCoreGeometry = new THREE.IcosahedronGeometry(1, 4);
 const sunCoreMaterial = new THREE.ShaderMaterial({
   uniforms: starCoreUniforms,
@@ -302,6 +440,62 @@ const sunCorona = new THREE.Mesh(sunCoronaGeometry, sunCoronaMaterial);
 sunCorona.frustumCulled = false;
 sunGroup.add(sunCorona);
 
+const blackHoleGroup = new THREE.Group();
+blackHoleGroup.name = "BlackHoleGroup";
+blackHoleGroup.visible = false;
+sunGroup.add(blackHoleGroup);
+
+const blackHoleOrientationGroup = new THREE.Group();
+const blackHoleSpinGroup = new THREE.Group();
+blackHoleGroup.add(blackHoleOrientationGroup);
+blackHoleOrientationGroup.add(blackHoleSpinGroup);
+
+const blackHoleCoreMaterial = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.FrontSide, toneMapped: false });
+const blackHoleCore = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 64), blackHoleCoreMaterial);
+blackHoleCore.castShadow = false;
+blackHoleCore.receiveShadow = false;
+blackHoleCore.renderOrder = 2;
+blackHoleSpinGroup.add(blackHoleCore);
+
+const blackHoleDiskGeometry = new THREE.CircleGeometry(1, 256);
+const blackHoleDiskMaterial = new THREE.ShaderMaterial({
+  uniforms: THREE.UniformsUtils.clone(blackHoleDiskUniforms),
+  vertexShader: blackHoleDiskVertexShader,
+  fragmentShader: blackHoleDiskFragmentShader,
+  transparent: true,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+  blending: THREE.AdditiveBlending,
+  toneMapped: false
+});
+const blackHoleDisk = new THREE.Mesh(blackHoleDiskGeometry, blackHoleDiskMaterial);
+blackHoleDisk.rotation.x = Math.PI / 2;
+blackHoleDisk.renderOrder = 3;
+blackHoleSpinGroup.add(blackHoleDisk);
+
+const blackHoleHaloGeometry = new THREE.CircleGeometry(1, 256);
+const blackHoleHaloMaterial = new THREE.ShaderMaterial({
+  uniforms: THREE.UniformsUtils.clone(blackHoleHaloUniforms),
+  vertexShader: blackHoleDiskVertexShader,
+  fragmentShader: blackHoleHaloFragmentShader,
+  transparent: true,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+  blending: THREE.AdditiveBlending,
+  toneMapped: false
+});
+const blackHoleHalo = new THREE.Mesh(blackHoleHaloGeometry, blackHoleHaloMaterial);
+blackHoleHalo.rotation.y = Math.PI / 2;
+blackHoleHalo.renderOrder = 4;
+blackHoleSpinGroup.add(blackHoleHalo);
+
+const blackHoleHaloSecondary = blackHoleHalo.clone();
+blackHoleHaloSecondary.material = blackHoleHaloMaterial.clone();
+blackHoleHaloSecondary.rotation.y = -Math.PI / 2;
+blackHoleSpinGroup.add(blackHoleHaloSecondary);
+
+const blackHoleHaloMaterials = [blackHoleHaloMaterial, blackHoleHaloSecondary.material];
+
 let starParticleState = {
   points: null,
   geometry: null,
@@ -316,6 +510,26 @@ let starParticleState = {
   speed: 0.6,
   baseLifetime: 3.5,
   color: "#ffd27f"
+};
+
+const blackHoleState = {
+  lastCoreSize: null,
+  lastDiskRadius: null,
+  lastDiskThickness: null,
+  lastDiskIntensity: null,
+  lastDiskTilt: null,
+  lastDiskYaw: null,
+  lastDiskNoiseScale: null,
+  lastDiskNoiseStrength: null,
+  lastHaloRadius: null,
+  lastHaloAngle: null,
+  lastHaloThickness: null,
+  lastHaloIntensity: null,
+  lastHaloNoiseScale: null,
+  lastHaloNoiseStrength: null,
+  baseTwist: 0,
+  spinAngle: 0,
+  lastColor: new THREE.Color()
 };
 
 let starField = null;
@@ -372,6 +586,7 @@ const params = {
   simulationSpeed: 0.12,
   gravity: 9.81,
   sunPreset: "Sol",
+  sunVariant: "Star",
   sunColor: "#ffd27f",
   sunIntensity: 1.6,
   sunDistance: 48,
@@ -385,6 +600,22 @@ const params = {
   sunParticleSize: 0.15,
   sunParticleColor: "#ffbf7a",
   sunParticleLifetime: 4.2,
+  blackHoleCoreSize: 0.75,
+  blackHoleDiskRadius: 2.6,
+  blackHoleDiskThickness: 0.32,
+  blackHoleDiskIntensity: 1.8,
+  blackHoleDiskTilt: 0,
+  blackHoleDiskYaw: 0,
+  blackHoleDiskTwist: 0,
+  blackHoleSpinSpeed: 0.12,
+  blackHoleDiskNoiseScale: 1.3,
+  blackHoleDiskNoiseStrength: 0.35,
+  blackHoleHaloRadius: 3.2,
+  blackHoleHaloAngle: 68,
+  blackHoleHaloThickness: 0.45,
+  blackHoleHaloIntensity: 0.85,
+  blackHoleHaloNoiseScale: 1.15,
+  blackHoleHaloNoiseStrength: 0.4,
   moonCount: 1,
   moonMassScale: 1,
   starCount: 2200,
@@ -427,6 +658,8 @@ const params = {
   ringSpinSpeed: 0.05,
   ringAllowRandom: true
 };
+
+let currentSunVariant = params.sunVariant || "Star";
 
 const presets = {
   "Earth-like": {
@@ -981,6 +1214,7 @@ const shareKeys = [
   "sunHaloSize",
   "sunGlowStrength",
   "sunPulseSpeed",
+  "sunVariant",
   "sunPreset",
   "sunNoiseScale",
   "sunParticleCount",
@@ -988,6 +1222,22 @@ const shareKeys = [
   "sunParticleSize",
   "sunParticleColor",
   "sunParticleLifetime",
+  "blackHoleCoreSize",
+  "blackHoleDiskRadius",
+  "blackHoleDiskThickness",
+  "blackHoleDiskIntensity",
+  "blackHoleDiskTilt",
+  "blackHoleDiskYaw",
+  "blackHoleDiskTwist",
+  "blackHoleSpinSpeed",
+  "blackHoleDiskNoiseScale",
+  "blackHoleDiskNoiseStrength",
+  "blackHoleHaloRadius",
+  "blackHoleHaloAngle",
+  "blackHoleHaloThickness",
+  "blackHoleHaloIntensity",
+  "blackHoleHaloNoiseScale",
+  "blackHoleHaloNoiseStrength",
   "moonCount",
   "moonMassScale",
   "starCount",
@@ -1804,32 +2054,51 @@ function animate(timestamp) {
     ringMesh.rotation.z += delta * params.ringSpinSpeed;
   }
 
-  starCoreUniforms.uTime.value += delta;
-  starCoronaUniforms.uTime.value += delta * 0.6;
+  if (params.sunVariant !== "Black Hole") {
+    starCoreUniforms.uTime.value += delta;
+    starCoronaUniforms.uTime.value += delta * 0.6;
 
-  if (params.sunPulseSpeed > 0.001) {
-    sunPulsePhase += delta * params.sunPulseSpeed * 2.4;
-    const pulse = Math.sin(sunPulsePhase) * 0.5 + 0.5;
-    const pulseStrength = Math.max(0.05, params.sunGlowStrength || 1) * 0.22;
-    starCoreUniforms.uPulse.value = (pulse - 0.5) * pulseStrength;
-    starCoronaUniforms.uPulse.value = (pulse - 0.4) * pulseStrength * 1.35;
-    const baseCoreScale = Math.max(0.1, params.sunSize);
-    const baseHaloScale = Math.max(baseCoreScale * 1.15, params.sunHaloSize);
-    const glowStrength = Math.max(0.05, params.sunGlowStrength || 1);
-    const coreScaleMultiplier = 1 + (pulse - 0.5) * glowStrength * 0.08;
-    const haloScaleMultiplier = 1 + (pulse - 0.4) * glowStrength * 0.12;
-    sunVisual.scale.setScalar(baseCoreScale * THREE.MathUtils.clamp(coreScaleMultiplier, 0.85, 1.4));
-    sunCorona.scale.setScalar(baseHaloScale * THREE.MathUtils.clamp(haloScaleMultiplier, 0.8, 1.6));
+    if (params.sunPulseSpeed > 0.001) {
+      sunPulsePhase += delta * params.sunPulseSpeed * 2.4;
+      const pulse = Math.sin(sunPulsePhase) * 0.5 + 0.5;
+      const pulseStrength = Math.max(0.05, params.sunGlowStrength || 1) * 0.22;
+      starCoreUniforms.uPulse.value = (pulse - 0.5) * pulseStrength;
+      starCoronaUniforms.uPulse.value = (pulse - 0.4) * pulseStrength * 1.35;
+      const baseCoreScale = Math.max(0.1, params.sunSize);
+      const baseHaloScale = Math.max(baseCoreScale * 1.15, params.sunHaloSize);
+      const glowStrength = Math.max(0.05, params.sunGlowStrength || 1);
+      const coreScaleMultiplier = 1 + (pulse - 0.5) * glowStrength * 0.08;
+      const haloScaleMultiplier = 1 + (pulse - 0.4) * glowStrength * 0.12;
+      sunVisual.scale.setScalar(baseCoreScale * THREE.MathUtils.clamp(coreScaleMultiplier, 0.85, 1.4));
+      sunCorona.scale.setScalar(baseHaloScale * THREE.MathUtils.clamp(haloScaleMultiplier, 0.8, 1.6));
+    } else {
+      starCoreUniforms.uPulse.value = 0;
+      starCoronaUniforms.uPulse.value = 0;
+      const baseCoreScale = Math.max(0.1, params.sunSize);
+      const baseHaloScale = Math.max(baseCoreScale * 1.15, params.sunHaloSize);
+      sunVisual.scale.setScalar(baseCoreScale);
+      sunCorona.scale.setScalar(baseHaloScale);
+    }
+
+    updateStarParticles(simulationDelta);
   } else {
     starCoreUniforms.uPulse.value = 0;
     starCoronaUniforms.uPulse.value = 0;
-    const baseCoreScale = Math.max(0.1, params.sunSize);
-    const baseHaloScale = Math.max(baseCoreScale * 1.15, params.sunHaloSize);
-    sunVisual.scale.setScalar(baseCoreScale);
-    sunCorona.scale.setScalar(baseHaloScale);
   }
 
-  updateStarParticles(simulationDelta);
+  if (params.sunVariant === "Black Hole") {
+    const spinSpeed = params.blackHoleSpinSpeed ?? 0;
+    if (Math.abs(spinSpeed) > 1e-4) {
+      blackHoleState.spinAngle = (blackHoleState.spinAngle || 0) + delta * spinSpeed;
+      applyBlackHoleSpinRotation();
+    } else if (blackHoleState.spinAngle) {
+      blackHoleState.spinAngle = 0;
+      applyBlackHoleSpinRotation();
+    }
+  } else if (blackHoleState.spinAngle) {
+    blackHoleState.spinAngle = 0;
+    applyBlackHoleSpinRotation();
+  }
 
   const gravityFactor = Math.sqrt(params.gravity / 9.81);
   if (params.physicsEnabled) {
@@ -2119,12 +2388,36 @@ function updateTilt() {
 
 function updateSun() {
   const color = new THREE.Color(params.sunColor);
-  sunLight.color.copy(color);
-  sunLight.intensity = params.sunIntensity;
+  const isBlackHole = params.sunVariant === "Black Hole";
   const distance = params.sunDistance;
+  const variantChanged = currentSunVariant !== params.sunVariant;
+
+  if (variantChanged) {
+    resetBlackHoleState();
+    if (isBlackHole) {
+      disposeStarParticles();
+    }
+    currentSunVariant = params.sunVariant;
+  }
+
   sunGroup.position.set(distance, distance * 0.35, distance);
+  sunLight.color.copy(color);
+  sunLight.intensity = Math.max(0, params.sunIntensity);
   sunLight.target = planetRoot;
   sunLight.target.updateMatrixWorld();
+
+  sunVisual.visible = !isBlackHole;
+  sunCorona.visible = !isBlackHole;
+  blackHoleGroup.visible = isBlackHole;
+  if (starParticleState.points) {
+    starParticleState.points.visible = !isBlackHole;
+  }
+
+  if (isBlackHole) {
+    updateBlackHole(color);
+    sunPulsePhase = 0;
+    return;
+  }
 
   const edgeColor = color.clone().lerp(new THREE.Color(1, 0.72, 0.42), 0.35);
 
@@ -2162,6 +2455,125 @@ function updateSun() {
   starParticleState.color = params.sunParticleColor || params.sunColor || "#ffd27f";
 
   sunPulsePhase = 0;
+}
+
+function resetBlackHoleState() {
+  blackHoleState.lastCoreSize = null;
+  blackHoleState.lastDiskRadius = null;
+  blackHoleState.lastDiskThickness = null;
+  blackHoleState.lastDiskIntensity = null;
+  blackHoleState.lastDiskTilt = null;
+  blackHoleState.lastDiskYaw = null;
+  blackHoleState.lastDiskNoiseScale = null;
+  blackHoleState.lastDiskNoiseStrength = null;
+  blackHoleState.lastHaloRadius = null;
+  blackHoleState.lastHaloAngle = null;
+  blackHoleState.lastHaloThickness = null;
+  blackHoleState.lastHaloIntensity = null;
+  blackHoleState.lastHaloNoiseScale = null;
+  blackHoleState.lastHaloNoiseStrength = null;
+  blackHoleState.baseTwist = 0;
+  blackHoleState.spinAngle = 0;
+  blackHoleState.lastColor.setRGB(0, 0, 0);
+  if (blackHoleOrientationGroup) {
+    blackHoleOrientationGroup.rotation.set(0, 0, 0);
+  }
+  if (blackHoleSpinGroup) {
+    blackHoleSpinGroup.rotation.set(0, 0, 0);
+  }
+}
+
+function updateBlackHole(baseColor) {
+  const color = baseColor || new THREE.Color(params.sunColor);
+
+  const coreSize = Math.max(0.1, params.blackHoleCoreSize || 0.6);
+  if (blackHoleState.lastCoreSize !== coreSize) {
+    blackHoleCore.scale.setScalar(coreSize);
+    blackHoleState.lastCoreSize = coreSize;
+  }
+
+  const diskRadius = Math.max(coreSize + 0.05, params.blackHoleDiskRadius || coreSize * 3);
+  const diskThickness = THREE.MathUtils.clamp(params.blackHoleDiskThickness ?? 0.35, 0.05, 0.95);
+  const diskInner = THREE.MathUtils.clamp(diskRadius * (1 - diskThickness), coreSize * 1.05, diskRadius - 0.02);
+  const diskIntensity = Math.max(0, params.blackHoleDiskIntensity ?? 1.5);
+  const diskFeather = THREE.MathUtils.clamp(diskRadius * 0.18 * diskThickness, 0.04, diskRadius * 0.45);
+  const diskNoiseScale = Math.max(0.01, params.blackHoleDiskNoiseScale ?? 1);
+  const diskNoiseStrength = Math.max(0, params.blackHoleDiskNoiseStrength ?? 0);
+
+  if (blackHoleState.lastDiskRadius !== diskRadius) {
+    blackHoleDisk.scale.setScalar(diskRadius);
+    blackHoleState.lastDiskRadius = diskRadius;
+  }
+
+  const diskUniforms = blackHoleDiskMaterial.uniforms;
+  diskUniforms.uScale.value = diskRadius;
+  diskUniforms.uOuterRadius.value = diskRadius;
+  diskUniforms.uInnerRadius.value = diskInner;
+  diskUniforms.uFeather.value = diskFeather;
+  diskUniforms.uIntensity.value = diskIntensity;
+  diskUniforms.uNoiseScale.value = diskNoiseScale;
+  diskUniforms.uNoiseStrength.value = diskNoiseStrength;
+  diskUniforms.uColor.value.copy(color);
+
+  const haloRadius = Math.max(diskRadius * 1.05, params.blackHoleHaloRadius || diskRadius * 1.35);
+  const haloThickness = THREE.MathUtils.clamp(params.blackHoleHaloThickness ?? 0.45, 0.05, 0.95);
+  const haloInner = THREE.MathUtils.clamp(haloRadius * (1 - haloThickness), diskRadius * 0.65, haloRadius - 0.02);
+  const haloIntensity = Math.max(0, params.blackHoleHaloIntensity ?? 0.85);
+  const haloFeather = THREE.MathUtils.clamp(haloRadius * 0.22 * haloThickness, 0.06, haloRadius * 0.5);
+  const haloNoiseScale = Math.max(0.01, params.blackHoleHaloNoiseScale ?? 1);
+  const haloNoiseStrength = Math.max(0, params.blackHoleHaloNoiseStrength ?? 0);
+
+  blackHoleHalo.scale.setScalar(haloRadius);
+  blackHoleHaloSecondary.scale.setScalar(haloRadius);
+
+  blackHoleHaloMaterials.forEach((material) => {
+    material.uniforms.uScale.value = haloRadius;
+    material.uniforms.uOuterRadius.value = haloRadius;
+    material.uniforms.uInnerRadius.value = haloInner;
+    material.uniforms.uFeather.value = haloFeather;
+    material.uniforms.uIntensity.value = haloIntensity;
+    material.uniforms.uNoiseScale.value = haloNoiseScale;
+    material.uniforms.uNoiseStrength.value = haloNoiseStrength;
+    material.uniforms.uColor.value.copy(color);
+  });
+
+  const haloAngle = THREE.MathUtils.degToRad(THREE.MathUtils.clamp(params.blackHoleHaloAngle ?? 68, 0, 170));
+  blackHoleHalo.rotation.set(haloAngle, Math.PI / 2, 0);
+  blackHoleHaloSecondary.rotation.set(-haloAngle, -Math.PI / 2, 0);
+
+  const diskTilt = THREE.MathUtils.degToRad(params.blackHoleDiskTilt ?? 0);
+  const diskYaw = THREE.MathUtils.degToRad(params.blackHoleDiskYaw ?? 0);
+  if (blackHoleState.lastDiskTilt !== diskTilt || blackHoleState.lastDiskYaw !== diskYaw) {
+    const orientationEuler = new THREE.Euler(diskTilt, diskYaw, 0, "ZYX");
+    blackHoleOrientationGroup.setRotationFromEuler(orientationEuler);
+    blackHoleState.lastDiskTilt = diskTilt;
+    blackHoleState.lastDiskYaw = diskYaw;
+  }
+
+  const baseTwist = THREE.MathUtils.degToRad(params.blackHoleDiskTwist ?? 0);
+  if (blackHoleState.baseTwist !== baseTwist) {
+    blackHoleState.baseTwist = baseTwist;
+  }
+
+  blackHoleState.lastDiskThickness = diskThickness;
+  blackHoleState.lastDiskIntensity = diskIntensity;
+  blackHoleState.lastDiskNoiseScale = diskNoiseScale;
+  blackHoleState.lastDiskNoiseStrength = diskNoiseStrength;
+  blackHoleState.lastHaloRadius = haloRadius;
+  blackHoleState.lastHaloThickness = haloThickness;
+  blackHoleState.lastHaloIntensity = haloIntensity;
+  blackHoleState.lastHaloAngle = haloAngle;
+  blackHoleState.lastHaloNoiseScale = haloNoiseScale;
+  blackHoleState.lastHaloNoiseStrength = haloNoiseStrength;
+  blackHoleState.lastColor.copy(color);
+
+  applyBlackHoleSpinRotation();
+}
+
+function applyBlackHoleSpinRotation() {
+  if (!blackHoleDisk) return;
+  // Spin only the noisy disk mesh around its own axis; keep halos static
+  blackHoleDisk.rotation.z = (blackHoleState.baseTwist || 0) + (blackHoleState.spinAngle || 0);
 }
 
 function disposeStarParticles() {
@@ -2963,6 +3375,9 @@ function applyStarPreset(name, { skipShareUpdate = false } = {}) {
   const preset = starPresets[name];
   if (!preset) return;
   isApplyingStarPreset = true;
+
+  params.sunVariant = "Star";
+  guiControllers.sunVariant?.setValue?.("Star");
 
   params.sunPreset = name;
   guiControllers.sunPreset?.setValue?.(name);

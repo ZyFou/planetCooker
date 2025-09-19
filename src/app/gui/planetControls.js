@@ -242,10 +242,35 @@ export function setupPlanetControls({
 
   const sunFolder = registerFolder(environmentFolder.addFolder("Star"), { close: true });
 
+  const starOnlyControllers = [];
+  const blackHoleControllers = [];
+
+  const refreshStarVariantVisibility = (nextVariant = params.sunVariant) => {
+    const showBlackHole = nextVariant === "Black Hole";
+    starOnlyControllers.forEach((controller) => {
+      if (!controller) return;
+      if (showBlackHole) controller.hide(); else controller.show();
+    });
+    blackHoleControllers.forEach((controller) => {
+      if (!controller) return;
+      if (showBlackHole) controller.show(); else controller.hide();
+    });
+  };
+
+  guiControllers.sunVariant = sunFolder.add(params, "sunVariant", ["Star", "Black Hole"])
+    .name("Star Type")
+    .onChange((value) => {
+      refreshStarVariantVisibility(value);
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+
   const starPresetNames = Object.keys(starPresets);
   if (starPresetNames.length) {
     const starPresetController = sunFolder.add(params, "sunPreset", starPresetNames).name("Star Preset");
     guiControllers.sunPreset = starPresetController;
+    starOnlyControllers.push(starPresetController);
     starPresetController.onChange((value) => {
       if (shouldSkipStarUpdate()) return;
       onStarPresetChange?.(value);
@@ -283,6 +308,7 @@ export function setupPlanetControls({
       updateSun();
       scheduleShareUpdate();
     });
+  starOnlyControllers.push(guiControllers.sunSize);
 
   guiControllers.sunHaloSize = sunFolder.add(params, "sunHaloSize", 2, 18, 0.1)
     .name("Halo Radius")
@@ -291,6 +317,7 @@ export function setupPlanetControls({
       updateSun();
       scheduleShareUpdate();
     });
+  starOnlyControllers.push(guiControllers.sunHaloSize);
 
   guiControllers.sunGlowStrength = sunFolder.add(params, "sunGlowStrength", 0.1, 3.5, 0.05)
     .name("Glow Strength")
@@ -299,6 +326,7 @@ export function setupPlanetControls({
       updateSun();
       scheduleShareUpdate();
     });
+  starOnlyControllers.push(guiControllers.sunGlowStrength);
 
   guiControllers.sunPulseSpeed = sunFolder.add(params, "sunPulseSpeed", 0, 2.5, 0.05)
     .name("Pulse Speed")
@@ -307,6 +335,7 @@ export function setupPlanetControls({
       updateSun();
       scheduleShareUpdate();
     });
+  starOnlyControllers.push(guiControllers.sunPulseSpeed);
 
   guiControllers.sunNoiseScale = sunFolder.add(params, "sunNoiseScale", 0.3, 4, 0.05)
     .name("Noise Scale")
@@ -315,6 +344,7 @@ export function setupPlanetControls({
       updateSun();
       scheduleShareUpdate();
     });
+  starOnlyControllers.push(guiControllers.sunNoiseScale);
 
   guiControllers.sunParticleCount = sunFolder.add(params, "sunParticleCount", 0, 600, 10)
     .name("Particle Count")
@@ -324,6 +354,7 @@ export function setupPlanetControls({
       updateSun();
       scheduleShareUpdate();
     });
+  starOnlyControllers.push(guiControllers.sunParticleCount);
 
   guiControllers.sunParticleSpeed = sunFolder.add(params, "sunParticleSpeed", 0, 2, 0.01)
     .name("Particle Speed")
@@ -332,6 +363,7 @@ export function setupPlanetControls({
       updateSun();
       scheduleShareUpdate();
     });
+  starOnlyControllers.push(guiControllers.sunParticleSpeed);
 
   guiControllers.sunParticleSize = sunFolder.add(params, "sunParticleSize", 0.02, 0.3, 0.01)
     .name("Particle Size")
@@ -340,6 +372,7 @@ export function setupPlanetControls({
       updateSun();
       scheduleShareUpdate();
     });
+  starOnlyControllers.push(guiControllers.sunParticleSize);
 
   guiControllers.sunParticleLifetime = sunFolder.add(params, "sunParticleLifetime", 0.5, 8, 0.1)
     .name("Particle Lifetime")
@@ -348,6 +381,7 @@ export function setupPlanetControls({
       updateSun();
       scheduleShareUpdate();
     });
+  starOnlyControllers.push(guiControllers.sunParticleLifetime);
 
   guiControllers.sunParticleColor = sunFolder.addColor(params, "sunParticleColor")
     .name("Particle Color")
@@ -356,6 +390,153 @@ export function setupPlanetControls({
       updateSun();
       scheduleShareUpdate();
     });
+  starOnlyControllers.push(guiControllers.sunParticleColor);
+
+  guiControllers.blackHoleCoreSize = sunFolder.add(params, "blackHoleCoreSize", 0.2, 3.5, 0.05)
+    .name("Horizon Radius")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+  blackHoleControllers.push(guiControllers.blackHoleCoreSize);
+
+  guiControllers.blackHoleDiskRadius = sunFolder.add(params, "blackHoleDiskRadius", 0.6, 6.5, 0.05)
+    .name("Disk Radius")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+  blackHoleControllers.push(guiControllers.blackHoleDiskRadius);
+
+  guiControllers.blackHoleDiskThickness = sunFolder.add(params, "blackHoleDiskThickness", 0.05, 0.9, 0.01)
+    .name("Disk Thickness")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+  blackHoleControllers.push(guiControllers.blackHoleDiskThickness);
+
+  guiControllers.blackHoleDiskIntensity = sunFolder.add(params, "blackHoleDiskIntensity", 0, 4, 0.05)
+    .name("Disk Brightness")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+  blackHoleControllers.push(guiControllers.blackHoleDiskIntensity);
+
+  guiControllers.blackHoleDiskTilt = sunFolder.add(params, "blackHoleDiskTilt", -90, 90, 1)
+    .name("Disk Tilt")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+  blackHoleControllers.push(guiControllers.blackHoleDiskTilt);
+
+  guiControllers.blackHoleDiskYaw = sunFolder.add(params, "blackHoleDiskYaw", -180, 180, 1)
+    .name("Disk Yaw")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+  blackHoleControllers.push(guiControllers.blackHoleDiskYaw);
+
+  guiControllers.blackHoleDiskTwist = sunFolder.add(params, "blackHoleDiskTwist", -180, 180, 1)
+    .name("Disk Twist")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+  blackHoleControllers.push(guiControllers.blackHoleDiskTwist);
+
+  guiControllers.blackHoleSpinSpeed = sunFolder.add(params, "blackHoleSpinSpeed", -2, 2, 0.01)
+    .name("Disk Spin Speed")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+  blackHoleControllers.push(guiControllers.blackHoleSpinSpeed);
+
+  guiControllers.blackHoleDiskNoiseScale = sunFolder.add(params, "blackHoleDiskNoiseScale", 0.1, 4, 0.05)
+    .name("Disk Noise Scale")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+  blackHoleControllers.push(guiControllers.blackHoleDiskNoiseScale);
+
+  guiControllers.blackHoleDiskNoiseStrength = sunFolder.add(params, "blackHoleDiskNoiseStrength", 0, 1, 0.01)
+    .name("Disk Noise Strength")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+  blackHoleControllers.push(guiControllers.blackHoleDiskNoiseStrength);
+
+  guiControllers.blackHoleHaloRadius = sunFolder.add(params, "blackHoleHaloRadius", 0.8, 7.5, 0.05)
+    .name("Halo Radius")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+  blackHoleControllers.push(guiControllers.blackHoleHaloRadius);
+
+  guiControllers.blackHoleHaloAngle = sunFolder.add(params, "blackHoleHaloAngle", 0, 170, 1)
+    .name("Halo Angle")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+  blackHoleControllers.push(guiControllers.blackHoleHaloAngle);
+
+  guiControllers.blackHoleHaloThickness = sunFolder.add(params, "blackHoleHaloThickness", 0.05, 0.9, 0.01)
+    .name("Halo Thickness")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+  blackHoleControllers.push(guiControllers.blackHoleHaloThickness);
+
+  guiControllers.blackHoleHaloIntensity = sunFolder.add(params, "blackHoleHaloIntensity", 0, 3, 0.05)
+    .name("Halo Brightness")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+  blackHoleControllers.push(guiControllers.blackHoleHaloIntensity);
+
+  guiControllers.blackHoleHaloNoiseScale = sunFolder.add(params, "blackHoleHaloNoiseScale", 0.1, 4, 0.05)
+    .name("Halo Noise Scale")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+  blackHoleControllers.push(guiControllers.blackHoleHaloNoiseScale);
+
+  guiControllers.blackHoleHaloNoiseStrength = sunFolder.add(params, "blackHoleHaloNoiseStrength", 0, 1, 0.01)
+    .name("Halo Noise Strength")
+    .onChange(() => {
+      if (shouldSkipStarUpdate()) return;
+      updateSun();
+      scheduleShareUpdate();
+    });
+  blackHoleControllers.push(guiControllers.blackHoleHaloNoiseStrength);
+
+  refreshStarVariantVisibility();
 
   const spaceFolder = registerFolder(environmentFolder.addFolder("Sky"), { close: true });
 
