@@ -824,3 +824,124 @@ body.preview-mode #panel-scrim {
   color: rgba(195, 209, 245, 0.75);
 }
 
+/* Onboarding overlay */
+.onboarding-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 10, 20, 0.6);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  z-index: 70;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.onboarding-overlay.visible {
+  opacity: 1;
+}
+
+.onboarding-card {
+  width: min(560px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.6rem 1.4rem 1.1rem;
+  border-radius: 18px;
+  border: 1px solid rgba(124, 162, 255, 0.35);
+  background: linear-gradient(160deg, rgba(12, 20, 42, 0.96), rgba(8, 12, 24, 0.9));
+  box-shadow: 0 28px 60px rgba(5, 9, 20, 0.6);
+}
+
+.onboarding-title {
+  margin: 0 0 0.2rem 0;
+  font-size: 1.1rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(225, 233, 255, 0.92);
+}
+
+.onboarding-body {
+  margin: 0 0 0.2rem 0;
+  font-size: 0.98rem;
+  color: rgba(200, 216, 252, 0.9);
+}
+
+.onboarding-dots {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  justify-content: center;
+  margin: 0.35rem 0 0.2rem 0;
+}
+
+.onboarding-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(145, 175, 240, 0.35);
+}
+
+.onboarding-dot.active {
+  background: rgba(145, 175, 240, 0.95);
+  box-shadow: 0 0 8px rgba(145, 175, 240, 0.85);
+}
+
+.onboarding-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.onboarding-spacer {
+  flex: 1;
+}
+
+.onboarding-btn {
+  appearance: none;
+  border-radius: 999px;
+  padding: 0.5rem 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+
+.onboarding-btn.btn-ghost {
+  border: 1px solid rgba(135, 169, 218, 0.4);
+  background: rgba(24, 36, 68, 0.6);
+  color: #d9e6ff;
+}
+
+.onboarding-btn.btn-primary {
+  border: 1px solid rgba(135, 189, 255, 0.55);
+  background: linear-gradient(135deg, rgba(78, 146, 235, 0.95), rgba(56, 108, 214, 0.88));
+  color: white;
+}
+
+/* Touch gesture hint */
+.touch-hint {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%) translateY(16px);
+  padding: 0.55rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid rgba(135, 169, 218, 0.35);
+  background: rgba(8, 13, 26, 0.92);
+  color: rgba(217, 230, 255, 0.96);
+  z-index: 65;
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.touch-hint strong {
+  color: #dbe6ff;
+}
+
+.touch-hint.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+

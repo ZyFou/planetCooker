@@ -11,6 +11,7 @@ import { setupMoonControls } from "./app/gui/moonControls.js";
 import { createStarfield as createStarfieldExt, createSunTexture as createSunTextureExt } from "./app/stars.js";
 import { generateRingTexture as generateRingTextureExt, generateAnnulusTexture as generateAnnulusTextureExt } from "./app/textures.js";
 import { encodeShare as encodeShareExt, decodeShare as decodeShareExt, padBase64 as padBase64Ext, saveConfigurationToAPI as saveConfigurationToAPIExt, loadConfigurationFromAPI as loadConfigurationFromAPIExt } from "./app/shareCore.js";
+import { initOnboarding, showOnboarding } from "./app/onboarding.js";
 
 const debounceShare = debounce(() => {
   if (!shareDirty) return;
@@ -44,6 +45,8 @@ const debugHudFpsToggle = document.getElementById("debug-hud-fps");
 const cameraModeButton = document.getElementById("camera-mode");
 const returnHomeButton = document.getElementById("return-home");
 const mobileHomeButton = document.getElementById("mobile-home");
+const helpButton = document.getElementById("help");
+const mobileHelpButton = document.getElementById("mobile-help");
 const exitOverlay = document.getElementById("exit-overlay");
 const previewMode = new URLSearchParams(window.location.search).get("preview") === "1";
 if (previewMode) {
@@ -2036,6 +2039,21 @@ applyControlSearch({ scrollToFirst: false });
 updateShareCode();
 requestAnimationFrame(animate);
 //#endregion
+
+// Initialize onboarding and connect Help actions
+try {
+  initOnboarding({ sceneContainer, controlsContainer, previewMode });
+} catch (err) {
+  console.warn("Onboarding init failed", err);
+}
+helpButton?.addEventListener("click", () => {
+  try { closeMobileMenu?.(); } catch {}
+  showOnboarding(true);
+});
+mobileHelpButton?.addEventListener("click", () => {
+  try { closeMobileMenu?.(); } catch {}
+  showOnboarding(true);
+});
 
 //#region Animation loop
 function animate(timestamp) {
