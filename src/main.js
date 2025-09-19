@@ -1550,7 +1550,7 @@ async function tryImportShare(code) {
         history.replaceState(null, "", `#${trimmed}`);
         
         if (importShareContainer && importShareInput) {
-          importShareContainer.hidden = true;
+          // Keep the container visible; just clear input
           importShareInput.value = "";
         }
         
@@ -1572,7 +1572,7 @@ async function tryImportShare(code) {
       history.replaceState(null, "", `#${trimmed}`);
       
       if (importShareContainer && importShareInput) {
-        importShareContainer.hidden = true;
+        // Keep the container visible; just clear input
         importShareInput.value = "";
       }
       
@@ -1635,7 +1635,7 @@ importShareInput?.addEventListener("keydown", async (e) => {
     }
   } else if (e.key === "Escape") {
     if (importShareContainer && importShareInput) {
-      importShareContainer.hidden = true;
+      // Keep the container visible; just clear input
       importShareInput.value = "";
     }
   }
@@ -1643,7 +1643,7 @@ importShareInput?.addEventListener("keydown", async (e) => {
 
 importShareCancel?.addEventListener("click", () => {
   if (importShareContainer && importShareInput) {
-    importShareContainer.hidden = true;
+    // Keep the container visible; just clear input
     importShareInput.value = "";
   }
 });

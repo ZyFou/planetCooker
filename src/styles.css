@@ -427,6 +427,19 @@ canvas {
     margin-top: 0;
   }
 }
+
+/* Ensure left panel and load-code container are always visible on mobile */
+@media (max-width: 960px) {
+  /* Force panel shown, not off-canvas */
+  #info {
+    transform: none !important;
+    position: static !important;
+  }
+  /* No scrim needed if panel is always visible */
+  #panel-scrim {
+    display: none !important;
+  }
+}
 #orbit-stability {
   transition: color 0.3s ease;
 }
