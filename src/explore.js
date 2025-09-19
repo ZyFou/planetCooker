@@ -296,6 +296,8 @@ async function fetchSystems() {
     state.items = cached.items;
     state.total = cached.total;
     state.pageCount = cached.pageCount;
+    state.loading = false;
+    state.errorMessage = null;
     renderList();
     updatePagination();
     return;
@@ -331,6 +333,7 @@ async function fetchSystems() {
       pageCount: state.pageCount
     });
 
+    state.loading = false;
     renderList();
     updatePagination();
 
