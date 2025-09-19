@@ -12,6 +12,8 @@ import { createStarfield as createStarfieldExt, createSunTexture as createSunTex
 import { generateRingTexture as generateRingTextureExt, generateAnnulusTexture as generateAnnulusTextureExt } from "./app/textures.js";
 import { encodeShare as encodeShareExt, decodeShare as decodeShareExt, padBase64 as padBase64Ext, saveConfigurationToAPI as saveConfigurationToAPIExt, loadConfigurationFromAPI as loadConfigurationFromAPIExt } from "./app/shareCore.js";
 import { initOnboarding, showOnboarding } from "./app/onboarding.js";
+import { BIOME_TYPES, BIOME_COLORS, determineBiome, getBiomeMaterial, clearBiomeMaterialCache } from "./app/biomes.js";
+import { ExplosionSystem } from "./app/explosions.js";
 
 const debounceShare = debounce(() => {
   if (!shareDirty) return;
@@ -143,15 +145,135 @@ cloudsMesh.castShadow = false;
 cloudsMesh.receiveShadow = false;
 spinGroup.add(cloudsMesh);
 
-const atmosphereMaterial = new THREE.MeshPhongMaterial({
-  color: 0x88c7ff,
+// Enhanced atmosphere shader with glow and scattering
+const atmosphereVertexShader = `
+  varying vec3 vNormal;
+  varying vec3 vPosition;
+  varying vec3 vWorldPosition;
+  varying float vFresnel;
+  
+  void main() {
+    vNormal = normalize(normalMatrix * normal);
+    vPosition = position;
+    vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+    
+    // Calculate fresnel effect for rim lighting
+    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
+    vFresnel = 1.0 - max(0.0, dot(vNormal, viewDirection));
+    
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const atmosphereFragmentShader = `
+  uniform vec3 uAtmosphereColor;
+  uniform float uAtmosphereOpacity;
+  uniform float uGlowStrength;
+  uniform float uScatteringStrength;
+  uniform float uRimIntensity;
+  uniform float uTime;
+  uniform vec3 uSunDirection;
+  uniform float uPlanetRadius;
+  uniform float uAtmosphereRadius;
+  
+  varying vec3 vNormal;
+  varying vec3 vPosition;
+  varying vec3 vWorldPosition;
+  varying float vFresnel;
+  
+  // Noise function for atmospheric turbulence
+  float hash(vec3 p) {
+    return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+  }
+  
+  float noise(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    
+    float a = hash(i);
+    float b = hash(i + vec3(1.0, 0.0, 0.0));
+    float c = hash(i + vec3(0.0, 1.0, 0.0));
+    float d = hash(i + vec3(1.0, 1.0, 0.0));
+    float e = hash(i + vec3(0.0, 0.0, 1.0));
+    float f1 = hash(i + vec3(1.0, 0.0, 1.0));
+    float g = hash(i + vec3(0.0, 1.0, 1.0));
+    float h = hash(i + vec3(1.0, 1.0, 1.0));
+    
+    return mix(mix(mix(a, b, f.x), mix(c, d, f.x), f.y),
+               mix(mix(e, f1, f.x), mix(g, h, f.x), f.y), f.z);
+  }
+  
+  float fbm(vec3 p) {
+    float value = 0.0;
+    float amplitude = 0.5;
+    float frequency = 1.0;
+    for (int i = 0; i < 4; i++) {
+      value += amplitude * noise(p * frequency);
+      amplitude *= 0.5;
+      frequency *= 2.0;
+    }
+    return value;
+  }
+  
+  void main() {
+    vec3 normal = normalize(vNormal);
+    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
+    
+    // Distance from planet center
+    float distance = length(vPosition);
+    float normalizedDistance = (distance - uPlanetRadius) / (uAtmosphereRadius - uPlanetRadius);
+    
+    // Atmospheric density (thicker near surface)
+    float density = 1.0 - smoothstep(0.0, 1.0, normalizedDistance);
+    density = pow(density, 2.0);
+    
+    // Scattering effect (Rayleigh-like)
+    float scattering = 1.0 - max(0.0, dot(normal, uSunDirection));
+    scattering = pow(scattering, 2.0) * uScatteringStrength;
+    
+    // Rim lighting effect
+    float rim = pow(vFresnel, 2.0) * uRimIntensity;
+    
+    // Atmospheric turbulence
+    vec3 turbulencePos = vWorldPosition * 0.1 + uTime * 0.05;
+    float turbulence = fbm(turbulencePos) * 0.3;
+    
+    // Combine effects
+    float intensity = density * (1.0 + scattering + rim + turbulence);
+    intensity = clamp(intensity, 0.0, 2.0);
+    
+    // Glow effect
+    float glow = pow(density, 0.5) * uGlowStrength;
+    
+    vec3 finalColor = uAtmosphereColor * intensity;
+    float finalAlpha = (density * uAtmosphereOpacity + glow) * 0.8;
+    
+    gl_FragColor = vec4(finalColor, finalAlpha);
+  }
+`;
+
+const atmosphereMaterial = new THREE.ShaderMaterial({
+  vertexShader: atmosphereVertexShader,
+  fragmentShader: atmosphereFragmentShader,
+  uniforms: {
+    uAtmosphereColor: { value: new THREE.Color(0x88c7ff) },
+    uAtmosphereOpacity: { value: 0.28 },
+    uGlowStrength: { value: 0.5 },
+    uScatteringStrength: { value: 0.3 },
+    uRimIntensity: { value: 0.4 },
+    uTime: { value: 0 },
+    uSunDirection: { value: new THREE.Vector3(0, 0, 1) },
+    uPlanetRadius: { value: 1.0 },
+    uAtmosphereRadius: { value: 1.08 }
+  },
   transparent: true,
-  opacity: 0.28,
   side: THREE.BackSide,
   blending: THREE.AdditiveBlending,
   depthWrite: false,
   depthTest: true
 });
+
 const atmosphereMesh = new THREE.Mesh(new THREE.SphereGeometry(1.08, 64, 64), atmosphereMaterial);
 atmosphereMesh.castShadow = false;
 atmosphereMesh.receiveShadow = false;
@@ -162,6 +284,43 @@ planetRoot.add(moonsGroup);
 
 const orbitLinesGroup = new THREE.Group();
 planetRoot.add(orbitLinesGroup);
+
+// Initialize explosion system
+let explosionSystem = null;
+
+// Initialize explosion system after planet mesh is created
+function initializeExplosionSystem() {
+  if (explosionSystem) {
+    explosionSystem.dispose();
+  }
+  explosionSystem = new ExplosionSystem(scene, planetMesh);
+}
+
+// Trigger explosion when meteor hits planet
+function triggerMeteorImpact(position, velocity, mass) {
+  if (explosionSystem && params.explosionEnabled) {
+    explosionSystem.triggerMeteorImpact(position, velocity, mass);
+  }
+}
+
+// Test explosion at random position
+function testExplosion() {
+  if (explosionSystem) {
+    const position = new THREE.Vector3(
+      (Math.random() - 0.5) * 2 * params.radius,
+      (Math.random() - 0.5) * 2 * params.radius,
+      (Math.random() - 0.5) * 2 * params.radius
+    ).normalize().multiplyScalar(params.radius);
+    
+    const velocity = new THREE.Vector3(
+      (Math.random() - 0.5) * 2,
+      (Math.random() - 0.5) * 2,
+      (Math.random() - 0.5) * 2
+    );
+    
+    explosionSystem.createExplosion(position, 1.0, 0xffaa66);
+  }
+}
 
 const debugVectorScale = 0.45;
 const debugState = { showPlanetVelocity: false, showMoonVelocity: false };
@@ -609,6 +768,14 @@ const params = {
   colorMid: "#b49e74",
   colorHigh: "#f2f6f5",
   atmosphereColor: "#7baeff",
+  atmosphereGlowStrength: 0.5,
+  atmosphereScattering: 0.3,
+  atmosphereRimIntensity: 0.4,
+  // Biome system
+  biomeEnabled: true,
+  biomeTemperature: 0.5,
+  biomeMoisture: 0.5,
+  biomeVariation: 0.3,
   cloudsOpacity: 0.4,
   cloudHeight: 0.03,
   cloudDensity: 0.55,
@@ -1991,6 +2158,10 @@ if (!previewMode) {
     if (event.key === "Escape") {
       closeMobilePanel();
     }
+    if (event.key.toLowerCase() === "e") {
+      // Test explosion
+      testExplosion();
+    }
   });
 }
 //#endregion
@@ -2225,6 +2396,11 @@ function animate(timestamp) {
 
   // Update explosion particles after physics
   updateExplosions(simulationDelta);
+  
+  // Update explosion system
+  if (explosionSystem) {
+    explosionSystem.update(delta);
+  }
 
   syncOrbitLinesWithPivots();
 
@@ -2234,6 +2410,20 @@ function animate(timestamp) {
     uniforms.uTime.value = timestamp * 0.001;
     uniforms.uBrightness.value = params.starBrightness;
     uniforms.uTwinkleSpeed.value = params.starTwinkleSpeed;
+  }
+
+  // Update atmosphere shader uniforms
+  if (atmosphereMaterial.uniforms) {
+    atmosphereMaterial.uniforms.uTime.value = timestamp * 0.001;
+    atmosphereMaterial.uniforms.uPlanetRadius.value = params.radius;
+    atmosphereMaterial.uniforms.uAtmosphereRadius.value = params.radius * 1.08;
+    
+    // Update sun direction based on sun position
+    if (sunGroup && sunGroup.position) {
+      const sunDirection = new THREE.Vector3();
+      sunDirection.subVectors(sunGroup.position, planetRoot.position).normalize();
+      atmosphereMaterial.uniforms.uSunDirection.value.copy(sunDirection);
+    }
   }
 
   updateDebugVectors();
@@ -2370,7 +2560,23 @@ function rebuildPlanet() {
     vertex.copy(normal).multiplyScalar(finalRadius);
     positions.setXYZ(i, vertex.x, vertex.y, vertex.z);
 
-    const color = sampleColor(normalized);
+    // Determine biome and sample color
+    let color;
+    if (params.biomeEnabled) {
+      // Generate temperature and moisture noise for biome determination
+      const tempNoise = createNoise3D(() => noiseRng.next());
+      const moistureNoise = createNoise3D(() => noiseRng.next());
+      
+      const temperature = tempNoise(sampleDir.x * 2, sampleDir.y * 2, sampleDir.z * 2) * params.biomeVariation + params.biomeTemperature;
+      const moisture = moistureNoise(sampleDir.x * 1.5, sampleDir.y * 1.5, sampleDir.z * 1.5) * params.biomeVariation + params.biomeMoisture;
+      
+      const biome = determineBiome(normalized, temperature, moisture);
+      const biomeColor = getBiomeColor(biome, normalized);
+      color = biomeColor;
+    } else {
+      color = sampleColor(normalized);
+    }
+    
     colors[i * 3 + 0] = color.r;
     colors[i * 3 + 1] = color.g;
     colors[i * 3 + 2] = color.b;
@@ -2387,6 +2593,9 @@ function rebuildPlanet() {
   cloudsMesh.scale.setScalar(cloudScale);
   atmosphereMesh.scale.setScalar(atmosphereScale);
   updateRings();
+
+  // Initialize explosion system after planet is built
+  initializeExplosionSystem();
 
   scheduleShareUpdate();
 }
@@ -2425,6 +2634,34 @@ function deriveTerrainProfile(seed) {
   };
 }
 
+function getBiomeColor(biomeType, elevation) {
+  const colors = BIOME_COLORS[biomeType];
+  if (!colors) {
+    // Fallback to default color
+    return new THREE.Color(0.5, 0.5, 0.5);
+  }
+  
+  // Add some variation based on elevation
+  const variation = (elevation - 0.5) * 0.2;
+  const colorVariation = Math.sin(elevation * Math.PI * 4) * 0.1;
+  
+  let color;
+  if (variation < -0.1) {
+    color = new THREE.Color(colors.accent);
+  } else if (variation < 0.1) {
+    color = new THREE.Color(colors.primary);
+  } else {
+    color = new THREE.Color(colors.secondary);
+  }
+  
+  // Add subtle color variation
+  color.r += colorVariation;
+  color.g += colorVariation;
+  color.b += colorVariation;
+  
+  return color;
+}
+
 function sampleColor(elevation) {
   if (elevation <= params.oceanLevel) {
     const oceanT = params.oceanLevel <= 0 ? 0 : THREE.MathUtils.clamp(elevation / Math.max(params.oceanLevel, 1e-6), 0, 1);
@@ -2452,15 +2689,32 @@ function updatePalette() {
   palette.mid.set(params.colorMid);
   palette.high.set(params.colorHigh);
   palette.atmosphere.set(params.atmosphereColor);
-  atmosphereMaterial.color.copy(palette.atmosphere);
+  
+  // Update atmosphere shader uniforms
+  if (atmosphereMaterial.uniforms) {
+    atmosphereMaterial.uniforms.uAtmosphereColor.value.copy(palette.atmosphere);
+  }
 }
 
 function updateClouds() {
   cloudsMaterial.opacity = params.cloudsOpacity;
-  atmosphereMaterial.opacity = THREE.MathUtils.clamp(params.cloudsOpacity * 0.55, 0.05, 0.6);
+  
+  // Update atmosphere shader uniforms
+  if (atmosphereMaterial.uniforms) {
+    atmosphereMaterial.uniforms.uAtmosphereOpacity.value = THREE.MathUtils.clamp(params.cloudsOpacity * 0.55, 0.05, 0.6);
+    atmosphereMaterial.uniforms.uGlowStrength.value = params.atmosphereGlowStrength || 0.5;
+    atmosphereMaterial.uniforms.uScatteringStrength.value = params.atmosphereScattering || 0.3;
+    atmosphereMaterial.uniforms.uRimIntensity.value = params.atmosphereRimIntensity || 0.4;
+  }
+  
   // Update cloud layer height/scale
   const cloudScale = Math.max(0.1, params.radius * (1 + Math.max(0, params.cloudHeight || 0.03)));
   cloudsMesh.scale.setScalar(cloudScale);
+  
+  // Update atmosphere scale
+  const atmosphereScale = params.radius * (1.06 + Math.max(0.0, (params.cloudHeight || 0.03)) * 0.8);
+  atmosphereMesh.scale.setScalar(atmosphereScale);
+  
   // Regenerate texture when any cloud parameter changes
   cloudTextureDirty = true;
   if (cloudTextureDirty || !cloudTexture) {

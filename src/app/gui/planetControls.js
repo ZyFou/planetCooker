@@ -175,6 +175,58 @@ export function setupPlanetControls({
       scheduleShareUpdate();
     });
 
+  guiControllers.atmosphereGlowStrength = paletteFolder.add(params, "atmosphereGlowStrength", 0, 2, 0.05)
+    .name("Atmosphere Glow")
+    .onChange(() => {
+      updateClouds();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.atmosphereScattering = paletteFolder.add(params, "atmosphereScattering", 0, 1, 0.05)
+    .name("Scattering")
+    .onChange(() => {
+      updateClouds();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.atmosphereRimIntensity = paletteFolder.add(params, "atmosphereRimIntensity", 0, 1, 0.05)
+    .name("Rim Intensity")
+    .onChange(() => {
+      updateClouds();
+      scheduleShareUpdate();
+    });
+
+  // Biome system controls
+  const biomeFolder = registerFolder(gui.addFolder("Biomes"), { close: true });
+
+  guiControllers.biomeEnabled = biomeFolder.add(params, "biomeEnabled")
+    .name("Enable Biomes")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.biomeTemperature = biomeFolder.add(params, "biomeTemperature", 0, 1, 0.01)
+    .name("Temperature")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.biomeMoisture = biomeFolder.add(params, "biomeMoisture", 0, 1, 0.01)
+    .name("Moisture")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.biomeVariation = biomeFolder.add(params, "biomeVariation", 0, 1, 0.01)
+    .name("Variation")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
   guiControllers.cloudsOpacity = paletteFolder.add(params, "cloudsOpacity", 0, 1, 0.01)
     .name("Cloud Opacity")
     .onChange(() => {
@@ -767,6 +819,7 @@ export function setupPlanetControls({
     folders: {
       planetFolder,
       paletteFolder,
+      biomeFolder,
       motionFolder,
       environmentFolder,
       sunFolder,
