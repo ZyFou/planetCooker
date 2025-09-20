@@ -63,12 +63,31 @@ const Studio3D = ({ previewMode = false, loadShareParam, hashParam }) => {
       const gui = new GUI()
       guiRef.current = gui
       
-      // Initialize control search
-      initControlSearch()
-      
-      // Setup planet and moon controls
+      // Setup planet and moon controls first
       setupPlanetControls(gui)
       setupMoonControls(gui)
+      
+      // Initialize control search after a short delay to ensure DOM is ready
+      setTimeout(() => {
+        const controlsContainer = document.getElementById('controls')
+        const searchInput = document.getElementById('control-search')
+        const clearButton = document.getElementById('control-search-clear')
+        const emptyState = document.getElementById('control-search-empty')
+        const searchBar = document.getElementById('control-search-bar')
+        const infoPanel = document.getElementById('info')
+        
+        // Initialize control search with proper DOM elements
+        if (controlsContainer && searchInput) {
+          initControlSearch({
+            controlsContainer,
+            searchInput,
+            clearButton,
+            emptyState,
+            searchBar,
+            infoPanel
+          })
+        }
+      }, 100)
     }
 
     // Add resize handler
