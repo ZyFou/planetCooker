@@ -2192,6 +2192,61 @@ function animate(timestamp) {
       controls.enabled = true;
       controls.update();
     }
+  } else if (cameraMode === CameraMode.FOCUS) {
+    // Enable controls for manual camera movement
+    controls.enabled = true;
+    controls.update();
+    
+    if (focusTarget) {
+      focusTarget.updateMatrixWorld(true);
+      let targetPos;
+      
+      // Get the world position of the focused object
+      if (focusTarget === planetMesh) {
+        targetPos = planetRoot.getWorldPosition(tmpVecB);
+      } else if (focusTarget === sunVisual || focusTarget === sunCorona) {
+        targetPos = sunGroup.getWorldPosition(tmpVecB);
+      } else if (focusTarget.parent === blackHoleGroup) {
+        targetPos = blackHoleGroup.getWorldPosition(tmpVecB);
+      } else if (focusTarget.parent && focusTarget.parent.parent === moonsGroup) {
+        // This is a moon mesh
+        targetPos = focusTarget.getWorldPosition(tmpVecB);
+      } else {
+        targetPos = focusTarget.getWorldPosition(tmpVecB);
+      }
+      
+      // Update controls target to focus on the selected object
+      controls.target.lerp(targetPos, 0.1);
+      
+      // Calculate appropriate distance based on object size for initial positioning
+      let minDistance, maxDistance;
+      if (focusTarget === planetMesh) {
+        minDistance = Math.max(1, params.radius * 1.2);
+        maxDistance = Math.max(25, params.radius * 15); // Increased max distance for planets
+      } else if (focusTarget === sunVisual || focusTarget === sunCorona) {
+        minDistance = Math.max(2, params.sunSize * 1.5);
+        maxDistance = Math.max(40, params.sunSize * 12); // Increased max distance for sun
+      } else if (focusTarget.parent === blackHoleGroup) {
+        minDistance = 3;
+        maxDistance = 50; // Increased max distance for black holes
+      } else {
+        // For moons
+        const moonSize = focusTarget.geometry?.boundingSphere?.radius || 0.2;
+        minDistance = Math.max(0.8, moonSize * 2);
+        maxDistance = Math.max(15, moonSize * 20); // Increased max distance for moons
+      }
+      
+      // Update controls distance limits
+      controls.minDistance = minDistance;
+      controls.maxDistance = maxDistance;
+    } else {
+      // If no focus target, fall back to orbit mode
+      cameraMode = CameraMode.ORBIT;
+      if (cameraModeButton) cameraModeButton.textContent = `Camera: ${cameraMode}`;
+      // Reset controls to default values
+      controls.minDistance = 2;
+      controls.maxDistance = 80;
+    }
   }
 
   if (planetDirty) {
@@ -4889,10 +4944,12 @@ function saveArrayBuffer(data, filename) {
 const CameraMode = {
   ORBIT: "Orbit",
   SURFACE: "Surface",
-  CHASE: "Chase"
+  CHASE: "Chase",
+  FOCUS: "Focus"
 };
 let cameraMode = CameraMode.ORBIT;
 let chaseTarget = null; // first moon
+let focusTarget = null; // object being focused on
 
 // Camera mode cycling
 function cycleCameraMode() {
@@ -4903,7 +4960,124 @@ function cycleCameraMode() {
 }
 cameraModeButton?.addEventListener("click", cycleCameraMode);
 
+//#region Focus functionality
+function getObjectName(object) {
+  if (object === planetMesh) return "Planet";
+  if (object === sunVisual) return "Sun";
+  if (object === sunCorona) return "Sun";
+  if (object.parent === blackHoleGroup) return "Black Hole";
+  if (object.parent === moonsGroup) return `Moon ${moonsGroup.children.indexOf(object.parent) + 1}`;
+  return "Unknown Object";
+}
 
+// Raycasting for object selection
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
 
+function onMouseClick(event) {
+  // Calculate mouse position in normalized device coordinates
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  
+  // Update the picking ray with the camera and mouse position
+  raycaster.setFromCamera(mouse, camera);
+  
+  // Create array of all selectable objects
+  const selectableObjects = [];
+  
+  // Add planet mesh
+  if (planetMesh) selectableObjects.push(planetMesh);
+  
+  // Add sun objects
+  if (sunVisual) selectableObjects.push(sunVisual);
+  if (sunCorona) selectableObjects.push(sunCorona);
+  
+  // Add black hole objects
+  blackHoleGroup.traverse((child) => {
+    if (child.isMesh) selectableObjects.push(child);
+  });
+  
+  // Add moon objects
+  moonsGroup.children.forEach((moonPivot) => {
+    if (moonPivot.userData?.mesh) {
+      selectableObjects.push(moonPivot.userData.mesh);
+    }
+  });
+  
+  // Calculate objects intersecting the picking ray
+  const intersects = raycaster.intersectObjects(selectableObjects);
+  
+  if (intersects.length > 0) {
+    const clickedObject = intersects[0].object;
+    // Single click - could be used for highlighting or other interactions in the future
+  } else if (cameraMode === CameraMode.FOCUS) {
+    // If clicking on empty space while in focus mode, exit focus mode
+    cameraMode = CameraMode.ORBIT;
+    focusTarget = null;
+    if (cameraModeButton) cameraModeButton.textContent = `Camera: ${cameraMode}`;
+    controls.enabled = true;
+  }
+}
 
+function onMouseDoubleClick(event) {
+  // Calculate mouse position in normalized device coordinates
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  
+  // Update the picking ray with the camera and mouse position
+  raycaster.setFromCamera(mouse, camera);
+  
+  // Create array of all selectable objects
+  const selectableObjects = [];
+  
+  // Add planet mesh
+  if (planetMesh) selectableObjects.push(planetMesh);
+  
+  // Add sun objects
+  if (sunVisual) selectableObjects.push(sunVisual);
+  if (sunCorona) selectableObjects.push(sunCorona);
+  
+  // Add black hole objects
+  blackHoleGroup.traverse((child) => {
+    if (child.isMesh) selectableObjects.push(child);
+  });
+  
+  // Add moon objects
+  moonsGroup.children.forEach((moonPivot) => {
+    if (moonPivot.userData?.mesh) {
+      selectableObjects.push(moonPivot.userData.mesh);
+    }
+  });
+  
+  // Calculate objects intersecting the picking ray
+  const intersects = raycaster.intersectObjects(selectableObjects);
+  
+  if (intersects.length > 0) {
+    const clickedObject = intersects[0].object;
+    // Directly focus on the object without showing UI
+    focusTarget = clickedObject;
+    cameraMode = CameraMode.FOCUS;
+    if (cameraModeButton) cameraModeButton.textContent = `Camera: ${cameraMode}`;
+  }
+}
+
+// Add click and double-click event listeners to the renderer
+renderer.domElement.addEventListener("click", onMouseClick);
+renderer.domElement.addEventListener("dblclick", onMouseDoubleClick);
+
+// Add keyboard shortcut to exit focus mode (Escape key)
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    if (cameraMode === CameraMode.FOCUS) {
+      cameraMode = CameraMode.ORBIT;
+      focusTarget = null;
+      if (cameraModeButton) cameraModeButton.textContent = `Camera: ${cameraMode}`;
+      controls.enabled = true;
+    }
+  }
+});
+
+//#endregion
 
