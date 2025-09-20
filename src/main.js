@@ -12,6 +12,7 @@ import { createStarfield as createStarfieldExt, createSunTexture as createSunTex
 import { generateRingTexture as generateRingTextureExt, generateAnnulusTexture as generateAnnulusTextureExt } from "./app/textures.js";
 import { encodeShare as encodeShareExt, decodeShare as decodeShareExt, padBase64 as padBase64Ext, saveConfigurationToAPI as saveConfigurationToAPIExt, loadConfigurationFromAPI as loadConfigurationFromAPIExt } from "./app/shareCore.js";
 import { initOnboarding, showOnboarding } from "./app/onboarding.js";
+import { createPlanetWalkController } from "./app/planetWalk.js";
 
 const debounceShare = debounce(() => {
   if (!shareDirty) return;
@@ -158,6 +159,18 @@ const cloudsMesh = new THREE.Mesh(new THREE.SphereGeometry(1.03, 96, 96), clouds
 cloudsMesh.castShadow = false;
 cloudsMesh.receiveShadow = false;
 spinGroup.add(cloudsMesh);
+
+const planetWalkController = createPlanetWalkController({
+  camera,
+  renderer,
+  planetMesh,
+  planetRoot,
+  spinGroup,
+  getPlanetInfo: () => ({
+    radius: params.radius,
+    gravity: params.gravity
+  })
+});
 
 const atmosphereMaterial = new THREE.MeshPhongMaterial({
   color: 0x88c7ff,
@@ -1695,6 +1708,9 @@ function updateMobileFocusMenu() {
 }
 
 function focusOnObject(targetType, moonIndex = null) {
+  if (planetWalkController.isActive()) {
+    planetWalkController.exit();
+  }
   let targetObject = null;
   
   if (targetType === "planet") {
@@ -2386,6 +2402,9 @@ function animate(timestamp) {
       controls.enabled = true;
       controls.update();
     }
+  } else if (cameraMode === CameraMode.WALK) {
+    controls.enabled = false;
+    planetWalkController.update(delta);
   } else if (cameraMode === CameraMode.FOCUS) {
     // Enable controls for manual camera movement
     controls.enabled = true;
@@ -2577,6 +2596,10 @@ function animate(timestamp) {
   }
 
   updateDebugVectors();
+
+  if (cameraMode === CameraMode.WALK) {
+    planetWalkController.syncCamera();
+  }
 
   renderer.render(scene, camera);
   updateTimeDisplay(simulationYears);
@@ -5157,7 +5180,8 @@ const CameraMode = {
   ORBIT: "Orbit",
   SURFACE: "Surface",
   CHASE: "Chase",
-  FOCUS: "Focus"
+  FOCUS: "Focus",
+  WALK: "Walk"
 };
 let cameraMode = CameraMode.ORBIT;
 let chaseTarget = null; // first moon
@@ -5165,6 +5189,14 @@ let focusTarget = null; // object being focused on
 
 // Camera mode cycling
 function cycleCameraMode() {
+  if (planetWalkController.isActive()) {
+    planetWalkController.exit();
+    cameraMode = CameraMode.ORBIT;
+    focusTarget = null;
+    controls.enabled = true;
+    if (cameraModeButton) cameraModeButton.textContent = `Camera: ${cameraMode}`;
+    return;
+  }
   const order = [CameraMode.ORBIT, CameraMode.SURFACE, CameraMode.CHASE];
   const idx = order.indexOf(cameraMode);
   cameraMode = order[(idx + 1) % order.length];
@@ -5233,6 +5265,7 @@ function onMouseClick(event) {
 }
 
 function onMouseDoubleClick(event) {
+  if (planetWalkController.isActive()) return;
   // Calculate mouse position in normalized device coordinates
   const rect = renderer.domElement.getBoundingClientRect();
   mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -5265,9 +5298,26 @@ function onMouseDoubleClick(event) {
   
   // Calculate objects intersecting the picking ray
   const intersects = raycaster.intersectObjects(selectableObjects);
-  
+
   if (intersects.length > 0) {
     const clickedObject = intersects[0].object;
+    if (cameraMode === CameraMode.FOCUS && focusTarget === planetMesh && clickedObject === planetMesh) {
+      const entered = planetWalkController.enter({
+        onExit: () => {
+          cameraMode = CameraMode.FOCUS;
+          focusTarget = planetMesh;
+          controls.enabled = true;
+          if (cameraModeButton) cameraModeButton.textContent = `Camera: ${cameraMode}`;
+        }
+      });
+      if (entered) {
+        cameraMode = CameraMode.WALK;
+        focusTarget = planetMesh;
+        controls.enabled = false;
+        if (cameraModeButton) cameraModeButton.textContent = `Camera: ${cameraMode}`;
+        return;
+      }
+    }
     // Directly focus on the object without showing UI
     focusTarget = clickedObject;
     cameraMode = CameraMode.FOCUS;
@@ -5296,6 +5346,7 @@ renderer.domElement.addEventListener("dblclick", onMouseDoubleClick);
 
 // Add keyboard shortcut to exit focus mode (Escape key)
 document.addEventListener("keydown", (event) => {
+  if (planetWalkController.handleKeyDown(event)) return;
   if (event.key === "Escape") {
     if (cameraMode === CameraMode.FOCUS) {
       cameraMode = CameraMode.ORBIT;
@@ -5304,6 +5355,10 @@ document.addEventListener("keydown", (event) => {
       controls.enabled = true;
     }
   }
+});
+
+document.addEventListener("keyup", (event) => {
+  if (planetWalkController.handleKeyUp(event)) return;
 });
 
 //#endregion

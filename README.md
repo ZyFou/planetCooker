@@ -21,6 +21,13 @@ A browser-based procedural planet generator built with Three.js. Create stylised
 - Seeded generation with shareable codes (URL hash + copy button) for quick collaboration.
 - Lightweight built-in FBX exporter clones the current system, strips orbit guides, and bakes world transforms for clean Unity/Blender import.
 
+## Planet Walk Mode (Desktop)
+
+- Focus the planet (double-click it) and then double-click it again to drop onto the surface.
+- Walk with **WASD** or the arrow keys, jump with **Space**, and hold the left mouse button to look around while the pointer is locked.
+- Press **Escape** to leave walk mode and return to the regular focus camera.
+- The walk camera inherits the planet's rotation and follows the generated terrain; the feature is currently disabled on mobile devices.
+
 ## Notes
 
 - Exported FBX files contain the current mesh deformations, cloud shell, and moon hierarchy. Orbit guide lines are removed automatically.
