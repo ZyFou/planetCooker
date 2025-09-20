@@ -12,6 +12,7 @@ import { createStarfield as createStarfieldExt, createSunTexture as createSunTex
 import { generateRingTexture as generateRingTextureExt, generateAnnulusTexture as generateAnnulusTextureExt } from "./app/textures.js";
 import { encodeShare as encodeShareExt, decodeShare as decodeShareExt, padBase64 as padBase64Ext, saveConfigurationToAPI as saveConfigurationToAPIExt, loadConfigurationFromAPI as loadConfigurationFromAPIExt } from "./app/shareCore.js";
 import { initOnboarding, showOnboarding } from "./app/onboarding.js";
+import { createPlanetWalkController } from "./app/planetWalk.js";
 
 const debounceShare = debounce(() => {
   if (!shareDirty) return;
@@ -2455,6 +2456,17 @@ function animate(timestamp) {
       // Reset controls to default values
       controls.minDistance = 2;
       controls.maxDistance = 80;
+    }
+  } else if (cameraMode === CameraMode.WALK) {
+    // Desktop-only walk controller update
+    controls.enabled = false;
+    if (walkController && walkController.active) {
+      walkController.update(delta);
+    } else {
+      // Fallback to orbit if something went wrong
+      cameraMode = CameraMode.ORBIT;
+      if (cameraModeButton) cameraModeButton.textContent = `Camera: ${cameraMode}`;
+      controls.enabled = true;
     }
   }
 
@@ -5157,11 +5169,13 @@ const CameraMode = {
   ORBIT: "Orbit",
   SURFACE: "Surface",
   CHASE: "Chase",
-  FOCUS: "Focus"
+  FOCUS: "Focus",
+  WALK: "Walk"
 };
 let cameraMode = CameraMode.ORBIT;
 let chaseTarget = null; // first moon
 let focusTarget = null; // object being focused on
+let walkController = null;
 
 // Camera mode cycling
 function cycleCameraMode() {
@@ -5222,7 +5236,9 @@ function onMouseClick(event) {
   
   if (intersects.length > 0) {
     const clickedObject = intersects[0].object;
-    // Single click - could be used for highlighting or other interactions in the future
+    // Ignore single clicks in WALK mode
+    if (cameraMode === CameraMode.WALK) return;
+    // Reserved for future single-click interactions
   } else if (cameraMode === CameraMode.FOCUS) {
     // If clicking on empty space while in focus mode, exit focus mode
     cameraMode = CameraMode.ORBIT;
@@ -5233,6 +5249,8 @@ function onMouseClick(event) {
 }
 
 function onMouseDoubleClick(event) {
+  // Ignore double-clicks while in WALK mode; use Esc to exit
+  if (cameraMode === CameraMode.WALK) return;
   // Calculate mouse position in normalized device coordinates
   const rect = renderer.domElement.getBoundingClientRect();
   mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -5268,18 +5286,44 @@ function onMouseDoubleClick(event) {
   
   if (intersects.length > 0) {
     const clickedObject = intersects[0].object;
-    // Directly focus on the object without showing UI
+    const isPlanet = clickedObject === planetMesh;
+
+    // Enter WALK only when focused and double-clicking the planet on desktop
+    if (!isMobileLayout() && isPlanet && cameraMode === CameraMode.FOCUS) {
+      // Start walk mode near the hit point projected to surface
+      const hit = intersects[0].point.clone();
+      const center = planetRoot.getWorldPosition(tmpVecA);
+      const up = hit.clone().sub(center).normalize();
+      const radius = Math.max(0.2, params.radius);
+      const startPoint = center.clone().addScaledVector(up, radius);
+      if (!walkController) {
+        walkController = createPlanetWalkController({
+          renderer,
+          camera,
+          controls,
+          planetMesh,
+          planetRoot,
+          spinGroup,
+          moonsGroup,
+          params
+        });
+      }
+      const ok = walkController.enter({ bodyMesh: planetMesh, centerObject: () => planetRoot.getWorldPosition(tmpVecA), startPoint });
+      if (ok) {
+        cameraMode = CameraMode.WALK;
+        if (cameraModeButton) cameraModeButton.textContent = `Camera: ${cameraMode}`;
+        return;
+      }
+    }
+
+    // Default behavior: directly focus on the object
     focusTarget = clickedObject;
     cameraMode = CameraMode.FOCUS;
     if (cameraModeButton) cameraModeButton.textContent = `Camera: ${cameraMode}`;
-    
-    // Mobile-specific camera positioning adjustment
+
     if (isMobileLayout()) {
-      // Ensure camera is positioned appropriately for mobile viewport
       const targetPos = clickedObject.getWorldPosition(tmpVecA);
       const currentDistance = camera.position.distanceTo(targetPos);
-      
-      // If camera is too far, move it closer for better mobile viewing
       if (currentDistance > 20) {
         const direction = camera.position.clone().sub(targetPos).normalize();
         const newDistance = Math.min(15, currentDistance * 0.6);
@@ -5300,6 +5344,12 @@ document.addEventListener("keydown", (event) => {
     if (cameraMode === CameraMode.FOCUS) {
       cameraMode = CameraMode.ORBIT;
       focusTarget = null;
+      if (cameraModeButton) cameraModeButton.textContent = `Camera: ${cameraMode}`;
+      controls.enabled = true;
+    } else if (cameraMode === CameraMode.WALK) {
+      // Exit walk mode
+      if (walkController) walkController.exit();
+      cameraMode = CameraMode.ORBIT;
       if (cameraModeButton) cameraModeButton.textContent = `Camera: ${cameraMode}`;
       controls.enabled = true;
     }
