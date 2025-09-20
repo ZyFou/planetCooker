@@ -1,6 +1,7 @@
 import { Suspense, lazy } from "react";
 import { Route, Routes } from "react-router-dom";
 import AppShell from "./components/AppShell.jsx";
+import LegacyRedirect from "./components/LegacyRedirect.jsx";
 import RouteAnnouncer from "./components/RouteAnnouncer.jsx";
 
 const LandingPage = lazy(() => import("./pages/LandingPage.jsx"));
@@ -15,6 +16,9 @@ export default function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/explore" element={<ExplorePage />} />
           <Route path="/studio" element={<StudioPage />} />
+          <Route path="/index.html" element={<LegacyRedirect to="/" />} />
+          <Route path="/explore.html" element={<LegacyRedirect to="/explore" />} />
+          <Route path="/studio.html" element={<LegacyRedirect to="/studio" />} />
         </Routes>
       </Suspense>
       <RouteAnnouncer />
