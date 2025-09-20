@@ -611,6 +611,19 @@ const mobileReset = document.getElementById("mobile-reset");
 const desktopCopy = document.getElementById("desktop-copy");
 const desktopHelp = document.getElementById("desktop-help");
 const desktopHome = document.getElementById("desktop-home");
+
+// Debug: Check if desktop menu buttons exist
+console.log("Desktop menu buttons:", {
+  desktopCopy: !!desktopCopy,
+  desktopHelp: !!desktopHelp,
+  desktopHome: !!desktopHome,
+  copyShareButton: !!copyShareButton,
+  helpButton: !!helpButton,
+  returnHomeButton: !!returnHomeButton
+});
+const mobileFocusToggle = document.getElementById("mobile-focus-toggle");
+const mobileFocusMenu = document.getElementById("mobile-focus-menu");
+const focusMoonsContainer = document.getElementById("focus-moons-container");
 //#endregion
 
 //#region Parameters and presets
@@ -1555,27 +1568,56 @@ resetAllButton?.addEventListener("click", () => {
 
 // Desktop menu actions
 function closeDesktopMenu() {
+  console.log("Closing desktop menu");
   desktopMenu?.setAttribute("hidden", "");
   desktopMenuToggle?.setAttribute("aria-expanded", "false");
 }
 function openDesktopMenu() {
+  console.log("Opening desktop menu");
   desktopMenu?.removeAttribute("hidden");
   desktopMenuToggle?.setAttribute("aria-expanded", "true");
 }
 desktopMenuToggle?.addEventListener("click", () => {
+  console.log("Desktop menu toggle clicked");
   const expanded = desktopMenuToggle.getAttribute("aria-expanded") === "true";
   if (expanded) closeDesktopMenu(); else openDesktopMenu();
 });
-desktopCopy?.addEventListener("click", () => {
-  copyShareButton?.click();
-  closeDesktopMenu();
+desktopCopy?.addEventListener("click", async () => {
+  console.log("Desktop copy clicked");
+  try {
+    // Reuse the same logic as the main copy handler, but without touching the UI button text
+    const payload = buildSharePayload();
+    try {
+      const result = await saveConfigurationToAPI(payload, {
+        name: `Planet ${payload.data.seed}`,
+        description: `A ${payload.preset} planet with ${payload.data.moonCount} moon(s)`,
+        preset: payload.preset,
+        moonCount: payload.data.moonCount
+      });
+      await copyToClipboard(result.id);
+      flashShareFeedback(`✅ Saved! ID: ${result.id}`);
+    } catch (apiError) {
+      console.warn("⚠️ API not available, using fallback (desktop menu):", apiError.message);
+      const code = getCurrentShareCode();
+      if (!code) throw new Error("No share code available");
+      await copyToClipboard(code);
+      flashShareFeedback("📋 Copied (offline mode)");
+    }
+  } catch (err) {
+    console.error("❌ Share failed (desktop menu):", err);
+    flashShareFeedback("❌ Share failed");
+  } finally {
+    closeDesktopMenu();
+  }
 });
 desktopHelp?.addEventListener("click", () => {
-  helpButton?.click();
+  console.log("Desktop help clicked");
+  try { showOnboarding(true); } catch (e) { console.warn("Onboarding not available", e); }
   closeDesktopMenu();
 });
 desktopHome?.addEventListener("click", () => {
-  returnHomeButton?.click();
+  console.log("Desktop home clicked");
+  navigateToLanding();
   closeDesktopMenu();
 });
 
@@ -1622,7 +1664,112 @@ document.addEventListener("click", (e) => {
   if (desktopMenu.contains(target)) return;
   if (desktopMenuToggle && (target === desktopMenuToggle || desktopMenuToggle.contains(target))) return;
   closeDesktopMenu();
-}, true);
+});
+
+// Mobile focus mode functionality
+function closeMobileFocusMenu() {
+  mobileFocusMenu?.setAttribute("hidden", "");
+  mobileFocusToggle?.setAttribute("aria-expanded", "false");
+}
+
+function openMobileFocusMenu() {
+  mobileFocusMenu?.removeAttribute("hidden");
+  mobileFocusToggle?.setAttribute("aria-expanded", "true");
+  updateMobileFocusMenu();
+}
+
+function updateMobileFocusMenu() {
+  if (!focusMoonsContainer) return;
+  
+  // Clear existing moon buttons
+  focusMoonsContainer.innerHTML = "";
+  
+  // Add moon buttons
+  moonsGroup.children.forEach((moon, index) => {
+    const moonButton = document.createElement("button");
+    moonButton.className = "focus-option";
+    moonButton.setAttribute("data-target", `moon-${index}`);
+    moonButton.innerHTML = `🌙 Moon ${index + 1}`;
+    focusMoonsContainer.appendChild(moonButton);
+  });
+}
+
+function focusOnObject(targetType, moonIndex = null) {
+  let targetObject = null;
+  
+  if (targetType === "planet") {
+    targetObject = planetMesh;
+  } else if (targetType === "sun") {
+    targetObject = sunVisual || sunCorona;
+  } else if (targetType === "moon" && moonIndex !== null) {
+    // Get the moon mesh from the pivot's userData
+    const moonPivot = moonsGroup.children[moonIndex];
+    if (moonPivot && moonPivot.userData?.mesh) {
+      targetObject = moonPivot.userData.mesh;
+    }
+  } else if (targetType === "none") {
+    // Exit focus mode
+    cameraMode = CameraMode.ORBIT;
+    focusTarget = null;
+    if (cameraModeButton) cameraModeButton.textContent = `Camera: ${cameraMode}`;
+    controls.enabled = true;
+    closeMobileFocusMenu();
+    return;
+  }
+  
+  if (targetObject) {
+    focusTarget = targetObject;
+    cameraMode = CameraMode.FOCUS;
+    if (cameraModeButton) cameraModeButton.textContent = `Camera: ${cameraMode}`;
+    closeMobileFocusMenu();
+  }
+}
+
+// Mobile focus menu event handlers
+mobileFocusToggle?.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  
+  if (mobileFocusMenu?.hasAttribute("hidden")) {
+    openMobileFocusMenu();
+  } else {
+    closeMobileFocusMenu();
+  }
+});
+
+// Handle focus option clicks
+document.addEventListener("click", (e) => {
+  if (!isMobileLayout()) return;
+  
+  const focusOption = e.target.closest(".focus-option");
+  if (!focusOption) return;
+  
+  e.preventDefault();
+  e.stopPropagation();
+  
+  const target = focusOption.getAttribute("data-target");
+  
+  if (target === "planet") {
+    focusOnObject("planet");
+  } else if (target === "sun") {
+    focusOnObject("sun");
+  } else if (target.startsWith("moon-")) {
+    const moonIndex = parseInt(target.split("-")[1]);
+    focusOnObject("moon", moonIndex);
+  } else if (target === "none") {
+    focusOnObject("none");
+  }
+});
+
+// Close mobile focus menu when clicking outside
+document.addEventListener("click", (e) => {
+  if (!isMobileLayout()) return;
+  const target = e.target;
+  if (!mobileFocusMenu || mobileFocusMenu.hasAttribute("hidden")) return;
+  if (mobileFocusMenu.contains(target)) return;
+  if (mobileFocusToggle && (target === mobileFocusToggle || mobileFocusToggle.contains(target))) return;
+  closeMobileFocusMenu();
+});
 
 let exitRedirectHandle = null;
 
@@ -2848,7 +2995,7 @@ function updateBlackHole(baseColor) {
     blackHoleDisk.material.needsUpdate = true;
   } else if (diskStyle === "Flat") {
     // Flat ring: color-only band using alphaMap annulus (no noise)
-    if (blackHoleDiskTexture) { try { blackHoleDiskTexture.dispose(); } catch {} }
+    if (blackHoleDiskTexture) try { blackHoleDiskTexture.dispose(); } catch {}
     blackHoleDiskTexture = generateAnnulusTexture({
       innerRatio: THREE.MathUtils.clamp(diskInner / Math.max(0.0001, diskRadius), 0, 0.98),
       color: color,

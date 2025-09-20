@@ -113,6 +113,15 @@
           </div> -->
           <!-- <button id="camera-mode" class="camera-mode-btn" title="Change camera mode">Camera: Orbit</button> -->
           <div id="hud-fps" class="hud-fps" aria-live="polite">FPS: 0</div>
+          
+          <!-- Mobile focus mode button -->
+          <button id="mobile-focus-toggle" class="mobile-focus-toggle" aria-controls="mobile-focus-menu" aria-expanded="false" title="Focus on object">👁️</button>
+          <div id="mobile-focus-menu" class="mobile-focus-menu" hidden>
+            <div class="focus-menu-header">Focus on Object</div>
+            <button class="focus-option" data-target="planet">🌍 Planet</button>
+            <button class="focus-option" data-target="sun">☀️ Star</button>
+            <div id="focus-moons-container"></div>
+          </div>
         </section>
       </main>
       <div id="panel-scrim" hidden></div>

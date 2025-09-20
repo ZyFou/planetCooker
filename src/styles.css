@@ -221,6 +221,11 @@ canvas {
   display: block;
 }
 
+/* Hide mobile focus button on desktop */
+.mobile-focus-toggle {
+  display: none;
+}
+
 #info {
   width: 360px;
   min-width: 360px;
@@ -491,6 +496,87 @@ canvas {
   #scene canvas {
     width: 100% !important;
     height: 100% !important;
+  }
+
+  /* Mobile focus mode button */
+  .mobile-focus-toggle {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    z-index: 10;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 1px solid rgba(135, 169, 218, 0.4);
+    background: rgba(24, 36, 68, 0.8);
+    color: #d9e6ff;
+    font-size: 1.2rem;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    backdrop-filter: blur(8px);
+  }
+
+  .mobile-focus-toggle:hover {
+    background: rgba(53, 80, 131, 0.9);
+    transform: scale(1.05);
+  }
+
+  .mobile-focus-menu {
+    position: absolute;
+    bottom: 70px;
+    right: 16px;
+    z-index: 15;
+    min-width: 200px;
+    background: rgba(8, 13, 26, 0.95);
+    border: 1px solid rgba(91, 126, 179, 0.3);
+    border-radius: 12px;
+    padding: 0.5rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(12px);
+  }
+
+  .focus-menu-header {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: rgba(169, 195, 237, 0.8);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid rgba(91, 126, 179, 0.2);
+    margin-bottom: 0.25rem;
+  }
+
+  .focus-option {
+    width: 100%;
+    padding: 0.75rem;
+    margin: 0.25rem 0;
+    border: none;
+    border-radius: 8px;
+    background: rgba(17, 25, 44, 0.6);
+    color: #d9e6ff;
+    font-size: 0.9rem;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .focus-option:hover {
+    background: rgba(28, 43, 77, 0.8);
+    transform: translateX(4px);
+  }
+
+  .focus-option:active {
+    transform: translateX(2px);
+  }
+
+  .mobile-focus-menu[hidden] {
+    display: none !important;
   }
 }
 
@@ -800,7 +886,9 @@ body.preview-mode #scene canvas {
 
 body.preview-mode #hud-fps,
 body.preview-mode #camera-mode,
-body.preview-mode #panel-scrim {
+body.preview-mode #panel-scrim,
+body.preview-mode .mobile-focus-toggle,
+body.preview-mode .mobile-focus-menu {
   display: none !important;
 }
 
