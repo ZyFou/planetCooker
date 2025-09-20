@@ -2283,6 +2283,21 @@ function animate(timestamp) {
         maxDistance = Math.max(15, moonSize * 20); // Increased max distance for moons
       }
       
+      // Mobile-specific adjustments for better focus positioning
+      if (isMobileLayout()) {
+        // Adjust distances for mobile viewport
+        minDistance *= 0.8; // Closer minimum distance on mobile
+        maxDistance *= 0.9; // Slightly closer maximum distance on mobile
+        
+        // Adjust camera position for mobile aspect ratio
+        const currentDistance = camera.position.distanceTo(controls.target);
+        if (currentDistance > maxDistance) {
+          // Move camera closer to target on mobile
+          const direction = camera.position.clone().sub(controls.target).normalize();
+          camera.position.copy(controls.target).add(direction.multiplyScalar(maxDistance * 0.7));
+        }
+      }
+      
       // Update controls distance limits
       controls.minDistance = minDistance;
       controls.maxDistance = maxDistance;
@@ -3958,20 +3973,16 @@ function closeMobilePanel(force = false) {
 }
 
 function setupMobilePanelToggle() {
-  mobileToggleButton?.addEventListener("click", () => {
+  mobileToggleButton?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
     if (infoPanel?.classList.contains("open")) {
       closeMobilePanel();
     } else {
       openMobilePanel();
     }
   });
-  mobileToggleButton?.addEventListener("touchstart", () => {
-    if (infoPanel?.classList.contains("open")) {
-      closeMobilePanel();
-    } else {
-      openMobilePanel();
-    }
-  }, { passive: true });
 
   panelScrim?.addEventListener("click", () => closeMobilePanel());
   panelScrim?.addEventListener("touchstart", () => closeMobilePanel(), { passive: true });
@@ -3990,9 +4001,13 @@ function setupMobilePanelToggle() {
     const target = e.target;
     if (!infoPanel || !infoPanel.classList.contains("open")) return;
     if (infoPanel.contains(target)) return;
-    if (mobileToggleButton && (target === mobileToggleButton || mobileToggleButton.contains(target))) return;
+    if (mobileToggleButton && (target === mobileToggleButton || mobileToggleButton.contains(target))) {
+      // Let the button handle its own click - don't close the panel
+      return;
+    }
+    // Close panel when clicking outside
     closeMobilePanel();
-  }, true);
+  });
 }
 //#endregion
 //#region Dirty flags & share codes
@@ -5107,6 +5122,21 @@ function onMouseDoubleClick(event) {
     focusTarget = clickedObject;
     cameraMode = CameraMode.FOCUS;
     if (cameraModeButton) cameraModeButton.textContent = `Camera: ${cameraMode}`;
+    
+    // Mobile-specific camera positioning adjustment
+    if (isMobileLayout()) {
+      // Ensure camera is positioned appropriately for mobile viewport
+      const targetPos = clickedObject.getWorldPosition(tmpVecA);
+      const currentDistance = camera.position.distanceTo(targetPos);
+      
+      // If camera is too far, move it closer for better mobile viewing
+      if (currentDistance > 20) {
+        const direction = camera.position.clone().sub(targetPos).normalize();
+        const newDistance = Math.min(15, currentDistance * 0.6);
+        camera.position.copy(targetPos).add(direction.multiplyScalar(newDistance));
+        controls.target.copy(targetPos);
+      }
+    }
   }
 }
 
