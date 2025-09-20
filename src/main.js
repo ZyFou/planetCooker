@@ -173,6 +173,37 @@ atmosphereMesh.castShadow = false;
 atmosphereMesh.receiveShadow = false;
 spinGroup.add(atmosphereMesh);
 
+// Ocean sphere (transparent water layer) and shoreline foam overlay
+const oceanMaterial = new THREE.MeshPhysicalMaterial({
+  color: new THREE.Color(0x1b3c6d),
+  transparent: true,
+  opacity: 0.6,
+  roughness: 0.35,
+  metalness: 0.02,
+  transmission: 0.7,
+  thickness: 0.2,
+  ior: 1.333,
+  depthWrite: false
+});
+const oceanMesh = new THREE.Mesh(new THREE.SphereGeometry(1.0, 128, 128), oceanMaterial);
+oceanMesh.castShadow = false;
+oceanMesh.receiveShadow = false;
+oceanMesh.renderOrder = 1;
+spinGroup.add(oceanMesh);
+
+const foamMaterial = new THREE.MeshBasicMaterial({
+  color: 0xffffff,
+  transparent: true,
+  opacity: 1.0,
+  depthWrite: false
+});
+let foamTexture = null;
+const foamMesh = new THREE.Mesh(new THREE.SphereGeometry(1.002, 128, 128), foamMaterial);
+foamMesh.castShadow = false;
+foamMesh.receiveShadow = false;
+foamMesh.renderOrder = 2;
+spinGroup.add(foamMesh);
+
 const moonsGroup = new THREE.Group();
 planetRoot.add(moonsGroup);
 
@@ -640,6 +671,8 @@ const params = {
   oceanLevel: 0.46,
   colorOcean: "#1b3c6d",
   colorShallow: "#2f7fb6",
+  colorFoam: "#ffffff",
+  foamEnabled: false,
   colorLow: "#305a33",
   colorMid: "#b49e74",
   colorHigh: "#f2f6f5",
@@ -648,6 +681,7 @@ const params = {
   coreSize: 0.4,
   coreVisible: true,
   atmosphereColor: "#7baeff",
+  atmosphereOpacity: 0.22,
   cloudsOpacity: 0.4,
   cloudHeight: 0.03,
   cloudDensity: 0.55,
@@ -755,6 +789,7 @@ const presets = {
     colorMid: "#b49e74",
     colorHigh: "#f2f6f5",
     atmosphereColor: "#7baeff",
+    atmosphereOpacity: 0.23,
     cloudsOpacity: 0.42,
     axisTilt: 23,
     rotationSpeed: 0.12,
@@ -799,6 +834,7 @@ const presets = {
     coreSize: 0.4,
     coreVisible: true,
     atmosphereColor: "#ffb382",
+    atmosphereOpacity: 0.0,
     cloudsOpacity: 0.0,
     axisTilt: 25,
     rotationSpeed: 0.24,
@@ -840,6 +876,7 @@ const presets = {
     coreSize: 0.4,
     coreVisible: true,
     atmosphereColor: "#d9c7a0",
+    atmosphereOpacity: 0.38,
     cloudsOpacity: 0.7,
     axisTilt: 3,
     rotationSpeed: 0.48,
@@ -883,6 +920,7 @@ const presets = {
     coreSize: 0.4,
     coreVisible: true,
     atmosphereColor: "#e2d2b6",
+    atmosphereOpacity: 0.33,
     cloudsOpacity: 0.6,
     axisTilt: 27,
     rotationSpeed: 0.42,
@@ -925,6 +963,7 @@ const presets = {
     coreSize: 0.4,
     coreVisible: true,
     atmosphereColor: "#b9b2a8",
+    atmosphereOpacity: 0.0,
     cloudsOpacity: 0.0,
     axisTilt: 0.03,
     rotationSpeed: 0.02,
@@ -963,6 +1002,7 @@ const presets = {
     coreSize: 0.4,
     coreVisible: true,
     atmosphereColor: "#e3c6a2",
+    atmosphereOpacity: 0.47,
     cloudsOpacity: 0.85,
     axisTilt: 177,
     rotationSpeed: -0.01,
@@ -1001,6 +1041,7 @@ const presets = {
     coreSize: 0.4,
     coreVisible: true,
     atmosphereColor: "#a8d7ea",
+    atmosphereOpacity: 0.33,
     cloudsOpacity: 0.6,
     axisTilt: 98,
     rotationSpeed: -0.25,
@@ -1041,6 +1082,7 @@ const presets = {
     coreSize: 0.4,
     coreVisible: true,
     atmosphereColor: "#9ec2ff",
+    atmosphereOpacity: 0.33,
     cloudsOpacity: 0.6,
     axisTilt: 28,
     rotationSpeed: 0.26,
@@ -1081,6 +1123,7 @@ const presets = {
     coreSize: 0.4,
     coreVisible: true,
     atmosphereColor: "#f4aa5a",
+    atmosphereOpacity: 0.05,
     cloudsOpacity: 0.1,
     axisTilt: 12,
     rotationSpeed: 0.2,
@@ -1122,6 +1165,7 @@ const presets = {
     coreSize: 0.4,
     coreVisible: true,
     atmosphereColor: "#9ed7ff",
+    atmosphereOpacity: 0.33,
     cloudsOpacity: 0.6,
     axisTilt: 28,
     rotationSpeed: 0.28,
@@ -1164,6 +1208,7 @@ const presets = {
     coreSize: 0.4,
     coreVisible: true,
     atmosphereColor: "#ff7a3a",
+    atmosphereOpacity: 0.1,
     cloudsOpacity: 0.18,
     axisTilt: 8,
     rotationSpeed: 0.35,
@@ -1204,6 +1249,7 @@ const presets = {
     coreSize: 0.4,
     coreVisible: true,
     atmosphereColor: "#c1d6ff",
+    atmosphereOpacity: 0.38,
     cloudsOpacity: 0.7,
     axisTilt: 12,
     rotationSpeed: 0.45,
@@ -1319,6 +1365,8 @@ const shareKeys = [
   "oceanLevel",
   "colorOcean",
   "colorShallow",
+  "colorFoam",
+  "foamEnabled",
   "colorLow",
   "colorMid",
   "colorHigh",
@@ -1328,6 +1376,7 @@ const shareKeys = [
   "coreSize",
   "coreVisible",
   "atmosphereColor",
+  "atmosphereOpacity",
   "cloudsOpacity",
   "cloudHeight",
   "cloudDensity",
@@ -1417,6 +1466,7 @@ const shareKeys = [
 const palette = {
   ocean: new THREE.Color(params.colorOcean),
   shallow: new THREE.Color(params.colorShallow),
+  foam: new THREE.Color(params.colorFoam),
   low: new THREE.Color(params.colorLow),
   mid: new THREE.Color(params.colorMid),
   high: new THREE.Color(params.colorHigh),
@@ -2726,6 +2776,164 @@ function rebuildPlanet() {
   const atmosphereScale = params.radius * (1.06 + Math.max(0.0, (params.cloudHeight || 0.03)) * 0.8);
   cloudsMesh.scale.setScalar(cloudScale);
   atmosphereMesh.scale.setScalar(atmosphereScale);
+  // Ocean and foam layers
+  const oceanVisible = params.oceanLevel > 0.001 && params.noiseAmplitude > 0.0001;
+  const oceanScale = params.radius * 1.001;
+  const foamScale = params.radius * 1.003;
+  oceanMesh.visible = oceanVisible;
+  foamMesh.visible = oceanVisible && params.foamEnabled;
+  if (oceanVisible) {
+    oceanMesh.scale.setScalar(oceanScale);
+    foamMesh.scale.setScalar(foamScale);
+    oceanMesh.material.color.set(palette.ocean);
+    foamMesh.material.color.set(palette.foam);
+
+    // Generate shoreline foam texture using equirectangular mapping
+    const texWidth = 512;
+    const texHeight = 256;
+    const data = new Uint8Array(texWidth * texHeight * 4);
+    const dir = new THREE.Vector3();
+    const warpVecTex = new THREE.Vector3();
+
+    const ridgeFreq = profile.ridgeFrequency;
+    const ruggedPower = profile.ruggedPower;
+    const ridgeWeight = profile.ridgeWeight;
+    const billowWeight = profile.billowWeight;
+    const plateauPower = profile.plateauPower;
+    const sharpness = profile.sharpness;
+    const strStrength = profile.striationStrength;
+    const strFreq = profile.striationFrequency;
+    const strPhase = profile.striationPhase;
+    const equatorLift = profile.equatorLift;
+    const poleDrop = profile.poleDrop;
+    const craterFreq = profile.craterFrequency;
+    const craterThresh = profile.craterThreshold;
+    const craterDepth = profile.craterDepth;
+    const craterSharp = profile.craterSharpness;
+    const warpStrength = profile.warpStrength * 0.35;
+    const warpOffset = profile.warpOffset;
+    const craterOffset = profile.craterOffset;
+
+    const shorelineHalfWidth = Math.max(0.002, params.noiseAmplitude * 0.06);
+
+    for (let y = 0; y < texHeight; y += 1) {
+      const v = y / (texHeight - 1);
+      const lat = (v - 0.5) * Math.PI; // -pi/2..pi/2
+      const cosLat = Math.cos(lat);
+      const sinLat = Math.sin(lat);
+      for (let x = 0; x < texWidth; x += 1) {
+        const u = x / (texWidth - 1);
+        const lon = (u - 0.5) * Math.PI * 2;
+        const cosLon = Math.cos(lon);
+        const sinLon = Math.sin(lon);
+        dir.set(cosLat * cosLon, sinLat, cosLat * sinLon);
+
+        // Apply same directional warp used for terrain sampling
+        let sampleDirX = dir.x;
+        let sampleDirY = dir.y;
+        let sampleDirZ = dir.z;
+        if (warpStrength > 0) {
+          const fx = profile.warpFrequency;
+          warpVecTex.set(
+            warpNoiseX(sampleDirX * fx + warpOffset.x, sampleDirY * fx + warpOffset.y, sampleDirZ * fx + warpOffset.z),
+            warpNoiseY(sampleDirX * fx + warpOffset.y, sampleDirY * fx + warpOffset.z, sampleDirZ * fx + warpOffset.x),
+            warpNoiseZ(sampleDirX * fx + warpOffset.z, sampleDirY * fx + warpOffset.x, sampleDirZ * fx + warpOffset.y)
+          );
+          sampleDirX = (sampleDirX + warpVecTex.x * warpStrength);
+          sampleDirY = (sampleDirY + warpVecTex.y * warpStrength);
+          sampleDirZ = (sampleDirZ + warpVecTex.z * warpStrength);
+          const invLen = 1 / Math.sqrt(sampleDirX * sampleDirX + sampleDirY * sampleDirY + sampleDirZ * sampleDirZ);
+          sampleDirX *= invLen; sampleDirY *= invLen; sampleDirZ *= invLen;
+        }
+
+        // Fractal noise accumulation
+        let amplitude = 1;
+        let frequency = params.noiseFrequency;
+        let totalAmplitude = 0;
+        let sum = 0;
+        let ridgeSum = 0;
+        let billowSum = 0;
+        for (let layer = 0; layer < params.noiseLayers; layer += 1) {
+          const o = offsets[layer];
+          const sx = sampleDirX * frequency + o.x;
+          const sy = sampleDirY * frequency + o.y;
+          const sz = sampleDirZ * frequency + o.z;
+          const s = baseNoise(sx, sy, sz);
+          sum += s * amplitude;
+
+          const r = ridgeNoise(sx * ridgeFreq, sy * ridgeFreq, sz * ridgeFreq);
+          ridgeSum += (1 - Math.abs(r)) * amplitude;
+
+          billowSum += Math.pow(Math.abs(s), ruggedPower) * amplitude;
+
+          totalAmplitude += amplitude;
+          amplitude *= params.persistence;
+          frequency *= params.lacunarity;
+        }
+        if (totalAmplitude > 0) {
+          sum /= totalAmplitude;
+          ridgeSum /= totalAmplitude;
+          billowSum /= totalAmplitude;
+        }
+
+        let elev = sum;
+        elev = THREE.MathUtils.lerp(elev, ridgeSum * 2 - 1, ridgeWeight);
+        elev = THREE.MathUtils.lerp(elev, billowSum * 2 - 1, billowWeight);
+        elev = Math.sign(elev) * Math.pow(Math.abs(elev), sharpness);
+        let normalized = elev * 0.5 + 0.5;
+        normalized = Math.pow(THREE.MathUtils.clamp(normalized, 0, 1), plateauPower);
+        if (strStrength > 0) {
+          const str = Math.sin((sampleDirX + sampleDirZ) * strFreq + strPhase);
+          normalized += str * strStrength;
+        }
+        if (equatorLift || poleDrop) {
+          const latitude = Math.abs(sampleDirY);
+          normalized += (1 - latitude) * equatorLift;
+          normalized -= latitude * poleDrop;
+        }
+        const cSamp = craterNoise(sampleDirX * craterFreq + craterOffset.x, sampleDirY * craterFreq + craterOffset.y, sampleDirZ * craterFreq + craterOffset.z);
+        const cVal = (cSamp + 1) * 0.5;
+        if (cVal > craterThresh) {
+          const cT = (cVal - craterThresh) / Math.max(1e-6, 1 - craterThresh);
+          normalized -= Math.pow(cT, craterSharp) * craterDepth;
+        }
+        normalized = THREE.MathUtils.clamp(normalized, 0, 1);
+
+        const displacementHere = (normalized - params.oceanLevel) * params.noiseAmplitude;
+        const finalR = params.radius + displacementHere;
+        const distFromShore = Math.abs(finalR - params.radius);
+
+        // Foam alpha peaks near shoreline and fades with distance
+        let alpha = 1 - THREE.MathUtils.smoothstep(distFromShore, 0, shorelineHalfWidth);
+        // Slightly bias towards land-side foam
+        alpha *= THREE.MathUtils.clamp(0.5 + Math.sign(displacementHere) * 0.5, 0, 1);
+        // Add a small dither using lon/lat for natural breakup
+        const hash = (Math.sin((x + 37) * 12.9898 + (y + 57) * 78.233) * 43758.5453) % 1;
+        alpha = THREE.MathUtils.clamp(alpha * (0.9 + 0.2 * hash), 0, 1);
+
+        const idx = (y * texWidth + x) * 4;
+        data[idx + 0] = 255;
+        data[idx + 1] = 255;
+        data[idx + 2] = 255;
+        data[idx + 3] = Math.round(alpha * 255);
+      }
+    }
+
+    if (foamTexture && foamTexture.dispose) {
+      foamTexture.dispose();
+    }
+    foamTexture = new THREE.DataTexture(data, texWidth, texHeight, THREE.RGBAFormat);
+    foamTexture.colorSpace = THREE.SRGBColorSpace;
+    foamTexture.needsUpdate = true;
+    foamTexture.wrapS = THREE.RepeatWrapping;
+    foamTexture.wrapT = THREE.ClampToEdgeWrapping;
+    foamTexture.magFilter = THREE.LinearFilter;
+    foamTexture.minFilter = THREE.LinearMipMapLinearFilter;
+
+    foamMesh.material.map = foamTexture;
+    foamMesh.material.alphaMap = foamTexture;
+    foamMesh.material.needsUpdate = true;
+  }
   
   // Update core sphere
   updateCore();
@@ -2795,6 +3003,7 @@ function sampleColor(elevation, radius) {
 function updatePalette() {
   palette.ocean.set(params.colorOcean);
   palette.shallow.set(params.colorShallow);
+  palette.foam.set(params.colorFoam);
   palette.low.set(params.colorLow);
   palette.mid.set(params.colorMid);
   palette.high.set(params.colorHigh);
@@ -2819,10 +3028,10 @@ function updateCore() {
 
 function updateClouds() {
   cloudsMaterial.opacity = params.cloudsOpacity;
-  atmosphereMaterial.opacity = THREE.MathUtils.clamp(params.cloudsOpacity * 0.55, 0.05, 0.6);
+  atmosphereMaterial.opacity = params.atmosphereOpacity;
   // Toggle visibility based on opacity for reliability
   cloudsMesh.visible = params.cloudsOpacity > 0.001;
-  atmosphereMesh.visible = params.cloudsOpacity > 0.001;
+  atmosphereMesh.visible = params.atmosphereOpacity > 0.001;
   // Update cloud layer height/scale
   const cloudScale = Math.max(0.1, params.radius * (1 + Math.max(0, params.cloudHeight || 0.03)));
   cloudsMesh.scale.setScalar(cloudScale);
@@ -4836,6 +5045,7 @@ function surpriseMe() {
   const pickPreset = presetNames[Math.floor(rng.next() * presetNames.length)];
   // Preserve user simulation speed across Surprise Me
   const prevSimSpeed = params.simulationSpeed;
+  const preserveFoam = params.foamEnabled; // Preserve foam setting
   const preserveRings = !params.ringAllowRandom;
   const prevRingSettings = preserveRings
     ? {
@@ -4856,6 +5066,10 @@ function surpriseMe() {
   // Restore user value overwritten by preset
   params.simulationSpeed = prevSimSpeed;
   guiControllers.simulationSpeed?.setValue?.(prevSimSpeed);
+  
+  // Restore foam setting
+  params.foamEnabled = preserveFoam;
+  guiControllers.foamEnabled?.setValue?.(preserveFoam);
 
   if (preserveRings && prevRingSettings) {
     Object.assign(params, prevRingSettings);
@@ -4888,6 +5102,7 @@ function surpriseMe() {
   params.coreSize = THREE.MathUtils.lerp(0.2, 0.6, rng.next());
   params.coreVisible = rng.next() > 0; // 20% chance of being visible
   params.atmosphereColor = `#${new THREE.Color().setHSL(hue2, 0.5, 0.7).getHexString()}`;
+  params.atmosphereOpacity = THREE.MathUtils.lerp(0.05, 0.5, rng.next());
   params.cloudsOpacity = THREE.MathUtils.lerp(0.1, 0.8, rng.next());
   params.cloudHeight = THREE.MathUtils.lerp(0.01, 0.12, rng.next());
   params.cloudDensity = THREE.MathUtils.lerp(0.25, 0.85, rng.next());

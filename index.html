@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -45,13 +45,48 @@
             </dl>
           </div>
           
-          <div class="hero__update">
-            <h3>Latest Update</h3>
-            <p>
-              <strong>New Mobile Experience:</strong> Enhanced mobile layout with intuitive controls and a new focus system! 
-              Use the eye button (👁️) in the bottom right to focus on planets, moons, and stars. 
-              The mobile interface now provides easy access to all celestial elements with optimized touch controls.
-            </p>
+          <div class="hero__updates">
+            <h3>Latest Updates</h3>
+            <div class="updates__carousel">
+              <div class="updates__track">
+                <div class="hero__update active">
+                  <h4>Ocean & Shoreline Effects</h4>
+                  <p>
+                    <strong>New Water System:</strong> Added realistic ocean layers with transparent water spheres and dynamic shoreline foam! 
+                    Control foam color and visibility independently. The ocean now feels like actual water with proper refraction and shoreline effects.
+                  </p>
+                </div>
+                <div class="hero__update">
+                  <h4>Independent Atmosphere Controls</h4>
+                  <p>
+                    <strong>Separated Controls:</strong> Atmosphere and cloud opacity are now completely independent! 
+                    Create subtle atmospheres with thick clouds, or dramatic atmospheres with light clouds. 
+                    Full control over both layers for more realistic planet rendering.
+                  </p>
+                </div>
+                <div class="hero__update">
+                  <h4>Enhanced Mobile Experience</h4>
+                  <p>
+                    <strong>Mobile Focus System:</strong> Enhanced mobile layout with intuitive controls and a new focus system! 
+                    Use the eye button (👁️) in the bottom right to focus on planets, moons, and stars. 
+                    The mobile interface now provides easy access to all celestial elements with optimized touch controls.
+                  </p>
+                </div>
+                <div class="hero__update">
+                  <h4>Advanced Physics & Collisions</h4>
+                  <p>
+                    <strong>Realistic Interactions:</strong> Improved moon physics with proper orbital mechanics, collision detection, and impact deformation. 
+                    Moons now create realistic craters and surface changes when they collide with planets. 
+                    Two-way gravitational interactions for more dynamic systems.
+                  </p>
+                </div>
+              </div>
+              <div class="updates__nav">
+                <button class="updates__prev" aria-label="Previous update">‹</button>
+                <div class="updates__dots"></div>
+                <button class="updates__next" aria-label="Next update">›</button>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -106,6 +141,97 @@
             link.setAttribute("href", `/studio.html#${previewCode}`);
           });
         }
+      })();
+
+      // Updates carousel functionality
+      (function() {
+        const track = document.querySelector('.updates__track');
+        const updates = document.querySelectorAll('.hero__update');
+        const prevBtn = document.querySelector('.updates__prev');
+        const nextBtn = document.querySelector('.updates__next');
+        const dotsContainer = document.querySelector('.updates__dots');
+        
+        if (!track || !updates.length) return;
+        
+        let currentIndex = 0;
+        const totalUpdates = updates.length;
+        
+        // Create dots
+        for (let i = 0; i < totalUpdates; i++) {
+          const dot = document.createElement('div');
+          dot.className = 'updates__dot';
+          if (i === 0) dot.classList.add('active');
+          dot.addEventListener('click', () => goToSlide(i));
+          dotsContainer.appendChild(dot);
+        }
+        
+        const dots = document.querySelectorAll('.updates__dot');
+        
+        function updateCarousel() {
+          // Update track position
+          track.style.transform = `translateX(-${currentIndex * 100}%)`;
+          
+          // Update active states
+          updates.forEach((update, index) => {
+            update.classList.toggle('active', index === currentIndex);
+          });
+          
+          dots.forEach((dot, index) => {
+            dot.classList.toggle('active', index === currentIndex);
+          });
+        }
+        
+        function goToSlide(index) {
+          currentIndex = Math.max(0, Math.min(index, totalUpdates - 1));
+          updateCarousel();
+        }
+        
+        function nextSlide() {
+          currentIndex = (currentIndex + 1) % totalUpdates;
+          updateCarousel();
+        }
+        
+        function prevSlide() {
+          currentIndex = (currentIndex - 1 + totalUpdates) % totalUpdates;
+          updateCarousel();
+        }
+        
+        // Event listeners
+        nextBtn.addEventListener('click', nextSlide);
+        prevBtn.addEventListener('click', prevSlide);
+        
+        // Auto-advance every 8 seconds
+        setInterval(nextSlide, 8000);
+        
+        // Touch/swipe support
+        let startX = 0;
+        let isDragging = false;
+        
+        track.addEventListener('touchstart', (e) => {
+          startX = e.touches[0].clientX;
+          isDragging = true;
+        });
+        
+        track.addEventListener('touchmove', (e) => {
+          if (!isDragging) return;
+          e.preventDefault();
+        });
+        
+        track.addEventListener('touchend', (e) => {
+          if (!isDragging) return;
+          isDragging = false;
+          
+          const endX = e.changedTouches[0].clientX;
+          const diff = startX - endX;
+          
+          if (Math.abs(diff) > 50) { // Minimum swipe distance
+            if (diff > 0) {
+              nextSlide();
+            } else {
+              prevSlide();
+            }
+          }
+        });
       })();
     </script>
     <script type="module">

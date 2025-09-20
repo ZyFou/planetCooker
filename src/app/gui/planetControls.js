@@ -142,6 +142,21 @@ export function setupPlanetControls({
       scheduleShareUpdate();
     });
 
+  guiControllers.colorFoam = paletteFolder.addColor(params, "colorFoam")
+    .name("Shore Foam")
+    .onChange(() => {
+      updatePalette();
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.foamEnabled = paletteFolder.add(params, "foamEnabled")
+    .name("Show Foam")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
   guiControllers.colorLow = paletteFolder.addColor(params, "colorLow")
     .name("Lowlands")
     .onChange(() => {
@@ -196,9 +211,17 @@ export function setupPlanetControls({
     });
 
   guiControllers.atmosphereColor = paletteFolder.addColor(params, "atmosphereColor")
-    .name("Atmosphere")
+    .name("Atmosphere Color")
     .onChange(() => {
       updatePalette();
+      updateClouds();
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.atmosphereOpacity = paletteFolder.add(params, "atmosphereOpacity", 0, 1, 0.01)
+    .name("Atmosphere Opacity")
+    .onChange(() => {
       updateClouds();
       markPlanetDirty();
       scheduleShareUpdate();

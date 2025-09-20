@@ -149,9 +149,22 @@ body {
   color: rgba(228, 236, 255, 0.95);
 }
 
-.hero__update {
+.hero__updates {
   margin-top: 2rem;
-  padding: 1.5rem 1.8rem;
+}
+
+.hero__updates h3 {
+  margin: 0 0 1.2rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(198, 212, 255, 0.9);
+}
+
+.updates__carousel {
+  position: relative;
+  overflow: hidden;
   border-radius: 18px;
   background: rgba(14, 20, 39, 0.65);
   border: 1px solid rgba(116, 147, 219, 0.45);
@@ -159,7 +172,23 @@ body {
   box-shadow: 0 8px 32px rgba(4, 8, 18, 0.4);
 }
 
-.hero__update h3 {
+.updates__track {
+  display: flex;
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hero__update {
+  min-width: 100%;
+  padding: 1.5rem 1.8rem;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.hero__update.active {
+  opacity: 1;
+}
+
+.hero__update h4 {
   margin: 0 0 0.8rem;
   font-size: 1.1rem;
   font-weight: 600;
@@ -178,6 +207,67 @@ body {
 .hero__update strong {
   color: rgba(255, 255, 255, 0.95);
   font-weight: 600;
+}
+
+.updates__nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  background: rgba(10, 15, 25, 0.6);
+  border-top: 1px solid rgba(100, 120, 160, 0.1);
+}
+
+.updates__prev,
+.updates__next {
+  background: rgba(100, 120, 160, 0.2);
+  border: 1px solid rgba(100, 120, 160, 0.3);
+  color: rgba(220, 229, 255, 0.8);
+  border-radius: 8px;
+  width: 2.5rem;
+  height: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.updates__prev:hover,
+.updates__next:hover {
+  background: rgba(100, 120, 160, 0.3);
+  color: rgba(255, 255, 255, 0.9);
+  transform: translateY(-1px);
+}
+
+.updates__prev:active,
+.updates__next:active {
+  transform: translateY(0);
+}
+
+.updates__dots {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.updates__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(100, 120, 160, 0.3);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.updates__dot.active {
+  background: rgba(100, 120, 160, 0.8);
+  transform: scale(1.2);
+}
+
+.updates__dot:hover {
+  background: rgba(100, 120, 160, 0.6);
 }
 
 .recent {
@@ -352,8 +442,8 @@ body {
   background: rgba(6, 10, 24, 0.65);
   border: 1px solid rgba(111, 141, 209, 0.35);
   box-shadow: 0 18px 60px rgba(4, 8, 20, 0.55);
-  aspect-ratio: 6 / 4;
-  height: 555px;
+  aspect-ratio: 5 / 4;
+  height: 670px;
   width: 100%;
 }
 
