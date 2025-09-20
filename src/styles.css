@@ -18,6 +18,7 @@ html {
   padding: 0;
   height: 100%;
   color: #d9e6ff;
+  overflow-x: hidden;
 }
 
 #app {
@@ -416,6 +417,28 @@ canvas {
   to { transform: rotate(360deg); }
 }
 
+/* Tablet styles */
+@media (max-width: 1024px) and (min-width: 961px) {
+  #info {
+    width: 320px;
+    min-width: 320px;
+    flex: 0 0 320px;
+  }
+
+  #header h1 {
+    font-size: 1.1rem;
+  }
+
+  .header-actions {
+    gap: 0.5rem;
+  }
+
+  button {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+  }
+}
+
 @media (max-width: 960px) {
   #app {
     height: 100vh;
@@ -577,6 +600,57 @@ canvas {
 
   .mobile-focus-menu[hidden] {
     display: none !important;
+  }
+}
+
+/* Additional mobile optimizations */
+@media (max-width: 480px) {
+  #header {
+    padding: 0.75rem 1rem;
+  }
+
+  #header h1 {
+    font-size: 0.8rem;
+  }
+
+  .header-actions {
+    gap: 0.5rem;
+  }
+
+  .header-actions button {
+    padding: 0.35rem 0.7rem;
+    font-size: 0.8rem;
+  }
+
+  #info {
+    width: min(95vw, 360px);
+    padding: 1rem;
+  }
+
+  .mobile-focus-toggle {
+    width: 44px;
+    height: 44px;
+    bottom: 12px;
+    right: 12px;
+    font-size: 1.1rem;
+  }
+
+  .mobile-focus-menu {
+    bottom: 62px;
+    right: 12px;
+    min-width: 180px;
+  }
+
+  .focus-option {
+    padding: 0.65rem;
+    font-size: 0.85rem;
+  }
+
+  .hud-fps {
+    left: 12px;
+    bottom: 12px;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.75rem;
   }
 }
 
