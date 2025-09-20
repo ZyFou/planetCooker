@@ -4300,24 +4300,27 @@ function regenerateCloudTexture() {
 }
 function copyToClipboard(text) {
   if (navigator.clipboard && window.isSecureContext) {
-    return navigator.clipboard.writeText(text);
+    return navigator.clipboard.writeText(text).catch(() => legacyCopyToClipboard(text));
   }
+  return legacyCopyToClipboard(text);
+}
+
+function legacyCopyToClipboard(text) {
   return new Promise((resolve, reject) => {
     const textArea = document.createElement("textarea");
     textArea.value = text;
+    textArea.setAttribute("readonly", "");
     textArea.style.position = "fixed";
     textArea.style.opacity = "0";
+    textArea.style.left = "0";
+    textArea.style.top = "0";
     document.body.appendChild(textArea);
     textArea.focus();
     textArea.select();
     try {
       const ok = document.execCommand("copy");
       document.body.removeChild(textArea);
-      if (ok) {
-        resolve();
-      } else {
-        reject(new Error("Copy command failed"));
-      }
+      if (ok) resolve(); else reject(new Error("Copy command failed"));
     } catch (err) {
       document.body.removeChild(textArea);
       reject(err);

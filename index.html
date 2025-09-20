@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -236,8 +236,39 @@
           copyButton.className = 'recent__action recent__action--ghost';
           copyButton.textContent = 'Copy Code';
           copyButton.addEventListener('click', async () => {
+            async function legacyCopy(text) {
+              return new Promise((resolve, reject) => {
+                const textArea = document.createElement('textarea');
+                textArea.value = text;
+                textArea.setAttribute('readonly', '');
+                textArea.style.position = 'fixed';
+                textArea.style.opacity = '0';
+                textArea.style.left = '0';
+                textArea.style.top = '0';
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                try {
+                  const ok = document.execCommand('copy');
+                  document.body.removeChild(textArea);
+                  if (ok) resolve(); else reject(new Error('Copy command failed'));
+                } catch (err) {
+                  document.body.removeChild(textArea);
+                  reject(err);
+                }
+              });
+            }
+
             try {
-              await navigator.clipboard.writeText(item.id);
+              if (navigator.clipboard && window.isSecureContext) {
+                try {
+                  await navigator.clipboard.writeText(item.id);
+                } catch (e) {
+                  await legacyCopy(item.id);
+                }
+              } else {
+                await legacyCopy(item.id);
+              }
               copyButton.textContent = 'Copied!';
               setTimeout(() => {
                 copyButton.textContent = 'Copy Code';

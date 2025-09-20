@@ -19,6 +19,37 @@ function cloneData(value) {
   }
 }
 
+// Robust clipboard helper (mirrors implementation in studio)
+function copyToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text).catch(() => legacyCopy(text));
+  }
+  return legacyCopy(text);
+}
+
+function legacyCopy(text) {
+  return new Promise((resolve, reject) => {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.setAttribute('readonly', '');
+    textArea.style.position = 'fixed';
+    textArea.style.opacity = '0';
+    textArea.style.left = '0';
+    textArea.style.top = '0';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try {
+      const ok = document.execCommand('copy');
+      document.body.removeChild(textArea);
+      if (ok) resolve(); else reject(new Error('Copy command failed'));
+    } catch (err) {
+      document.body.removeChild(textArea);
+      reject(err);
+    }
+  });
+}
+
 function makeCacheKey({ page, limit, preset, seed, sort }) {
   return JSON.stringify({ page, limit, preset: preset || '', seed: seed || '', sort });
 }
@@ -263,13 +294,16 @@ function updatePreview(summary) {
   }
   if (copyButton) {
     copyButton.disabled = false;
-    copyButton.onclick = () => {
-      navigator.clipboard.writeText(summary.id).then(() => {
+    copyButton.onclick = async () => {
+      try {
+        await copyToClipboard(summary.id);
         copyButton.textContent = 'Copied!';
         setTimeout(() => {
           copyButton.textContent = 'Copy Share Code';
         }, 2000);
-      });
+      } catch (err) {
+        console.warn('Clipboard copy failed', err);
+      }
     };
   }
 }
