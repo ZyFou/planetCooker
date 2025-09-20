@@ -599,12 +599,18 @@ const exportButton = document.getElementById("export-fbx");
 const copyShareButton = document.getElementById("copy-share");
 const copyShareInlineButton = document.getElementById("copy-share-inline");
 const surpriseMeButton = document.getElementById("surprise-me");
+const surpriseMeMobileButton = document.getElementById("surprise-me-mobile");
+const desktopMenuToggle = document.getElementById("desktop-menu-toggle");
+const desktopMenu = document.getElementById("desktop-menu");
 const mobileMenuToggle = document.getElementById("mobile-menu-toggle");
 const mobileMenu = document.getElementById("mobile-menu");
 const mobileRandomize = document.getElementById("mobile-randomize");
 const mobileSurprise = document.getElementById("mobile-surprise");
 const mobileCopy = document.getElementById("mobile-copy");
 const mobileReset = document.getElementById("mobile-reset");
+const desktopCopy = document.getElementById("desktop-copy");
+const desktopHelp = document.getElementById("desktop-help");
+const desktopHome = document.getElementById("desktop-home");
 //#endregion
 
 //#region Parameters and presets
@@ -1547,6 +1553,32 @@ resetAllButton?.addEventListener("click", () => {
   }
 });
 
+// Desktop menu actions
+function closeDesktopMenu() {
+  desktopMenu?.setAttribute("hidden", "");
+  desktopMenuToggle?.setAttribute("aria-expanded", "false");
+}
+function openDesktopMenu() {
+  desktopMenu?.removeAttribute("hidden");
+  desktopMenuToggle?.setAttribute("aria-expanded", "true");
+}
+desktopMenuToggle?.addEventListener("click", () => {
+  const expanded = desktopMenuToggle.getAttribute("aria-expanded") === "true";
+  if (expanded) closeDesktopMenu(); else openDesktopMenu();
+});
+desktopCopy?.addEventListener("click", () => {
+  copyShareButton?.click();
+  closeDesktopMenu();
+});
+desktopHelp?.addEventListener("click", () => {
+  helpButton?.click();
+  closeDesktopMenu();
+});
+desktopHome?.addEventListener("click", () => {
+  returnHomeButton?.click();
+  closeDesktopMenu();
+});
+
 // Mobile menu actions
 function closeMobileMenu() {
   mobileMenu?.setAttribute("hidden", "");
@@ -1576,6 +1608,21 @@ mobileReset?.addEventListener("click", () => {
   resetAllButton?.click();
   closeMobileMenu();
 });
+
+// Mobile surprise button (always visible)
+surpriseMeMobileButton?.addEventListener("click", () => {
+  surpriseMeButton?.click();
+});
+
+// Close desktop menu when clicking outside
+document.addEventListener("click", (e) => {
+  if (isMobileLayout()) return;
+  const target = e.target;
+  if (!desktopMenu || desktopMenu.hasAttribute("hidden")) return;
+  if (desktopMenu.contains(target)) return;
+  if (desktopMenuToggle && (target === desktopMenuToggle || desktopMenuToggle.contains(target))) return;
+  closeDesktopMenu();
+}, true);
 
 let exitRedirectHandle = null;
 
