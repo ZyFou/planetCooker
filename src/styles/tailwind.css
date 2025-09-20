@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply font-sans bg-space-900 text-slate-100 min-h-screen;
+}
+
+#root {
+  @apply min-h-screen;
+}
+
+@layer components {
+  #info.open {
+    @apply translate-x-0;
+  }
+}
+
+@layer base {
+  body.preview-mode {
+    @apply overflow-hidden;
+    background: radial-gradient(circle at top, #0b1428 0%, #02040a 75%);
+  }
+
+  body.preview-mode #app {
+    @apply min-h-screen;
+    background: transparent;
+  }
+
+  body.preview-mode #header,
+  body.preview-mode #info,
+  body.preview-mode .hint,
+  body.preview-mode #panel-scrim,
+  body.preview-mode .mobile-menu,
+  body.preview-mode .mobile-controls-toggle,
+  body.preview-mode .desktop-only,
+  body.preview-mode .header-actions,
+  body.preview-mode #control-search-bar {
+    display: none !important;
+  }
+
+  body.preview-mode #main {
+    @apply flex-col p-0;
+  }
+
+  body.preview-mode #scene {
+    @apply w-full min-h-screen;
+    position: relative;
+  }
+
+  body.preview-mode #scene canvas {
+    pointer-events: none;
+  }
+
+  body.preview-mode #hud-fps,
+  body.preview-mode #camera-mode,
+  body.preview-mode #panel-scrim {
+    display: none !important;
+  }
+}
