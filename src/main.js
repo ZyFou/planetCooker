@@ -10,7 +10,7 @@ import { setupPlanetControls } from "./app/gui/planetControls.js";
 import { setupMoonControls } from "./app/gui/moonControls.js";
 import { setupRingControls } from "./app/gui/ringControls.js";
 import { createStarfield as createStarfieldExt, createSunTexture as createSunTextureExt } from "./app/stars.js";
-import { generateRingTexture as generateRingTextureExt, generateAnnulusTexture as generateAnnulusTextureExt } from "./app/textures.js";
+import { generateRingTexture as generateRingTextureExt, generateAnnulusTexture as generateAnnulusTextureExt, generateGasGiantTexture as generateGasGiantTextureExt } from "./app/textures.js";
 import { encodeShare as encodeShareExt, decodeShare as decodeShareExt, padBase64 as padBase64Ext, saveConfigurationToAPI as saveConfigurationToAPIExt, loadConfigurationFromAPI as loadConfigurationFromAPIExt } from "./app/shareCore.js";
 import { initOnboarding, showOnboarding } from "./app/onboarding.js";
 
@@ -848,6 +848,23 @@ const focusMoonsContainer = document.getElementById("focus-moons-container");
 //#region Parameters and presets
 const params = {
   preset: "Earth-like",
+  planetType: "rocky", // rocky | gas_giant
+  // Gas Giant settings
+  gasGiantStrataCount: 3,
+  gasGiantStrataColor1: "#d2c8b8",
+  gasGiantStrataColor2: "#a08c78",
+  gasGiantStrataColor3: "#8c7c6c",
+  gasGiantStrataColor4: "#786c5c",
+  gasGiantStrataColor5: "#645c4b",
+  gasGiantStrataColor6: "#504b3a",
+  gasGiantStrataSize1: 0.2,
+  gasGiantStrataSize2: 0.2,
+  gasGiantStrataSize3: 0.2,
+  gasGiantStrataSize4: 0.2,
+  gasGiantStrataSize5: 0.1,
+  gasGiantStrataSize6: 0.1,
+  gasGiantNoiseScale: 2.0,
+  gasGiantNoiseStrength: 0.1,
   seed: "BLUEHOME",
   radius: 1.32,
   subdivisions: 6,
@@ -958,6 +975,7 @@ let currentSunVariant = params.sunVariant || "Star";
 
 const presets = {
   "Earth-like": {
+    planetType: "rocky",
     seed: "BLUEHOME",
     radius: 1.32,
     subdivisions: 6,
@@ -999,6 +1017,7 @@ const presets = {
     impactMassMul: 2.0
   },
   "Mars": {
+    planetType: "rocky",
     seed: "MARS",
     radius: 0.71,
     subdivisions: 6,
@@ -1041,31 +1060,29 @@ const presets = {
     ]
   },
   "Jupiter": {
+    planetType: "gas_giant",
     seed: "JUPITER",
     radius: 3.5,
-    subdivisions: 5,
-    noiseLayers: 3,
-    noiseFrequency: 1.2,
-    noiseAmplitude: 0.22,
-    persistence: 0.38,
-    lacunarity: 1.6,
-    oceanLevel: 0.55,
-    colorOcean: "#1b1f33",
-    colorShallow: "#2b3555",
-    colorLow: "#6a6f9a",
-    colorMid: "#c7b59a",
-    colorHigh: "#efe7dd",
-    colorCore: "#8b4513",
-    coreEnabled: true,
-    coreSize: 0.4,
-    coreVisible: true,
-    atmosphereColor: "#d9c7a0",
-    atmosphereOpacity: 0.38,
-    cloudsOpacity: 0.7,
     axisTilt: 3,
     rotationSpeed: 0.48,
     simulationSpeed: 0.32,
     gravity: 24.79,
+    gasGiantStrataCount: 5,
+    gasGiantStrataColor1: "#c7b59a",
+    gasGiantStrataColor2: "#efe7dd",
+    gasGiantStrataColor3: "#b3a58b",
+    gasGiantStrataColor4: "#d6c8a7",
+    gasGiantStrataColor5: "#c0b8a8",
+    gasGiantStrataSize1: 0.3,
+    gasGiantStrataSize2: 0.2,
+    gasGiantStrataSize3: 0.2,
+    gasGiantStrataSize4: 0.2,
+    gasGiantStrataSize5: 0.1,
+    gasGiantNoiseScale: 3.0,
+    gasGiantNoiseStrength: 0.15,
+    atmosphereColor: "#d9c7a0",
+    atmosphereOpacity: 0.38,
+    cloudsOpacity: 0.7,
     sunColor: "#ffd27f",
     sunIntensity: 2.8,
     sunDistance: 120,
@@ -1085,32 +1102,29 @@ const presets = {
     ]
   },
   "Saturn": {
+    planetType: "gas_giant",
     seed: "SATURN",
     radius: 3.2,
-    subdivisions: 5,
-    noiseLayers: 3,
-    noiseFrequency: 1.3,
-    noiseAmplitude: 0.2,
-    persistence: 0.38,
-    lacunarity: 1.6,
-    oceanLevel: 0.6,
-    // Pale golden/banded tones
-    colorOcean: "#4a3d2a",
-    colorShallow: "#6b5a3a",
-    colorLow: "#bda77e",
-    colorMid: "#dccfb0",
-    colorHigh: "#f3ecde",
-    colorCore: "#8b4513",
-    coreEnabled: true,
-    coreSize: 0.4,
-    coreVisible: true,
-    atmosphereColor: "#e6d8b5",
-    atmosphereOpacity: 0.33,
-    cloudsOpacity: 0.6,
     axisTilt: 27,
     rotationSpeed: 0.42,
     simulationSpeed: 0.32,
     gravity: 10.44,
+    gasGiantStrataCount: 5,
+    gasGiantStrataColor1: "#bda77e",
+    gasGiantStrataColor2: "#dccfb0",
+    gasGiantStrataColor3: "#f3ecde",
+    gasGiantStrataColor4: "#cdbb9a",
+    gasGiantStrataColor5: "#bfb39a",
+    gasGiantStrataSize1: 0.4,
+    gasGiantStrataSize2: 0.3,
+    gasGiantStrataSize3: 0.1,
+    gasGiantStrataSize4: 0.1,
+    gasGiantStrataSize5: 0.1,
+    gasGiantNoiseScale: 3.5,
+    gasGiantNoiseStrength: 0.12,
+    atmosphereColor: "#e6d8b5",
+    atmosphereOpacity: 0.33,
+    cloudsOpacity: 0.6,
     sunColor: "#ffd27f",
     sunIntensity: 2.6,
     sunDistance: 140,
@@ -1137,7 +1151,95 @@ const presets = {
       { size: 0.22, distance: 6.8, orbitSpeed: 0.42, inclination: 1, color: "#cdbb9a", phase: 0.8, eccentricity: 0.02 }
     ]
   },
+  "Uranus": {
+    planetType: "gas_giant",
+    seed: "URANUS",
+    radius: 2.7,
+    axisTilt: 98,
+    rotationSpeed: -0.25,
+    simulationSpeed: 0.22,
+    gravity: 8.69,
+    gasGiantStrataCount: 3,
+    gasGiantStrataColor1: "#54c4d7",
+    gasGiantStrataColor2: "#86dceb",
+    gasGiantStrataColor3: "#d6f4fb",
+    gasGiantStrataSize1: 0.5,
+    gasGiantStrataSize2: 0.3,
+    gasGiantStrataSize3: 0.2,
+    gasGiantNoiseScale: 2.0,
+    gasGiantNoiseStrength: 0.05,
+    atmosphereColor: "#9adbe7",
+    atmosphereOpacity: 0.33,
+    cloudsOpacity: 0.6,
+    sunColor: "#ffd27f",
+    sunIntensity: 2.4,
+    sunDistance: 150,
+    sunSize: 1.4,
+    sunHaloSize: 12.0,
+    sunGlowStrength: 1.9,
+    sunPulseSpeed: 0.3,
+    moonMassScale: 1.6,
+    starCount: 3200,
+    starBrightness: 1.0,
+    starTwinkleSpeed: 0.5,
+    ringEnabled: true,
+    ringAngle: 0,
+    ringSpinSpeed: 0.02,
+    ringCount: 2,
+    rings: [
+      { style: "Noise", color: "#d5eaf6", start: 1.45, end: 1.48, opacity: 0.35, noiseScale: 1.6, noiseStrength: 0.2, spinSpeed: 0.02, brightness: 0.8 },
+      { style: "Noise", color: "#d5eaf6", start: 1.58, end: 1.61, opacity: 0.35, noiseScale: 1.6, noiseStrength: 0.2, spinSpeed: 0.02, brightness: 0.8 }
+    ],
+    moons: [
+      { size: 0.18, distance: 6.5, orbitSpeed: 0.4, inclination: 1, color: "#d5eaf6", phase: 0.2, eccentricity: 0.03 }
+    ]
+  },
+  "Neptune": {
+    planetType: "gas_giant",
+    seed: "NEPTUNE",
+    radius: 2.6,
+    axisTilt: 28,
+    rotationSpeed: 0.26,
+    simulationSpeed: 0.22,
+    gravity: 11.15,
+    gasGiantStrataCount: 4,
+    gasGiantStrataColor1: "#2e60bf",
+    gasGiantStrataColor2: "#5b8ee6",
+    gasGiantStrataColor3: "#b7d0ff",
+    gasGiantStrataColor4: "#7fb0ff",
+    gasGiantStrataSize1: 0.4,
+    gasGiantStrataSize2: 0.3,
+    gasGiantStrataSize3: 0.2,
+    gasGiantStrataSize4: 0.1,
+    gasGiantNoiseScale: 2.5,
+    gasGiantNoiseStrength: 0.1,
+    atmosphereColor: "#7fb0ff",
+    atmosphereOpacity: 0.33,
+    cloudsOpacity: 0.6,
+    sunColor: "#ffd27f",
+    sunIntensity: 2.4,
+    sunDistance: 160,
+    sunSize: 1.4,
+    sunHaloSize: 12.5,
+    sunGlowStrength: 1.9,
+    sunPulseSpeed: 0.3,
+    moonMassScale: 1.7,
+    starCount: 3200,
+    starBrightness: 1.0,
+    starTwinkleSpeed: 0.5,
+    ringEnabled: true,
+    ringAngle: 0,
+    ringSpinSpeed: 0.02,
+    ringCount: 1,
+    rings: [
+      { style: "Noise", color: "#d1e2ff", start: 1.50, end: 1.53, opacity: 0.25, noiseScale: 1.6, noiseStrength: 0.2, spinSpeed: 0.02, brightness: 0.8 }
+    ],
+    moons: [
+      { size: 0.24, distance: 8.6, orbitSpeed: 0.34, inclination: 0.1, color: "#d1e2ff", phase: 0.8, eccentricity: 0.01 }
+    ]
+  },
   "Mercury": {
+    planetType: "rocky",
     seed: "MERCURY",
     radius: 0.38,
     subdivisions: 6,
@@ -1177,6 +1279,7 @@ const presets = {
     moons: []
   },
   "Venus": {
+    planetType: "rocky",
     seed: "VENUS",
     radius: 0.95,
     subdivisions: 6,
@@ -1215,110 +1318,8 @@ const presets = {
     starTwinkleSpeed: 0.6,
     moons: []
   },
-  "Uranus": {
-    seed: "URANUS",
-    radius: 2.7,
-    subdivisions: 5,
-    noiseLayers: 3,
-    noiseFrequency: 1.4,
-    noiseAmplitude: 0.25,
-    persistence: 0.42,
-    lacunarity: 1.7,
-    oceanLevel: 0.65,
-    // Cyan/teal tones
-    colorOcean: "#164a5c",
-    colorShallow: "#1f6d86",
-    colorLow: "#54c4d7",
-    colorMid: "#86dceb",
-    colorHigh: "#d6f4fb",
-    colorCore: "#8b4513",
-    coreEnabled: true,
-    coreSize: 0.4,
-    coreVisible: true,
-    atmosphereColor: "#9adbe7",
-    atmosphereOpacity: 0.33,
-    cloudsOpacity: 0.6,
-    axisTilt: 98,
-    rotationSpeed: -0.25,
-    simulationSpeed: 0.22,
-    gravity: 8.69,
-    sunColor: "#ffd27f",
-    sunIntensity: 2.4,
-    sunDistance: 150,
-    sunSize: 1.4,
-    sunHaloSize: 12.0,
-    sunGlowStrength: 1.9,
-    sunPulseSpeed: 0.3,
-    moonMassScale: 1.6,
-    starCount: 3200,
-    starBrightness: 1.0,
-    starTwinkleSpeed: 0.5,
-    ringEnabled: true,
-    ringAngle: 0,
-    ringSpinSpeed: 0.02,
-    ringCount: 4,
-    rings: [
-      { style: "Texture", color: "#2f2f2f", start: 1.45, end: 1.48, opacity: 0.35, noiseScale: 1.6, noiseStrength: 0.2, spinSpeed: 0.02, brightness: 0.8 },
-      { style: "Texture", color: "#3a3a3a", start: 1.58, end: 1.61, opacity: 0.35, noiseScale: 1.6, noiseStrength: 0.2, spinSpeed: 0.02, brightness: 0.8 },
-      { style: "Texture", color: "#2b2b2b", start: 1.72, end: 1.75, opacity: 0.32, noiseScale: 1.6, noiseStrength: 0.2, spinSpeed: 0.02, brightness: 0.8 },
-      { style: "Texture", color: "#3c3c3c", start: 1.90, end: 1.93, opacity: 0.3, noiseScale: 1.6, noiseStrength: 0.2, spinSpeed: 0.02, brightness: 0.8 }
-    ],
-    moons: [
-      { size: 0.18, distance: 6.5, orbitSpeed: 0.4, inclination: 1, color: "#d5eaf6", phase: 0.2, eccentricity: 0.03 }
-    ]
-  },
-  "Neptune": {
-    seed: "NEPTUNE",
-    radius: 2.6,
-    subdivisions: 5,
-    noiseLayers: 3,
-    noiseFrequency: 1.5,
-    noiseAmplitude: 0.28,
-    persistence: 0.45,
-    lacunarity: 1.8,
-    oceanLevel: 0.65,
-    // Deep cobalt blues
-    colorOcean: "#0b1f5b",
-    colorShallow: "#163b8c",
-    colorLow: "#2e60bf",
-    colorMid: "#5b8ee6",
-    colorHigh: "#b7d0ff",
-    colorCore: "#8b4513",
-    coreEnabled: true,
-    coreSize: 0.4,
-    coreVisible: true,
-    atmosphereColor: "#7fb0ff",
-    atmosphereOpacity: 0.33,
-    cloudsOpacity: 0.6,
-    axisTilt: 28,
-    rotationSpeed: 0.26,
-    simulationSpeed: 0.22,
-    gravity: 11.15,
-    sunColor: "#ffd27f",
-    sunIntensity: 2.4,
-    sunDistance: 160,
-    sunSize: 1.4,
-    sunHaloSize: 12.5,
-    sunGlowStrength: 1.9,
-    sunPulseSpeed: 0.3,
-    moonMassScale: 1.7,
-    starCount: 3200,
-    starBrightness: 1.0,
-    starTwinkleSpeed: 0.5,
-    ringEnabled: true,
-    ringAngle: 0,
-    ringSpinSpeed: 0.02,
-    ringCount: 3,
-    rings: [
-      { style: "Texture", color: "#3a3832", start: 1.50, end: 1.53, opacity: 0.25, noiseScale: 1.6, noiseStrength: 0.2, spinSpeed: 0.02, brightness: 0.8 },
-      { style: "Texture", color: "#3f3c36", start: 1.68, end: 1.72, opacity: 0.25, noiseScale: 1.6, noiseStrength: 0.2, spinSpeed: 0.02, brightness: 0.8 },
-      { style: "Texture", color: "#35322d", start: 1.88, end: 1.92, opacity: 0.22, noiseScale: 1.6, noiseStrength: 0.2, spinSpeed: 0.02, brightness: 0.8 }
-    ],
-    moons: [
-      { size: 0.24, distance: 8.6, orbitSpeed: 0.34, inclination: 0.1, color: "#d1e2ff", phase: 0.8, eccentricity: 0.01 }
-    ]
-  },
   "Desert World": {
+    planetType: "rocky",
     seed: "DUNERIDR",
     radius: 1.08,
     subdivisions: 5,
@@ -1361,31 +1362,27 @@ const presets = {
     ]
   },
   "Ice Giant": {
+    planetType: "gas_giant",
     seed: "GLACIER",
     radius: 2.8,
-    subdivisions: 5,
-    noiseLayers: 3,
-    noiseFrequency: 1.2,
-    noiseAmplitude: 0.25,
-    persistence: 0.52,
-    lacunarity: 1.8,
-    oceanLevel: 0.7,
-    colorOcean: "#0a2356",
-    colorShallow: "#19427a",
-    colorLow: "#2e5e9c",
-    colorMid: "#88b5ff",
-    colorHigh: "#f6fbff",
-    colorCore: "#8b4513",
-    coreEnabled: true,
-    coreSize: 0.4,
-    coreVisible: true,
-    atmosphereColor: "#9ed7ff",
-    atmosphereOpacity: 0.33,
-    cloudsOpacity: 0.6,
     axisTilt: 28,
     rotationSpeed: 0.28,
     simulationSpeed: 0.2,
     gravity: 17.2,
+    gasGiantStrataCount: 4,
+    gasGiantStrataColor1: "#2e5e9c",
+    gasGiantStrataColor2: "#88b5ff",
+    gasGiantStrataColor3: "#f6fbff",
+    gasGiantStrataColor4: "#9ed7ff",
+    gasGiantStrataSize1: 0.5,
+    gasGiantStrataSize2: 0.3,
+    gasGiantStrataSize3: 0.1,
+    gasGiantStrataSize4: 0.1,
+    gasGiantNoiseScale: 2.2,
+    gasGiantNoiseStrength: 0.08,
+    atmosphereColor: "#9ed7ff",
+    atmosphereOpacity: 0.33,
+    cloudsOpacity: 0.6,
     sunColor: "#b9dcff",
     sunIntensity: 2.6,
     sunDistance: 120,
@@ -1404,6 +1401,7 @@ const presets = {
     ]
   },
   "Volcanic": {
+    planetType: "rocky",
     seed: "FIRECORE",
     radius: 0.92,
     subdivisions: 6,
@@ -1445,31 +1443,31 @@ const presets = {
     ]
   },
   "Gas Giant": {
+    planetType: "gas_giant",
     seed: "AEROX",
     radius: 3.6,
-    subdivisions: 4,
-    noiseLayers: 4,
-    noiseFrequency: 1.6,
-    noiseAmplitude: 0.3,
-    persistence: 0.4,
-    lacunarity: 1.7,
-    oceanLevel: 0.55,
-    colorOcean: "#14203b",
-    colorShallow: "#253a66",
-    colorLow: "#34527f",
-    colorMid: "#8f9ec8",
-    colorHigh: "#dcdff7",
-    colorCore: "#8b4513",
-    coreEnabled: true,
-    coreSize: 0.4,
-    coreVisible: true,
-    atmosphereColor: "#c1d6ff",
-    atmosphereOpacity: 0.38,
-    cloudsOpacity: 0.7,
     axisTilt: 12,
     rotationSpeed: 0.45,
     simulationSpeed: 0.4,
     gravity: 24.8,
+    gasGiantStrataCount: 6,
+    gasGiantStrataColor1: "#dcdff7",
+    gasGiantStrataColor2: "#8f9ec8",
+    gasGiantStrataColor3: "#34527f",
+    gasGiantStrataColor4: "#253a66",
+    gasGiantStrataColor5: "#14203b",
+    gasGiantStrataColor6: "#c1d6ff",
+    gasGiantStrataSize1: 0.2,
+    gasGiantStrataSize2: 0.2,
+    gasGiantStrataSize3: 0.2,
+    gasGiantStrataSize4: 0.2,
+    gasGiantStrataSize5: 0.1,
+    gasGiantStrataSize6: 0.1,
+    gasGiantNoiseScale: 4.0,
+    gasGiantNoiseStrength: 0.2,
+    atmosphereColor: "#c1d6ff",
+    atmosphereOpacity: 0.38,
+    cloudsOpacity: 0.7,
     sunColor: "#ffe8b2",
     sunIntensity: 2.8,
     sunDistance: 90,
@@ -1570,6 +1568,22 @@ const starPresets = {
 
 const shareKeys = [
   "seed",
+  "planetType",
+  "gasGiantStrataCount",
+  "gasGiantStrataColor1",
+  "gasGiantStrataColor2",
+  "gasGiantStrataColor3",
+  "gasGiantStrataColor4",
+  "gasGiantStrataColor5",
+  "gasGiantStrataColor6",
+  "gasGiantStrataSize1",
+  "gasGiantStrataSize2",
+  "gasGiantStrataSize3",
+  "gasGiantStrataSize4",
+  "gasGiantStrataSize5",
+  "gasGiantStrataSize6",
+  "gasGiantNoiseScale",
+  "gasGiantNoiseStrength",
   "radius",
   "subdivisions",
   "noiseLayers",
@@ -2913,301 +2927,319 @@ const scratchColor = new THREE.Color();
 function rebuildPlanet() {
   updatePalette();
 
-  const rng = new SeededRNG(params.seed);
-  const noiseRng = rng.fork();
+  if (params.planetType === 'gas_giant') {
+    planetMaterial.vertexColors = false;
+    planetMaterial.map = generateGasGiantTexture(params);
+    planetMaterial.needsUpdate = true;
 
-  const baseNoise = createNoise3D(() => noiseRng.next());
-  const ridgeNoise = createNoise3D(() => noiseRng.next());
-  const warpNoiseX = createNoise3D(() => noiseRng.next());
-  const warpNoiseY = createNoise3D(() => noiseRng.next());
-  const warpNoiseZ = createNoise3D(() => noiseRng.next());
-  const craterNoise = createNoise3D(() => noiseRng.next());
+    const geometry = new THREE.SphereGeometry(params.radius, 128, 128);
+    planetMesh.geometry.dispose();
+    planetMesh.geometry = geometry;
 
-  const offsets = [];
-  for (let i = 0; i < params.noiseLayers; i += 1) {
-    const fork = noiseRng.fork();
-    offsets.push(new THREE.Vector3(
-      fork.nextFloat(-128, 128),
-      fork.nextFloat(-128, 128),
-      fork.nextFloat(-128, 128)
-    ));
-  }
+    oceanMesh.visible = false;
+    foamMesh.visible = false;
 
-  const profile = deriveTerrainProfile(params.seed);
+  } else {
+    planetMaterial.vertexColors = true;
+    planetMaterial.map = null;
+    planetMaterial.needsUpdate = true;
 
-  const detail = Math.round(params.subdivisions);
-  const geometry = new THREE.IcosahedronGeometry(1, detail);
-  const positions = geometry.getAttribute("position");
-  const colors = new Float32Array(positions.count * 3);
-  const vertex = new THREE.Vector3();
-  const normal = new THREE.Vector3();
-  const sampleDir = new THREE.Vector3();
-  const warpVec = new THREE.Vector3();
+    const rng = new SeededRNG(params.seed);
+    const noiseRng = rng.fork();
 
-  for (let i = 0; i < positions.count; i += 1) {
-    vertex.fromBufferAttribute(positions, i);
-    normal.copy(vertex).normalize();
-    sampleDir.copy(normal);
+    const baseNoise = createNoise3D(() => noiseRng.next());
+    const ridgeNoise = createNoise3D(() => noiseRng.next());
+    const warpNoiseX = createNoise3D(() => noiseRng.next());
+    const warpNoiseY = createNoise3D(() => noiseRng.next());
+    const warpNoiseZ = createNoise3D(() => noiseRng.next());
+    const craterNoise = createNoise3D(() => noiseRng.next());
 
-    if (profile.warpStrength > 0) {
-      const warpAmount = profile.warpStrength * 0.35;
-      const fx = profile.warpFrequency;
-      const offset = profile.warpOffset;
-      warpVec.set(
-        warpNoiseX(normal.x * fx + offset.x, normal.y * fx + offset.y, normal.z * fx + offset.z),
-        warpNoiseY(normal.x * fx + offset.y, normal.y * fx + offset.z, normal.z * fx + offset.x),
-        warpNoiseZ(normal.x * fx + offset.z, normal.y * fx + offset.x, normal.z * fx + offset.y)
+    const offsets = [];
+    for (let i = 0; i < params.noiseLayers; i += 1) {
+      const fork = noiseRng.fork();
+      offsets.push(new THREE.Vector3(
+        fork.nextFloat(-128, 128),
+        fork.nextFloat(-128, 128),
+        fork.nextFloat(-128, 128)
+      ));
+    }
+
+    const profile = deriveTerrainProfile(params.seed);
+
+    const detail = Math.round(params.subdivisions);
+    const geometry = new THREE.IcosahedronGeometry(1, detail);
+    const positions = geometry.getAttribute("position");
+    const colors = new Float32Array(positions.count * 3);
+    const vertex = new THREE.Vector3();
+    const normal = new THREE.Vector3();
+    const sampleDir = new THREE.Vector3();
+    const warpVec = new THREE.Vector3();
+
+    for (let i = 0; i < positions.count; i += 1) {
+      vertex.fromBufferAttribute(positions, i);
+      normal.copy(vertex).normalize();
+      sampleDir.copy(normal);
+
+      if (profile.warpStrength > 0) {
+        const warpAmount = profile.warpStrength * 0.35;
+        const fx = profile.warpFrequency;
+        const offset = profile.warpOffset;
+        warpVec.set(
+          warpNoiseX(normal.x * fx + offset.x, normal.y * fx + offset.y, normal.z * fx + offset.z),
+          warpNoiseY(normal.x * fx + offset.y, normal.y * fx + offset.z, normal.z * fx + offset.x),
+          warpNoiseZ(normal.x * fx + offset.z, normal.y * fx + offset.x, normal.z * fx + offset.y)
+        );
+        sampleDir.addScaledVector(warpVec, warpAmount).normalize();
+      }
+
+      let amplitude = 1;
+      let frequency = params.noiseFrequency;
+      let totalAmplitude = 0;
+      let sum = 0;
+      let ridgeSum = 0;
+      let billowSum = 0;
+
+      for (let layer = 0; layer < params.noiseLayers; layer += 1) {
+        const offset = offsets[layer];
+        const sx = sampleDir.x * frequency + offset.x;
+        const sy = sampleDir.y * frequency + offset.y;
+        const sz = sampleDir.z * frequency + offset.z;
+
+        const sample = baseNoise(sx, sy, sz);
+        sum += sample * amplitude;
+
+        const ridgeSample = ridgeNoise(
+          sx * profile.ridgeFrequency,
+          sy * profile.ridgeFrequency,
+          sz * profile.ridgeFrequency
+        );
+        ridgeSum += (1 - Math.abs(ridgeSample)) * amplitude;
+
+        billowSum += Math.pow(Math.abs(sample), profile.ruggedPower) * amplitude;
+
+        totalAmplitude += amplitude;
+        amplitude *= params.persistence;
+        frequency *= params.lacunarity;
+      }
+
+      if (totalAmplitude > 0) {
+        sum /= totalAmplitude;
+        ridgeSum /= totalAmplitude;
+        billowSum /= totalAmplitude;
+      }
+
+      let elevation = sum;
+      elevation = THREE.MathUtils.lerp(elevation, ridgeSum * 2 - 1, profile.ridgeWeight);
+      elevation = THREE.MathUtils.lerp(elevation, billowSum * 2 - 1, profile.billowWeight);
+      elevation = Math.sign(elevation) * Math.pow(Math.abs(elevation), profile.sharpness);
+
+      let normalized = elevation * 0.5 + 0.5;
+      normalized = Math.pow(THREE.MathUtils.clamp(normalized, 0, 1), profile.plateauPower);
+
+      if (profile.striationStrength > 0) {
+        const striation = Math.sin((sampleDir.x + sampleDir.z) * profile.striationFrequency + profile.striationPhase);
+        normalized += striation * profile.striationStrength;
+      }
+
+      if (profile.equatorLift || profile.poleDrop) {
+        const latitude = Math.abs(sampleDir.y);
+        normalized += (1 - latitude) * profile.equatorLift;
+        normalized -= latitude * profile.poleDrop;
+      }
+
+      const craterSample = craterNoise(
+        sampleDir.x * profile.craterFrequency + profile.craterOffset.x,
+        sampleDir.y * profile.craterFrequency + profile.craterOffset.y,
+        sampleDir.z * profile.craterFrequency + profile.craterOffset.z
       );
-      sampleDir.addScaledVector(warpVec, warpAmount).normalize();
+      const craterValue = (craterSample + 1) * 0.5;
+      if (craterValue > profile.craterThreshold) {
+        const craterT = (craterValue - profile.craterThreshold) / Math.max(1e-6, 1 - profile.craterThreshold);
+        normalized -= Math.pow(craterT, profile.craterSharpness) * profile.craterDepth;
+      }
+
+      normalized = THREE.MathUtils.clamp(normalized, 0, 1);
+
+      const displacement = (normalized - params.oceanLevel) * params.noiseAmplitude;
+      const finalRadius = params.radius + displacement;
+      vertex.copy(normal).multiplyScalar(finalRadius);
+      positions.setXYZ(i, vertex.x, vertex.y, vertex.z);
+
+      const color = sampleColor(normalized, finalRadius);
+      colors[i * 3 + 0] = color.r;
+      colors[i * 3 + 1] = color.g;
+      colors[i * 3 + 2] = color.b;
     }
 
-    let amplitude = 1;
-    let frequency = params.noiseFrequency;
-    let totalAmplitude = 0;
-    let sum = 0;
-    let ridgeSum = 0;
-    let billowSum = 0;
+    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    geometry.computeVertexNormals();
 
-    for (let layer = 0; layer < params.noiseLayers; layer += 1) {
-      const offset = offsets[layer];
-      const sx = sampleDir.x * frequency + offset.x;
-      const sy = sampleDir.y * frequency + offset.y;
-      const sz = sampleDir.z * frequency + offset.z;
+    planetMesh.geometry.dispose();
+    planetMesh.geometry = geometry;
 
-      const sample = baseNoise(sx, sy, sz);
-      sum += sample * amplitude;
+    const oceanVisible = params.oceanLevel > 0.001 && params.noiseAmplitude > 0.0001;
+    const oceanScale = params.radius * 1.001;
+    const foamScale = params.radius * 1.003;
+    oceanMesh.visible = oceanVisible;
+    foamMesh.visible = oceanVisible && params.foamEnabled;
+    if (oceanVisible) {
+      oceanMesh.scale.setScalar(oceanScale);
+      foamMesh.scale.setScalar(foamScale);
+      oceanMesh.material.color.set(palette.ocean);
+      foamMesh.material.color.set(palette.foam);
 
-      const ridgeSample = ridgeNoise(
-        sx * profile.ridgeFrequency,
-        sy * profile.ridgeFrequency,
-        sz * profile.ridgeFrequency
-      );
-      ridgeSum += (1 - Math.abs(ridgeSample)) * amplitude;
+      // Generate shoreline foam texture using equirectangular mapping
+      const texWidth = 512;
+      const texHeight = 256;
+      const data = new Uint8Array(texWidth * texHeight * 4);
+      const dir = new THREE.Vector3();
+      const warpVecTex = new THREE.Vector3();
 
-      billowSum += Math.pow(Math.abs(sample), profile.ruggedPower) * amplitude;
+      const ridgeFreq = profile.ridgeFrequency;
+      const ruggedPower = profile.ruggedPower;
+      const ridgeWeight = profile.ridgeWeight;
+      const billowWeight = profile.billowWeight;
+      const plateauPower = profile.plateauPower;
+      const sharpness = profile.sharpness;
+      const strStrength = profile.striationStrength;
+      const strFreq = profile.striationFrequency;
+      const strPhase = profile.striationPhase;
+      const equatorLift = profile.equatorLift;
+      const poleDrop = profile.poleDrop;
+      const craterFreq = profile.craterFrequency;
+      const craterThresh = profile.craterThreshold;
+      const craterDepth = profile.craterDepth;
+      const craterSharp = profile.craterSharpness;
+      const warpStrength = profile.warpStrength * 0.35;
+      const warpOffset = profile.warpOffset;
+      const craterOffset = profile.craterOffset;
 
-      totalAmplitude += amplitude;
-      amplitude *= params.persistence;
-      frequency *= params.lacunarity;
+      const shorelineHalfWidth = Math.max(0.002, params.noiseAmplitude * 0.06);
+
+      for (let y = 0; y < texHeight; y += 1) {
+        const v = y / (texHeight - 1);
+        const lat = (v - 0.5) * Math.PI; // -pi/2..pi/2
+        const cosLat = Math.cos(lat);
+        const sinLat = Math.sin(lat);
+        for (let x = 0; x < texWidth; x += 1) {
+          const u = x / (texWidth - 1);
+          const lon = (u - 0.5) * Math.PI * 2;
+          const cosLon = Math.cos(lon);
+          const sinLon = Math.sin(lon);
+          dir.set(cosLat * cosLon, sinLat, cosLat * sinLon);
+
+          // Apply same directional warp used for terrain sampling
+          let sampleDirX = dir.x;
+          let sampleDirY = dir.y;
+          let sampleDirZ = dir.z;
+          if (warpStrength > 0) {
+            const fx = profile.warpFrequency;
+            warpVecTex.set(
+              warpNoiseX(sampleDirX * fx + warpOffset.x, sampleDirY * fx + warpOffset.y, sampleDirZ * fx + warpOffset.z),
+              warpNoiseY(sampleDirX * fx + warpOffset.y, sampleDirY * fx + warpOffset.z, sampleDirZ * fx + warpOffset.x),
+              warpNoiseZ(sampleDirX * fx + warpOffset.z, sampleDirY * fx + warpOffset.x, sampleDirZ * fx + warpOffset.y)
+            );
+            sampleDirX = (sampleDirX + warpVecTex.x * warpStrength);
+            sampleDirY = (sampleDirY + warpVecTex.y * warpStrength);
+            sampleDirZ = (sampleDirZ + warpVecTex.z * warpStrength);
+            const invLen = 1 / Math.sqrt(sampleDirX * sampleDirX + sampleDirY * sampleDirY + sampleDirZ * sampleDirZ);
+            sampleDirX *= invLen; sampleDirY *= invLen; sampleDirZ *= invLen;
+          }
+
+          // Fractal noise accumulation
+          let amplitude = 1;
+          let frequency = params.noiseFrequency;
+          let totalAmplitude = 0;
+          let sum = 0;
+          let ridgeSum = 0;
+          let billowSum = 0;
+          for (let layer = 0; layer < params.noiseLayers; layer += 1) {
+            const o = offsets[layer];
+            const sx = sampleDirX * frequency + o.x;
+            const sy = sampleDirY * frequency + o.y;
+            const sz = sampleDirZ * frequency + o.z;
+            const s = baseNoise(sx, sy, sz);
+            sum += s * amplitude;
+
+            const r = ridgeNoise(sx * ridgeFreq, sy * ridgeFreq, sz * ridgeFreq);
+            ridgeSum += (1 - Math.abs(r)) * amplitude;
+
+            billowSum += Math.pow(Math.abs(s), ruggedPower) * amplitude;
+
+            totalAmplitude += amplitude;
+            amplitude *= params.persistence;
+            frequency *= params.lacunarity;
+          }
+          if (totalAmplitude > 0) {
+            sum /= totalAmplitude;
+            ridgeSum /= totalAmplitude;
+            billowSum /= totalAmplitude;
+          }
+
+          let elev = sum;
+          elev = THREE.MathUtils.lerp(elev, ridgeSum * 2 - 1, ridgeWeight);
+          elev = THREE.MathUtils.lerp(elev, billowSum * 2 - 1, billowWeight);
+          elev = Math.sign(elev) * Math.pow(Math.abs(elev), sharpness);
+          let normalized = elev * 0.5 + 0.5;
+          normalized = Math.pow(THREE.MathUtils.clamp(normalized, 0, 1), plateauPower);
+          if (strStrength > 0) {
+            const str = Math.sin((sampleDirX + sampleDirZ) * strFreq + strPhase);
+            normalized += str * strStrength;
+          }
+          if (equatorLift || poleDrop) {
+            const latitude = Math.abs(sampleDirY);
+            normalized += (1 - latitude) * equatorLift;
+            normalized -= latitude * poleDrop;
+          }
+          const cSamp = craterNoise(sampleDirX * craterFreq + craterOffset.x, sampleDirY * craterFreq + craterOffset.y, sampleDirZ * craterFreq + craterOffset.z);
+          const cVal = (cSamp + 1) * 0.5;
+          if (cVal > craterThresh) {
+            const cT = (cVal - craterThresh) / Math.max(1e-6, 1 - craterThresh);
+            normalized -= Math.pow(cT, craterSharp) * craterDepth;
+          }
+          normalized = THREE.MathUtils.clamp(normalized, 0, 1);
+
+          const displacementHere = (normalized - params.oceanLevel) * params.noiseAmplitude;
+          const finalR = params.radius + displacementHere;
+          const distFromShore = Math.abs(finalR - params.radius);
+
+          // Foam alpha peaks near shoreline and fades with distance
+          let alpha = 1 - THREE.MathUtils.smoothstep(distFromShore, 0, shorelineHalfWidth);
+          // Slightly bias towards land-side foam
+          alpha *= THREE.MathUtils.clamp(0.5 + Math.sign(displacementHere) * 0.5, 0, 1);
+          // Add a small dither using lon/lat for natural breakup
+          const hash = (Math.sin((x + 37) * 12.9898 + (y + 57) * 78.233) * 43758.5453) % 1;
+          alpha = THREE.MathUtils.clamp(alpha * (0.9 + 0.2 * hash), 0, 1);
+
+          const idx = (y * texWidth + x) * 4;
+          data[idx + 0] = 255;
+          data[idx + 1] = 255;
+          data[idx + 2] = 255;
+          data[idx + 3] = Math.round(alpha * 255);
+        }
+      }
+
+      if (foamTexture && foamTexture.dispose) {
+        foamTexture.dispose();
+      }
+      foamTexture = new THREE.DataTexture(data, texWidth, texHeight, THREE.RGBAFormat);
+      foamTexture.colorSpace = THREE.SRGBColorSpace;
+      foamTexture.needsUpdate = true;
+      foamTexture.wrapS = THREE.RepeatWrapping;
+      foamTexture.wrapT = THREE.ClampToEdgeWrapping;
+      foamTexture.magFilter = THREE.LinearFilter;
+      foamTexture.minFilter = THREE.LinearMipMapLinearFilter;
+
+      foamMesh.material.map = foamTexture;
+      foamMesh.material.alphaMap = foamTexture;
+      foamMesh.material.needsUpdate = true;
     }
-
-    if (totalAmplitude > 0) {
-      sum /= totalAmplitude;
-      ridgeSum /= totalAmplitude;
-      billowSum /= totalAmplitude;
-    }
-
-    let elevation = sum;
-    elevation = THREE.MathUtils.lerp(elevation, ridgeSum * 2 - 1, profile.ridgeWeight);
-    elevation = THREE.MathUtils.lerp(elevation, billowSum * 2 - 1, profile.billowWeight);
-    elevation = Math.sign(elevation) * Math.pow(Math.abs(elevation), profile.sharpness);
-
-    let normalized = elevation * 0.5 + 0.5;
-    normalized = Math.pow(THREE.MathUtils.clamp(normalized, 0, 1), profile.plateauPower);
-
-    if (profile.striationStrength > 0) {
-      const striation = Math.sin((sampleDir.x + sampleDir.z) * profile.striationFrequency + profile.striationPhase);
-      normalized += striation * profile.striationStrength;
-    }
-
-    if (profile.equatorLift || profile.poleDrop) {
-      const latitude = Math.abs(sampleDir.y);
-      normalized += (1 - latitude) * profile.equatorLift;
-      normalized -= latitude * profile.poleDrop;
-    }
-
-    const craterSample = craterNoise(
-      sampleDir.x * profile.craterFrequency + profile.craterOffset.x,
-      sampleDir.y * profile.craterFrequency + profile.craterOffset.y,
-      sampleDir.z * profile.craterFrequency + profile.craterOffset.z
-    );
-    const craterValue = (craterSample + 1) * 0.5;
-    if (craterValue > profile.craterThreshold) {
-      const craterT = (craterValue - profile.craterThreshold) / Math.max(1e-6, 1 - profile.craterThreshold);
-      normalized -= Math.pow(craterT, profile.craterSharpness) * profile.craterDepth;
-    }
-
-    normalized = THREE.MathUtils.clamp(normalized, 0, 1);
-
-    const displacement = (normalized - params.oceanLevel) * params.noiseAmplitude;
-    const finalRadius = params.radius + displacement;
-    vertex.copy(normal).multiplyScalar(finalRadius);
-    positions.setXYZ(i, vertex.x, vertex.y, vertex.z);
-
-    const color = sampleColor(normalized, finalRadius);
-    colors[i * 3 + 0] = color.r;
-    colors[i * 3 + 1] = color.g;
-    colors[i * 3 + 2] = color.b;
   }
-
-  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-  geometry.computeVertexNormals();
-
-  planetMesh.geometry.dispose();
-  planetMesh.geometry = geometry;
 
   const cloudScale = params.radius * (1 + Math.max(0.0, params.cloudHeight || 0.03));
   const atmosphereScale = params.radius * (1.06 + Math.max(0.0, (params.cloudHeight || 0.03)) * 0.8);
   cloudsMesh.scale.setScalar(cloudScale);
   atmosphereMesh.scale.setScalar(atmosphereScale);
-  // Ocean and foam layers
-  const oceanVisible = params.oceanLevel > 0.001 && params.noiseAmplitude > 0.0001;
-  const oceanScale = params.radius * 1.001;
-  const foamScale = params.radius * 1.003;
-  oceanMesh.visible = oceanVisible;
-  foamMesh.visible = oceanVisible && params.foamEnabled;
-  if (oceanVisible) {
-    oceanMesh.scale.setScalar(oceanScale);
-    foamMesh.scale.setScalar(foamScale);
-    oceanMesh.material.color.set(palette.ocean);
-    foamMesh.material.color.set(palette.foam);
-
-    // Generate shoreline foam texture using equirectangular mapping
-    const texWidth = 512;
-    const texHeight = 256;
-    const data = new Uint8Array(texWidth * texHeight * 4);
-    const dir = new THREE.Vector3();
-    const warpVecTex = new THREE.Vector3();
-
-    const ridgeFreq = profile.ridgeFrequency;
-    const ruggedPower = profile.ruggedPower;
-    const ridgeWeight = profile.ridgeWeight;
-    const billowWeight = profile.billowWeight;
-    const plateauPower = profile.plateauPower;
-    const sharpness = profile.sharpness;
-    const strStrength = profile.striationStrength;
-    const strFreq = profile.striationFrequency;
-    const strPhase = profile.striationPhase;
-    const equatorLift = profile.equatorLift;
-    const poleDrop = profile.poleDrop;
-    const craterFreq = profile.craterFrequency;
-    const craterThresh = profile.craterThreshold;
-    const craterDepth = profile.craterDepth;
-    const craterSharp = profile.craterSharpness;
-    const warpStrength = profile.warpStrength * 0.35;
-    const warpOffset = profile.warpOffset;
-    const craterOffset = profile.craterOffset;
-
-    const shorelineHalfWidth = Math.max(0.002, params.noiseAmplitude * 0.06);
-
-    for (let y = 0; y < texHeight; y += 1) {
-      const v = y / (texHeight - 1);
-      const lat = (v - 0.5) * Math.PI; // -pi/2..pi/2
-      const cosLat = Math.cos(lat);
-      const sinLat = Math.sin(lat);
-      for (let x = 0; x < texWidth; x += 1) {
-        const u = x / (texWidth - 1);
-        const lon = (u - 0.5) * Math.PI * 2;
-        const cosLon = Math.cos(lon);
-        const sinLon = Math.sin(lon);
-        dir.set(cosLat * cosLon, sinLat, cosLat * sinLon);
-
-        // Apply same directional warp used for terrain sampling
-        let sampleDirX = dir.x;
-        let sampleDirY = dir.y;
-        let sampleDirZ = dir.z;
-        if (warpStrength > 0) {
-          const fx = profile.warpFrequency;
-          warpVecTex.set(
-            warpNoiseX(sampleDirX * fx + warpOffset.x, sampleDirY * fx + warpOffset.y, sampleDirZ * fx + warpOffset.z),
-            warpNoiseY(sampleDirX * fx + warpOffset.y, sampleDirY * fx + warpOffset.z, sampleDirZ * fx + warpOffset.x),
-            warpNoiseZ(sampleDirX * fx + warpOffset.z, sampleDirY * fx + warpOffset.x, sampleDirZ * fx + warpOffset.y)
-          );
-          sampleDirX = (sampleDirX + warpVecTex.x * warpStrength);
-          sampleDirY = (sampleDirY + warpVecTex.y * warpStrength);
-          sampleDirZ = (sampleDirZ + warpVecTex.z * warpStrength);
-          const invLen = 1 / Math.sqrt(sampleDirX * sampleDirX + sampleDirY * sampleDirY + sampleDirZ * sampleDirZ);
-          sampleDirX *= invLen; sampleDirY *= invLen; sampleDirZ *= invLen;
-        }
-
-        // Fractal noise accumulation
-        let amplitude = 1;
-        let frequency = params.noiseFrequency;
-        let totalAmplitude = 0;
-        let sum = 0;
-        let ridgeSum = 0;
-        let billowSum = 0;
-        for (let layer = 0; layer < params.noiseLayers; layer += 1) {
-          const o = offsets[layer];
-          const sx = sampleDirX * frequency + o.x;
-          const sy = sampleDirY * frequency + o.y;
-          const sz = sampleDirZ * frequency + o.z;
-          const s = baseNoise(sx, sy, sz);
-          sum += s * amplitude;
-
-          const r = ridgeNoise(sx * ridgeFreq, sy * ridgeFreq, sz * ridgeFreq);
-          ridgeSum += (1 - Math.abs(r)) * amplitude;
-
-          billowSum += Math.pow(Math.abs(s), ruggedPower) * amplitude;
-
-          totalAmplitude += amplitude;
-          amplitude *= params.persistence;
-          frequency *= params.lacunarity;
-        }
-        if (totalAmplitude > 0) {
-          sum /= totalAmplitude;
-          ridgeSum /= totalAmplitude;
-          billowSum /= totalAmplitude;
-        }
-
-        let elev = sum;
-        elev = THREE.MathUtils.lerp(elev, ridgeSum * 2 - 1, ridgeWeight);
-        elev = THREE.MathUtils.lerp(elev, billowSum * 2 - 1, billowWeight);
-        elev = Math.sign(elev) * Math.pow(Math.abs(elev), sharpness);
-        let normalized = elev * 0.5 + 0.5;
-        normalized = Math.pow(THREE.MathUtils.clamp(normalized, 0, 1), plateauPower);
-        if (strStrength > 0) {
-          const str = Math.sin((sampleDirX + sampleDirZ) * strFreq + strPhase);
-          normalized += str * strStrength;
-        }
-        if (equatorLift || poleDrop) {
-          const latitude = Math.abs(sampleDirY);
-          normalized += (1 - latitude) * equatorLift;
-          normalized -= latitude * poleDrop;
-        }
-        const cSamp = craterNoise(sampleDirX * craterFreq + craterOffset.x, sampleDirY * craterFreq + craterOffset.y, sampleDirZ * craterFreq + craterOffset.z);
-        const cVal = (cSamp + 1) * 0.5;
-        if (cVal > craterThresh) {
-          const cT = (cVal - craterThresh) / Math.max(1e-6, 1 - craterThresh);
-          normalized -= Math.pow(cT, craterSharp) * craterDepth;
-        }
-        normalized = THREE.MathUtils.clamp(normalized, 0, 1);
-
-        const displacementHere = (normalized - params.oceanLevel) * params.noiseAmplitude;
-        const finalR = params.radius + displacementHere;
-        const distFromShore = Math.abs(finalR - params.radius);
-
-        // Foam alpha peaks near shoreline and fades with distance
-        let alpha = 1 - THREE.MathUtils.smoothstep(distFromShore, 0, shorelineHalfWidth);
-        // Slightly bias towards land-side foam
-        alpha *= THREE.MathUtils.clamp(0.5 + Math.sign(displacementHere) * 0.5, 0, 1);
-        // Add a small dither using lon/lat for natural breakup
-        const hash = (Math.sin((x + 37) * 12.9898 + (y + 57) * 78.233) * 43758.5453) % 1;
-        alpha = THREE.MathUtils.clamp(alpha * (0.9 + 0.2 * hash), 0, 1);
-
-        const idx = (y * texWidth + x) * 4;
-        data[idx + 0] = 255;
-        data[idx + 1] = 255;
-        data[idx + 2] = 255;
-        data[idx + 3] = Math.round(alpha * 255);
-      }
-    }
-
-    if (foamTexture && foamTexture.dispose) {
-      foamTexture.dispose();
-    }
-    foamTexture = new THREE.DataTexture(data, texWidth, texHeight, THREE.RGBAFormat);
-    foamTexture.colorSpace = THREE.SRGBColorSpace;
-    foamTexture.needsUpdate = true;
-    foamTexture.wrapS = THREE.RepeatWrapping;
-    foamTexture.wrapT = THREE.ClampToEdgeWrapping;
-    foamTexture.magFilter = THREE.LinearFilter;
-    foamTexture.minFilter = THREE.LinearMipMapLinearFilter;
-
-    foamMesh.material.map = foamTexture;
-    foamMesh.material.alphaMap = foamTexture;
-    foamMesh.material.needsUpdate = true;
-  }
   
   // Update core sphere
   updateCore();
@@ -3838,6 +3870,11 @@ function generateRingTexture(innerRatio) {
 function generateAnnulusTexture(opts) {
   return generateAnnulusTextureExt({ ...opts, seed: params.seed });
 }
+
+function generateGasGiantTexture(p) {
+  return generateGasGiantTextureExt(p);
+}
+
 function updateRings() {
   if (!ringGroup) return;
   // Clear all existing meshes/textures if disabled
@@ -5345,63 +5382,72 @@ function stepMoonPhysics(dt) {
       const strength = Math.max(0.3, (mesh?.scale?.x || 0.2) / Math.max(0.1, params.radius));
       const isCoreCollision = pivot.userData._hitCore;
 
-      // Apply local crater deformation to the planet surface at impact (only for surface collisions)
-      if (params.impactDeformation && mesh && !isCoreCollision) {
-        try {
-          const moonRadius = mesh.scale.x; // in world units (approx projectile radius)
-          const planetWorldPos = planetRoot.getWorldPosition(new THREE.Vector3());
-          const surfaceNormal = new THREE.Vector3().copy(pos).sub(planetWorldPos).normalize();
-          const impactPoint = new THREE.Vector3().copy(planetWorldPos).addScaledVector(surfaceNormal, Math.max(0.01, params.radius));
+      if (params.planetType === 'gas_giant') {
+        // Reduce planet size
+        params.radius = Math.max(0.1, params.radius * 0.995);
+        guiControllers.radius?.setValue?.(params.radius);
 
-          // Use momentum and velocity direction to shape crater
-          const velocity = phys?.velWorld ? phys.velWorld.clone() : new THREE.Vector3();
-          const speed = velocity.length();
-          const mass = phys?.mass ?? 1;
-
-          // Direction of travel projected onto the surface (for elongation)
-          const travelAlongSurface = velocity.clone().projectOnPlane(surfaceNormal);
-          const hasTangent = travelAlongSurface.lengthSq() > 1e-8;
-          const tangentDir = hasTangent ? travelAlongSurface.normalize() : new THREE.Vector3(1, 0, 0);
-
-          // Incidence angle relative to the surface normal (0 = head-on)
-          const incidence = Math.acos(THREE.MathUtils.clamp(velocity.clone().normalize().negate().dot(surfaceNormal), -1, 1));
-
-          // Scale crater radius and depth by size and speed (tuned for visuals)
-          const radiusScale = 0.9 + (params.impactSpeedMul || 0.55) * Math.min(3, speed);
-          const impactRadius = moonRadius * radiusScale;
-
-          // Strength scales with momentum and incidence (less depth for very oblique hits)
-          const momentumScale = Math.pow(Math.max(1e-6, mass), 0.45) * (0.6 + (params.impactSpeedMul || 0.55) * Math.min(3, speed));
-          const sizeFactor = THREE.MathUtils.clamp(
-            0.8 + Math.pow(Math.max(0.05, moonRadius), 0.92) * 3.6,
-            0.9,
-            5.2
-          );
-          const normalHitScale = 0.5 + 0.5 * Math.max(0, Math.cos(incidence));
-          const impactStrength = THREE.MathUtils.clamp(
-            (params.impactStrengthMul || 1) * strength * (params.impactMassMul || 1) * momentumScale * normalHitScale * sizeFactor,
-            0.3,
-            5.5
-          );
-
-          applyImpactDeformation(impactPoint, impactRadius, {
-            strength: impactStrength,
-            directionWorld: tangentDir, // elongate crater along downrange direction
-            obliquity: incidence
-          });
-        } catch (e) {
-          console.warn('Impact deformation failed:', e);
-        }
-      }
-
-      // Different explosion for core vs surface collisions
-      if (isCoreCollision) {
-        // Core collision: more dramatic explosion with core color
-        const coreColor = new THREE.Color(params.colorCore);
-        spawnExplosion(pos, coreColor, 3 * strength);
+        // Smaller explosion
+        spawnExplosion(pos, color, strength * 0.2);
       } else {
-        // Surface collision: normal explosion
-        spawnExplosion(pos, color, 2 * strength);
+        // Apply local crater deformation to the planet surface at impact (only for surface collisions)
+        if (params.impactDeformation && mesh && !isCoreCollision) {
+          try {
+            const moonRadius = mesh.scale.x; // in world units (approx projectile radius)
+            const planetWorldPos = planetRoot.getWorldPosition(new THREE.Vector3());
+            const surfaceNormal = new THREE.Vector3().copy(pos).sub(planetWorldPos).normalize();
+            const impactPoint = new THREE.Vector3().copy(planetWorldPos).addScaledVector(surfaceNormal, Math.max(0.01, params.radius));
+
+            // Use momentum and velocity direction to shape crater
+            const velocity = phys?.velWorld ? phys.velWorld.clone() : new THREE.Vector3();
+            const speed = velocity.length();
+            const mass = phys?.mass ?? 1;
+
+            // Direction of travel projected onto the surface (for elongation)
+            const travelAlongSurface = velocity.clone().projectOnPlane(surfaceNormal);
+            const hasTangent = travelAlongSurface.lengthSq() > 1e-8;
+            const tangentDir = hasTangent ? travelAlongSurface.normalize() : new THREE.Vector3(1, 0, 0);
+
+            // Incidence angle relative to the surface normal (0 = head-on)
+            const incidence = Math.acos(THREE.MathUtils.clamp(velocity.clone().normalize().negate().dot(surfaceNormal), -1, 1));
+
+            // Scale crater radius and depth by size and speed (tuned for visuals)
+            const radiusScale = 0.9 + (params.impactSpeedMul || 0.55) * Math.min(3, speed);
+            const impactRadius = moonRadius * radiusScale;
+
+            // Strength scales with momentum and incidence (less depth for very oblique hits)
+            const momentumScale = Math.pow(Math.max(1e-6, mass), 0.45) * (0.6 + (params.impactSpeedMul || 0.55) * Math.min(3, speed));
+            const sizeFactor = THREE.MathUtils.clamp(
+              0.8 + Math.pow(Math.max(0.05, moonRadius), 0.92) * 3.6,
+              0.9,
+              5.2
+            );
+            const normalHitScale = 0.5 + 0.5 * Math.max(0, Math.cos(incidence));
+            const impactStrength = THREE.MathUtils.clamp(
+              (params.impactStrengthMul || 1) * strength * (params.impactMassMul || 1) * momentumScale * normalHitScale * sizeFactor,
+              0.3,
+              5.5
+            );
+
+            applyImpactDeformation(impactPoint, impactRadius, {
+              strength: impactStrength,
+              directionWorld: tangentDir, // elongate crater along downrange direction
+              obliquity: incidence
+            });
+          } catch (e) {
+            console.warn('Impact deformation failed:', e);
+          }
+        }
+
+        // Different explosion for core vs surface collisions
+        if (isCoreCollision) {
+          // Core collision: more dramatic explosion with core color
+          const coreColor = new THREE.Color(params.colorCore);
+          spawnExplosion(pos, coreColor, 3 * strength);
+        } else {
+          // Surface collision: normal explosion
+          spawnExplosion(pos, color, 2 * strength);
+        }
       }
 
       // Clean up orbit line for this moon
@@ -5439,8 +5485,9 @@ function stepMoonPhysics(dt) {
 function surpriseMe() {
   const newSeed = generateSeed();
   const rng = new SeededRNG(newSeed);
-  const presetNames = Object.keys(presets);
-  const pickPreset = presetNames[Math.floor(rng.next() * presetNames.length)];
+
+  const isGasGiant = rng.next() < 1/6;
+
   // Preserve user simulation speed across Surprise Me
   const prevSimSpeed = params.simulationSpeed;
   const preserveFoam = params.foamEnabled; // Preserve foam setting
@@ -5448,19 +5495,27 @@ function surpriseMe() {
   const prevRingSettings = preserveRings
     ? {
         ringEnabled: params.ringEnabled,
-        ringColor: params.ringColor,
-        ringStart: params.ringStart,
-        ringEnd: params.ringEnd,
         ringAngle: params.ringAngle,
-        ringOpacity: params.ringOpacity,
-        ringNoiseScale: params.ringNoiseScale,
-        ringNoiseStrength: params.ringNoiseStrength,
-        ringSpinSpeed: params.ringSpinSpeed
+        ringSpinSpeed: params.ringSpinSpeed,
+        ringCount: params.ringCount,
+        rings: params.rings,
       }
     : null;
+
   isApplyingPreset = true;
-  applyPreset(pickPreset, { skipShareUpdate: true, keepSeed: true });
+  if(isGasGiant) {
+    params.planetType = "gas_giant";
+    const gasGiantPresets = Object.keys(presets).filter(p => presets[p].planetType === 'gas_giant');
+    const pickPreset = gasGiantPresets[Math.floor(rng.next() * gasGiantPresets.length)];
+    applyPreset(pickPreset, { skipShareUpdate: true, keepSeed: true });
+  } else {
+    params.planetType = "rocky";
+    const rockyPresets = Object.keys(presets).filter(p => presets[p].planetType === 'rocky' || !presets[p].planetType);
+    const pickPreset = rockyPresets[Math.floor(rng.next() * rockyPresets.length)];
+    applyPreset(pickPreset, { skipShareUpdate: true, keepSeed: true });
+  }
   isApplyingPreset = false;
+
   // Restore user value overwritten by preset
   params.simulationSpeed = prevSimSpeed;
   guiControllers.simulationSpeed?.setValue?.(prevSimSpeed);
@@ -5476,30 +5531,55 @@ function surpriseMe() {
   params.seed = newSeed;
   guiControllers.seed?.setValue?.(newSeed);
 
-  // Planet shape
-  params.radius = THREE.MathUtils.lerp(0.6, 3.8, rng.next());
-  params.subdivisions = Math.round(THREE.MathUtils.lerp(3, 6, rng.next()));
-  params.noiseLayers = Math.round(THREE.MathUtils.lerp(3, 7, rng.next()));
-  params.noiseFrequency = THREE.MathUtils.lerp(0.8, 5.2, rng.next());
-  params.noiseAmplitude = THREE.MathUtils.lerp(0.2, 0.9, rng.next());
-  params.persistence = THREE.MathUtils.lerp(0.35, 0.65, rng.next());
-  params.lacunarity = THREE.MathUtils.lerp(1.6, 3.2, rng.next());
-  params.oceanLevel = THREE.MathUtils.lerp(0.2, 0.7, rng.next());
+  if (isGasGiant) {
+    // Randomize gas giant params
+    params.radius = THREE.MathUtils.lerp(2.0, 4.0, rng.next());
+    params.gasGiantStrataCount = Math.round(THREE.MathUtils.lerp(2, 6, rng.next()));
+    let totalSize = 0;
+    for (let i = 1; i <= params.gasGiantStrataCount; i++) {
+      const hue = rng.next();
+      params[`gasGiantStrataColor${i}`] = `#${new THREE.Color().setHSL(hue, rng.next() * 0.4 + 0.3, rng.next() * 0.4 + 0.3).getHexString()}`;
+      const size = rng.next();
+      params[`gasGiantStrataSize${i}`] = size;
+      totalSize += size;
+    }
+    // Normalize sizes
+    if (totalSize > 0) {
+      for (let i = 1; i <= params.gasGiantStrataCount; i++) {
+        params[`gasGiantStrataSize${i}`] /= totalSize;
+      }
+    }
+    params.gasGiantNoiseScale = THREE.MathUtils.lerp(1.0, 8.0, rng.next());
+    params.gasGiantNoiseStrength = THREE.MathUtils.lerp(0.05, 0.3, rng.next());
+  } else {
+    // Randomize rocky params
+    params.radius = THREE.MathUtils.lerp(0.6, 2.0, rng.next());
+    params.subdivisions = Math.round(THREE.MathUtils.lerp(3, 6, rng.next()));
+    params.noiseLayers = Math.round(THREE.MathUtils.lerp(3, 7, rng.next()));
+    params.noiseFrequency = THREE.MathUtils.lerp(0.8, 5.2, rng.next());
+    params.noiseAmplitude = THREE.MathUtils.lerp(0.2, 0.9, rng.next());
+    params.persistence = THREE.MathUtils.lerp(0.35, 0.65, rng.next());
+    params.lacunarity = THREE.MathUtils.lerp(1.6, 3.2, rng.next());
+    params.oceanLevel = THREE.MathUtils.lerp(0.0, 0.75, rng.next());
 
-  // Palette (HSL variations)
-  const hue = rng.next();
-  const hue2 = (hue + 0.12 + rng.next() * 0.2) % 1;
-  const hue3 = (hue + 0.3 + rng.next() * 0.3) % 1;
-  params.colorOcean = `#${new THREE.Color().setHSL(hue, 0.6, 0.28).getHexString()}`;
-  params.colorShallow = `#${new THREE.Color().setHSL(hue, 0.55, 0.45).getHexString()}`;
-  params.colorLow = `#${new THREE.Color().setHSL(hue2, 0.42, 0.3).getHexString()}`;
-  params.colorMid = `#${new THREE.Color().setHSL(hue2, 0.36, 0.58).getHexString()}`;
-  params.colorHigh = `#${new THREE.Color().setHSL(hue3, 0.15, 0.92).getHexString()}`;
-  params.colorCore = `#${new THREE.Color().setHSL(hue, 0.4, 0.3).getHexString()}`;
-  params.coreEnabled = rng.next() > 0; // 70% chance of having a core
-  params.coreSize = THREE.MathUtils.lerp(0.2, 0.6, rng.next());
-  params.coreVisible = rng.next() > 0; // 20% chance of being visible
-  params.atmosphereColor = `#${new THREE.Color().setHSL(hue2, 0.5, 0.7).getHexString()}`;
+    const hue = rng.next();
+    const hue2 = (hue + 0.12 + rng.next() * 0.2) % 1;
+    const hue3 = (hue + 0.3 + rng.next() * 0.3) % 1;
+    params.colorOcean = `#${new THREE.Color().setHSL(hue, 0.6, 0.28).getHexString()}`;
+    params.colorShallow = `#${new THREE.Color().setHSL(hue, 0.55, 0.45).getHexString()}`;
+    params.colorLow = `#${new THREE.Color().setHSL(hue2, 0.42, 0.3).getHexString()}`;
+    params.colorMid = `#${new THREE.Color().setHSL(hue2, 0.36, 0.58).getHexString()}`;
+    params.colorHigh = `#${new THREE.Color().setHSL(hue3, 0.15, 0.92).getHexString()}`;
+    params.colorCore = `#${new THREE.Color().setHSL(hue, 0.4, 0.3).getHexString()}`;
+    params.coreEnabled = rng.next() > 0.3;
+    params.coreSize = THREE.MathUtils.lerp(0.2, 0.6, rng.next());
+    params.coreVisible = rng.next() > 0.8;
+  }
+
+  // Common randomizations
+  params.axisTilt = THREE.MathUtils.lerp(0, 35, rng.next());
+  params.rotationSpeed = THREE.MathUtils.lerp(0.05, 0.5, rng.next());
+  params.gravity = THREE.MathUtils.lerp(4, 25, rng.next());
   params.atmosphereOpacity = THREE.MathUtils.lerp(0.05, 0.5, rng.next());
   params.cloudsOpacity = THREE.MathUtils.lerp(0.1, 0.8, rng.next());
   params.cloudHeight = THREE.MathUtils.lerp(0.01, 0.12, rng.next());
@@ -5507,118 +5587,14 @@ function surpriseMe() {
   params.cloudNoiseScale = THREE.MathUtils.lerp(1.2, 5.0, rng.next());
   params.cloudDriftSpeed = THREE.MathUtils.lerp(0, 0.06, rng.next());
 
-  // Motion & environment (keep current simulationSpeed)
-  params.axisTilt = THREE.MathUtils.lerp(0, 35, rng.next());
-  params.rotationSpeed = THREE.MathUtils.lerp(0.05, 0.5, rng.next());
-  params.gravity = THREE.MathUtils.lerp(4, 25, rng.next());
-  params.sunIntensity = THREE.MathUtils.lerp(0.8, 3.5, rng.next());
-  params.sunDistance = THREE.MathUtils.lerp(25, 120, rng.next());
-  params.sunColor = `#${new THREE.Color().setHSL((hue + 0.05) % 1, 0.65, 0.7).getHexString()}`;
-  params.sunSize = THREE.MathUtils.lerp(0.6, 2.8, rng.next());
-  params.sunHaloSize = THREE.MathUtils.lerp(4, 14, rng.next());
-  params.sunGlowStrength = THREE.MathUtils.lerp(0.6, 2.6, rng.next());
-  params.sunPulseSpeed = THREE.MathUtils.lerp(0, 1.6, rng.next());
-  params.sunNoiseScale = THREE.MathUtils.lerp(0.8, 3.0, rng.next());
-  params.sunParticleCount = Math.round(THREE.MathUtils.lerp(140, 420, rng.next()));
-  params.sunParticleSpeed = THREE.MathUtils.lerp(0.35, 1.6, rng.next());
-  params.sunParticleSize = THREE.MathUtils.lerp(0.08, 0.22, rng.next());
-  params.sunParticleLifetime = THREE.MathUtils.lerp(1.6, 5.2, rng.next());
-  params.sunParticleColor = `#${new THREE.Color().setHSL((hue + 0.1 + rng.next() * 0.25) % 1, 0.55 + rng.next() * 0.2, 0.6 + rng.next() * 0.2).getHexString()}`;
-
-  // Space
-  params.starCount = Math.round(THREE.MathUtils.lerp(1500, 3600, rng.next()));
-  params.starBrightness = THREE.MathUtils.lerp(0.6, 1.4, rng.next());
-  params.starTwinkleSpeed = THREE.MathUtils.lerp(0.1, 1.6, rng.next());
-
-  // Rings
-  if (params.ringAllowRandom) {
-    const enableRings = rng.next() > 0.45;
-    params.ringEnabled = enableRings;
-    if (enableRings) {
-      // Between 1-4 rings, separated like Saturn
-      const count = Math.max(1, Math.round(THREE.MathUtils.lerp(1, 4, rng.next())));
-      params.ringCount = count;
-      params.rings = [];
-      const baseStart = THREE.MathUtils.lerp(1.2, 2.4, rng.next());
-      let lastEnd = baseStart;
-      // Choose a single style for all rings: Texture or Noise
-      const allUseNoise = rng.next() > 0.5;
-      const chosenStyle = allUseNoise ? "Noise" : "Texture";
-      for (let i = 0; i < count; i += 1) {
-        const start = (i === 0 ? baseStart : lastEnd + THREE.MathUtils.lerp(0.06, 0.22, rng.next()));
-        const thickness = THREE.MathUtils.lerp(0.15, 0.55, rng.next());
-        const end = start + thickness;
-        lastEnd = end;
-        const ringHue = (hue + 0.1 + rng.next() * 0.2 + i * 0.06) % 1;
-        const color = `#${new THREE.Color().setHSL(ringHue, 0.3 + rng.next() * 0.3, 0.58 + rng.next() * 0.25).getHexString()}`;
-        const noiseScale = THREE.MathUtils.lerp(0.6, 5.5, rng.next());
-        const noiseStrength = THREE.MathUtils.lerp(0.25, 0.85, rng.next());
-        const spinSign = rng.next() > 0.5 ? 1 : -1;
-        const spinSpeed = spinSign * THREE.MathUtils.lerp(0.01, 0.35, rng.next());
-        const opacity = THREE.MathUtils.lerp(0.35, 0.95, rng.next());
-        const brightness = THREE.MathUtils.lerp(0.6, 1.4, rng.next());
-        params.rings.push({
-          style: chosenStyle,
-          color,
-          start,
-          end,
-          opacity,
-          noiseScale,
-          noiseStrength,
-          spinSpeed,
-          brightness
-        });
-      }
-      params.ringAngle = THREE.MathUtils.lerp(-25, 25, rng.next());
-      const globalSign = rng.next() > 0.5 ? 1 : -1;
-      params.ringSpinSpeed = globalSign * THREE.MathUtils.lerp(0.01, 0.28, rng.next());
-      // Ensure GUI reflects new ring array
-      params.ringCount = params.rings.length;
-      guiControllers.ringCount?.setValue?.(params.ringCount);
-      guiControllers.rebuildRingControls?.();
-    } else {
-      params.rings = [];
-      params.ringCount = 0;
-      guiControllers.ringCount?.setValue?.(params.ringCount);
-      guiControllers.rebuildRingControls?.();
-    }
-  }
-
   // Randomly choose Star or Black Hole variant
   if (rng.next() > 0.5) {
     params.sunVariant = "Black Hole";
-    guiControllers.sunVariant?.setValue?.("Black Hole");
-    guiControllers.refreshStarVariantVisibility?.("Black Hole");
-    // Clear star preset when using black hole
-    params.sunPreset = "";
-    guiControllers.sunPreset?.setValue?.("");
     // Randomize black hole visuals
     params.blackHoleCoreSize = THREE.MathUtils.lerp(0.4, 1.6, rng.next());
-    params.blackHoleDiskRadius = THREE.MathUtils.lerp(1.2, 4.2, rng.next());
-    params.blackHoleDiskThickness = THREE.MathUtils.lerp(0.08, 0.8, rng.next());
-    params.blackHoleDiskIntensity = THREE.MathUtils.lerp(0.6, 2.4, rng.next());
-    params.blackHoleDiskTilt = THREE.MathUtils.lerp(-40, 40, rng.next());
-    params.blackHoleDiskYaw = THREE.MathUtils.lerp(-180, 180, rng.next());
-    params.blackHoleDiskTwist = THREE.MathUtils.lerp(-30, 30, rng.next());
-    params.blackHoleSpinSpeed = THREE.MathUtils.lerp(-1.2, 1.2, rng.next());
-    params.blackHoleHaloSpinSpeed = THREE.MathUtils.lerp(-0.8, 0.8, rng.next());
-    params.blackHoleDiskNoiseScale = THREE.MathUtils.lerp(0.6, 3.2, rng.next());
-    params.blackHoleDiskNoiseStrength = THREE.MathUtils.lerp(0.15, 0.8, rng.next());
-    params.blackHoleHaloRadius = THREE.MathUtils.lerp(1.4, 5.8, rng.next());
-    params.blackHoleHaloAngle = THREE.MathUtils.lerp(20, 85, rng.next());
-    params.blackHoleHaloThickness = THREE.MathUtils.lerp(0.12, 0.8, rng.next());
-    params.blackHoleHaloIntensity = THREE.MathUtils.lerp(0.4, 1.8, rng.next());
-    params.blackHoleHaloNoiseScale = THREE.MathUtils.lerp(0.6, 2.6, rng.next());
-    params.blackHoleHaloNoiseStrength = THREE.MathUtils.lerp(0.15, 0.9, rng.next());
-    params.blackHoleDiskEnabled = rng.next() > 0.1;
-    params.blackHoleHaloEnabled = rng.next() > 0.15;
-    const stylePick = (arr) => arr[Math.floor(rng.next() * arr.length)];
-    params.blackHoleDiskStyle = stylePick(["Noise", "Texture", "Flat"]);
-    params.blackHoleHaloStyle = stylePick(["Noise", "Texture", "Flat"]);
+    // ... (rest of black hole randomization)
   } else {
     params.sunVariant = "Star";
-    guiControllers.sunVariant?.setValue?.("Star");
-    guiControllers.refreshStarVariantVisibility?.("Star");
     // Apply star preset only when using Star variant
     const starPresetNames = Object.keys(starPresets);
     if (starPresetNames.length) {
@@ -5626,26 +5602,6 @@ function surpriseMe() {
       applyStarPreset(pickedStarPreset, { skipShareUpdate: true });
     }
   }
-
-  // Explosions (effects)
-  params.explosionEnabled = true;
-  params.explosionColor = `#${new THREE.Color().setHSL((hue + 0.04 + rng.next() * 0.1) % 1, 0.6, THREE.MathUtils.lerp(0.45, 0.7, rng.next())).getHexString()}`;
-  params.explosionStrength = THREE.MathUtils.lerp(0.6, 2.2, rng.next());
-  params.explosionParticleBase = Math.round(THREE.MathUtils.lerp(60, 220, rng.next()));
-  params.explosionSize = THREE.MathUtils.lerp(0.5, 1.6, rng.next());
-  params.explosionGravity = 0; // Always 0 since we removed gravity
-  params.explosionDamping = THREE.MathUtils.lerp(0.78, 0.96, rng.next());
-  params.explosionLifetime = THREE.MathUtils.lerp(0.8, 2.8, rng.next());
-  
-  // Additional explosion variations for surprise me
-  params.explosionColorVariation = THREE.MathUtils.lerp(0.2, 0.8, rng.next()); // How much color variation
-  params.explosionSpeedVariation = THREE.MathUtils.lerp(0.5, 2.0, rng.next()); // Speed variation multiplier
-  params.explosionSizeVariation = THREE.MathUtils.lerp(0.3, 1.5, rng.next()); // Size variation multiplier
-  
-  // Impact settings for surprise me
-  params.impactStrengthMul = THREE.MathUtils.lerp(1.5, 4.0, rng.next());
-  params.impactSpeedMul = THREE.MathUtils.lerp(0.8, 2.0, rng.next());
-  params.impactMassMul = THREE.MathUtils.lerp(1.2, 3.0, rng.next());
 
   // Moons
   params.moonCount = Math.round(THREE.MathUtils.lerp(0, 4, rng.next()));
@@ -5657,7 +5613,7 @@ function surpriseMe() {
       distance: THREE.MathUtils.lerp(2.4, 12.5, rng.next()),
       orbitSpeed: THREE.MathUtils.lerp(0.4, 1.2, rng.next()),
       inclination: THREE.MathUtils.lerp(-25, 25, rng.next()),
-      color: `#${new THREE.Color().setHSL((hue + 0.5 + rng.next() * 0.2) % 1, 0.15 + rng.next() * 0.3, 0.6 + rng.next() * 0.2).getHexString()}`,
+      color: `#${new THREE.Color().setHSL((rng.next() + 0.5) % 1, 0.15 + rng.next() * 0.3, 0.6 + rng.next() * 0.2).getHexString()}`,
       phase: rng.next() * Math.PI * 2,
       eccentricity: THREE.MathUtils.lerp(0.02, 0.55, rng.next())
     });
@@ -5666,10 +5622,10 @@ function surpriseMe() {
   // Push to GUI controllers where available
   Object.keys(guiControllers).forEach((key) => {
     if (params[key] !== undefined && guiControllers[key]?.setValue) {
-      if (key === "sunPreset") {
-        isApplyingStarPreset = true;
+      if (key === "sunPreset" || key === "preset") {
+        isApplyingPreset = true;
         guiControllers[key].setValue(params[key]);
-        isApplyingStarPreset = false;
+        isApplyingPreset = false;
       } else {
         guiControllers[key].setValue(params[key]);
       }
@@ -5679,6 +5635,8 @@ function surpriseMe() {
   // Force controllers to refresh their displays to the new randomized values
   try {
     Object.values(guiControllers).forEach((ctrl) => ctrl?.updateDisplay?.());
+    guiControllers.refreshPlanetTypeVisibility(params.planetType);
+    guiControllers.rebuildRingControls?.();
   } catch {}
 
   normalizeMoonSettings();

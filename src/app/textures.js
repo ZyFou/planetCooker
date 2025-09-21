@@ -101,6 +101,119 @@ export function generateRingTexture(innerRatio, params) {
   return texture;
 }
 
+export function generateGasGiantTexture(params) {
+  const size = 1024; // Use a larger texture for the planet surface
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size / 2; // Use a 2:1 aspect ratio for equirectangular projection
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    // Fallback for when canvas is not supported
+    const fallback = new THREE.CanvasTexture(canvas);
+    fallback.colorSpace = THREE.SRGBColorSpace;
+    fallback.wrapS = THREE.RepeatWrapping;
+    fallback.wrapT = THREE.ClampToEdgeWrapping;
+    fallback.anisotropy = 16;
+    fallback.generateMipmaps = true;
+    fallback.minFilter = THREE.LinearMipmapLinearFilter;
+    fallback.magFilter = THREE.LinearFilter;
+    fallback.needsUpdate = true;
+    return fallback;
+  }
+  const image = ctx.createImageData(canvas.width, canvas.height);
+  const data = image.data;
+
+  const strata = [];
+  let totalSize = 0;
+  for (let i = 1; i <= params.gasGiantStrataCount; i++) {
+    const size = params[`gasGiantStrataSize${i}`] || 0;
+    if (size > 0) {
+      strata.push({
+        color: new THREE.Color(params[`gasGiantStrataColor${i}`]),
+        size: size,
+      });
+      totalSize += size;
+    }
+  }
+
+  // Normalize strata sizes
+  if (totalSize > 0) {
+    for (const stratum of strata) {
+      stratum.size /= totalSize;
+    }
+  }
+
+  const noiseStrength = THREE.MathUtils.clamp(params.gasGiantNoiseStrength ?? 0.1, 0, 1);
+  const freq = Math.max(0.2, params.gasGiantNoiseScale ?? 2.0);
+  const rngSeed = `${params.seed || "gasgiant"}-${freq.toFixed(2)}-${noiseStrength.toFixed(2)}`;
+  const rand = (() => { let s = Array.from(rngSeed).reduce((a,c)=>a+c.charCodeAt(0),0)>>>0; return () => { let t = s += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; })();
+  const noise = createNoise3D(() => rand());
+
+  for (let y = 0; y < canvas.height; y++) {
+    const v = y / (canvas.height - 1); // Latitude from 0 to 1
+
+    let currentPos = 0;
+    let currentStratum = strata[0];
+    for (const stratum of strata) {
+      currentPos += stratum.size;
+      if (v <= currentPos) {
+        currentStratum = stratum;
+        break;
+      }
+    }
+    if(!currentStratum) currentStratum = strata[strata.length-1];
+
+
+    for (let x = 0; x < canvas.width; x++) {
+      const u = x / (canvas.width - 1); // Longitude from 0 to 1
+
+      const idx = (y * canvas.width + x) * 4;
+
+      const baseColor = currentStratum.color;
+      const highlight = baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.2);
+      const shadow = baseColor.clone().lerp(new THREE.Color(0, 0, 0), 0.2);
+
+      // Noise based on 3D coordinates on a sphere to avoid polar pinching
+      const lon = u * Math.PI * 2;
+      const lat = (v - 0.5) * Math.PI;
+      const sx = Math.cos(lat) * Math.cos(lon);
+      const sy = Math.sin(lat);
+      const sz = Math.cos(lat) * Math.sin(lon);
+
+      let noiseVal = 0;
+      let amp = 1.0;
+      let f = freq;
+      for(let i=0; i<3; i++) {
+        noiseVal += noise(sx * f, sy * f * 2.0, sz * f) * amp;
+        amp *= 0.5;
+        f *= 2.0;
+      }
+
+      const mix = THREE.MathUtils.clamp(0.5 + noiseVal * noiseStrength, 0, 1);
+      const r = THREE.MathUtils.lerp(shadow.r, highlight.r, mix);
+      const g = THREE.MathUtils.lerp(shadow.g, highlight.g, mix);
+      const b = THREE.MathUtils.lerp(shadow.b, highlight.b, mix);
+
+      data[idx + 0] = r * 255;
+      data[idx + 1] = g * 255;
+      data[idx + 2] = b * 255;
+      data[idx + 3] = 255; // Fully opaque
+    }
+  }
+
+  ctx.putImageData(image, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.anisotropy = 16;
+  texture.generateMipmaps = true;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
 export function generateAnnulusTexture({ innerRatio, color, opacity = 1, noiseScale = 3.0, noiseStrength = 0.5, seedKey = "bh", seed }) {
   const size = 512;
   const canvas = document.createElement("canvas");
