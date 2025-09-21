@@ -8,6 +8,7 @@ import { debounce, SeededRNG } from "./app/utils.js";
 import { initControlSearch } from "./app/gui/controlSearch.js";
 import { setupPlanetControls } from "./app/gui/planetControls.js";
 import { setupMoonControls } from "./app/gui/moonControls.js";
+import { setupRingControls } from "./app/gui/ringControls.js";
 import { createStarfield as createStarfieldExt, createSunTexture as createSunTextureExt } from "./app/stars.js";
 import { generateRingTexture as generateRingTextureExt, generateAnnulusTexture as generateAnnulusTextureExt } from "./app/textures.js";
 import { encodeShare as encodeShareExt, decodeShare as decodeShareExt, padBase64 as padBase64Ext, saveConfigurationToAPI as saveConfigurationToAPIExt, loadConfigurationFromAPI as loadConfigurationFromAPIExt } from "./app/shareCore.js";
@@ -114,8 +115,8 @@ tiltGroup.add(spinGroup);
 // Rings holder (follows tilt but not planet spin)
 const ringGroup = new THREE.Group();
 tiltGroup.add(ringGroup);
-let ringMesh = null;
-let ringTexture = null;
+let ringMeshes = [];
+let ringTextures = [];
 
 const planetMaterial = new THREE.MeshStandardMaterial({
   vertexColors: true,
@@ -759,15 +760,11 @@ const params = {
   explosionSizeVariation: 1.0,
   // Rings
   ringEnabled: false,
-  ringColor: "#c7b299",
-  ringStart: 1.6, // multiples of planet radius
-  ringEnd: 2.4,   // multiples of planet radius
   ringAngle: 0,   // degrees relative to equator
-  ringOpacity: 0.6,
-  ringNoiseScale: 3.2,
-  ringNoiseStrength: 0.55,
-  ringSpinSpeed: 0.05,
-  ringAllowRandom: true
+  ringSpinSpeed: 0.05, // global fallback
+  ringAllowRandom: true,
+  ringCount: 0,
+  rings: []
 };
 
 let currentSunVariant = params.sunVariant || "Star";
@@ -1448,17 +1445,12 @@ const shareKeys = [
   "explosionColorVariation",
   "explosionSpeedVariation",
   "explosionSizeVariation",
-  // Rings
+  // Rings (global)
   "ringEnabled",
-  "ringColor",
-  "ringStart",
-  "ringEnd",
   "ringAngle",
-  "ringOpacity",
-  "ringNoiseScale",
-  "ringNoiseStrength",
   "ringSpinSpeed",
-  "ringAllowRandom"
+  "ringAllowRandom",
+  "ringCount"
 ];
 //#endregion
 
@@ -1552,6 +1544,23 @@ const {
   resetMoonPhysics,
   getIsApplyingPreset: () => isApplyingPreset
 });
+
+// Rings: per-ring controls
+const { rebuildRingControls, normalizeRingSettings } = setupRingControls({
+  gui,
+  params,
+  guiControllers,
+  registerFolder,
+  unregisterFolder,
+  applyControlSearch,
+  scheduleShareUpdate,
+  updateRings,
+  getIsApplyingPreset: () => isApplyingPreset,
+  getRingsFolder: () => guiControllers?.folders?.ringsFolder
+});
+
+// Build ring controls initially
+rebuildRingControls();
 
 if (debugPlanetSpeedDisplay) {
   debugPlanetSpeedDisplay.textContent = "0.000";
@@ -2549,9 +2558,15 @@ function animate(timestamp) {
   // Additional independent cloud drift
   cloudsMesh.rotation.y += delta * params.cloudDriftSpeed;
 
-  if (params.ringEnabled && Math.abs(params.ringSpinSpeed) > 1e-4 && ringMesh) {
-    // Spin the ring around its own normal (local Z), not around the planet
-    ringMesh.rotation.z += delta * params.ringSpinSpeed;
+  if (params.ringEnabled && ringMeshes && ringMeshes.length) {
+    for (let i = 0; i < ringMeshes.length; i += 1) {
+      const mesh = ringMeshes[i];
+      if (!mesh) continue;
+      const speed = (mesh.userData?.spinSpeed ?? params.ringSpinSpeed ?? 0);
+      if (Math.abs(speed) > 1e-4) {
+        mesh.rotation.z += delta * speed;
+      }
+    }
   }
 
   if (params.sunVariant !== "Black Hole") {
@@ -3589,63 +3604,139 @@ function generateAnnulusTexture(opts) {
 }
 function updateRings() {
   if (!ringGroup) return;
-  // Remove ring if disabled
+  // Clear all existing meshes/textures if disabled
   if (!params.ringEnabled) {
-    if (ringMesh && ringMesh.parent) {
-      if (ringMesh.material) {
-        ringMesh.material.map = null;
-        ringMesh.material.alphaMap = null;
+    ringMeshes.forEach((mesh) => {
+      if (!mesh) return;
+      if (mesh.material) {
+        mesh.material.map = null;
+        mesh.material.alphaMap = null;
       }
-      ringMesh.parent.remove(ringMesh);
-      if (ringMesh.geometry) ringMesh.geometry.dispose();
-      if (ringMesh.material) ringMesh.material.dispose();
-      ringMesh = null;
-    }
-    if (ringTexture) {
-      ringTexture.dispose();
-      ringTexture = null;
-    }
+      if (mesh.parent) mesh.parent.remove(mesh);
+      if (mesh.geometry) mesh.geometry.dispose();
+      if (mesh.material) mesh.material.dispose();
+    });
+    ringMeshes = [];
+    ringTextures.forEach((tex) => tex?.dispose?.());
+    ringTextures = [];
     return;
   }
 
-  const startR = Math.max(1.05, params.ringStart ?? 1.6);
-  const endR = Math.max(startR + 0.05, params.ringEnd ?? 2.4);
-  const inner = Math.max(params.radius * startR, params.radius + 0.02);
-  const outer = Math.max(params.radius * endR, inner + 0.02);
+  // Backwards compatibility: single-ring params vs multi-ring array
+  const hasArray = Array.isArray(params.rings);
+  const angle = THREE.MathUtils.degToRad(params.ringAngle || 0);
   const segments = 256;
-  const innerRatio = THREE.MathUtils.clamp(inner / outer, 0, 0.98);
 
-  if (!ringMesh) {
-    const geom = new THREE.RingGeometry(inner, outer, segments, 1);
-    const mat = new THREE.MeshBasicMaterial({
-      color: new THREE.Color(params.ringColor || 0xc7b299),
-      transparent: true,
-      opacity: 1,
-      side: THREE.DoubleSide,
-      depthWrite: false
-    });
-    ringMesh = new THREE.Mesh(geom, mat);
-    ringMesh.renderOrder = 0;
-    ringGroup.add(ringMesh);
-  } else {
-    ringMesh.geometry.dispose();
-    ringMesh.geometry = new THREE.RingGeometry(inner, outer, segments, 1);
-    ringMesh.material.color.set(params.ringColor || 0xc7b299);
-    ringMesh.material.opacity = 1;
-    ringMesh.material.needsUpdate = true;
+  const ringDefs = hasArray && params.rings.length
+    ? params.rings
+    : [
+        {
+          style: (params.ringStyle || "Texture"), // Texture or Noise
+          color: params.ringColor || "#c7b299",
+          start: Math.max(1.05, params.ringStart ?? 1.6),
+          end: Math.max((params.ringStart ?? 1.6) + 0.05, params.ringEnd ?? 2.4),
+          opacity: THREE.MathUtils.clamp(params.ringOpacity ?? 0.6, 0, 1),
+          noiseScale: Math.max(0.2, params.ringNoiseScale ?? 3.2),
+          noiseStrength: THREE.MathUtils.clamp(params.ringNoiseStrength ?? 0.55, 0, 1),
+          spinSpeed: params.ringSpinSpeed ?? 0.05,
+          brightness: 1
+        }
+      ];
+
+  // Ensure we have matching number of meshes
+  while (ringMeshes.length > ringDefs.length) {
+    const mesh = ringMeshes.pop();
+    if (!mesh) continue;
+    if (mesh.material) {
+      mesh.material.map = null;
+      mesh.material.alphaMap = null;
+    }
+    if (mesh.parent) mesh.parent.remove(mesh);
+    if (mesh.geometry) mesh.geometry.dispose();
+    if (mesh.material) mesh.material.dispose();
+  }
+  while (ringMeshes.length < ringDefs.length) {
+    const placeholder = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.0, segments, 1), new THREE.MeshBasicMaterial({ transparent: true, opacity: 1, side: THREE.DoubleSide, depthWrite: false }));
+    placeholder.renderOrder = 0;
+    ringGroup.add(placeholder);
+    ringMeshes.push(placeholder);
   }
 
-  if (ringTexture) {
-    ringTexture.dispose();
-    ringTexture = null;
-  }
-  ringTexture = generateRingTexture(innerRatio);
-  ringMesh.material.map = ringTexture;
-  ringMesh.material.alphaMap = ringTexture;
-  ringMesh.material.needsUpdate = true;
+  // Rebuild textures list to match count
+  ringTextures.forEach((tex) => tex?.dispose?.());
+  ringTextures = new Array(ringDefs.length).fill(null);
 
-  ringMesh.rotation.set(0, 0, 0);
-  ringMesh.rotation.x = Math.PI / 2 + THREE.MathUtils.degToRad(params.ringAngle || 0);
+  // Build each ring
+  ringDefs.forEach((def, index) => {
+    const startR = Math.max(1.05, def.start);
+    const endR = Math.max(startR + 0.05, def.end);
+    const inner = Math.max(params.radius * startR, params.radius + 0.02);
+    const outer = Math.max(params.radius * endR, inner + 0.02);
+    const innerRatio = THREE.MathUtils.clamp(inner / outer, 0, 0.98);
+
+    const mesh = ringMeshes[index];
+    // Replace geometry and material
+    if (mesh.geometry) mesh.geometry.dispose();
+    mesh.geometry = new THREE.RingGeometry(inner, outer, segments, 1);
+
+    // Choose style
+    let texture = null;
+    const color = new THREE.Color(def.color || "#c7b299");
+    const style = def.style || "Texture"; // Texture or Noise
+    const opacity = THREE.MathUtils.clamp(def.opacity ?? 0.6, 0, 1) * (def.brightness ?? 1);
+
+    if (style === "Texture") {
+      texture = generateAnnulusTexture({
+        innerRatio,
+        color,
+        opacity,
+        noiseScale: def.noiseScale ?? 3.2,
+        noiseStrength: def.noiseStrength ?? 0.55,
+        seedKey: `ring-${index}`
+      });
+      if (mesh.material) mesh.material.dispose();
+      mesh.material = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 1,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        map: texture,
+        alphaMap: texture
+      });
+    } else if (style === "Noise") {
+      // Use the black hole disk shader for an animated noise ring
+      if (mesh.material) mesh.material.dispose();
+      mesh.material = new THREE.ShaderMaterial({
+        uniforms: THREE.UniformsUtils.clone(blackHoleDiskUniforms),
+        vertexShader: blackHoleDiskVertexShader,
+        fragmentShader: blackHoleDiskFragmentShader,
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide
+      });
+      const u = mesh.material.uniforms;
+      u.uColor.value.copy(color);
+      u.uInnerRadius.value = inner;
+      u.uOuterRadius.value = outer;
+      u.uFeather.value = Math.max(0.04, (outer - inner) * 0.22);
+      u.uIntensity.value = opacity;
+      u.uScale.value = 1;
+      u.uNoiseScale.value = Math.max(0.01, def.noiseScale ?? 1);
+      u.uNoiseStrength.value = Math.max(0, def.noiseStrength ?? 0.35);
+    } else {
+      // Fallback to basic texture
+      texture = generateAnnulusTexture({ innerRatio, color, opacity, seedKey: `ring-${index}` });
+      if (mesh.material) mesh.material.dispose();
+      mesh.material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1, side: THREE.DoubleSide, depthWrite: false, map: texture, alphaMap: texture });
+    }
+
+    ringTextures[index] = texture;
+
+    mesh.rotation.set(0, 0, 0);
+    mesh.rotation.x = Math.PI / 2 + angle;
+    mesh.userData.spinSpeed = def.spinSpeed ?? (params.ringSpinSpeed || 0);
+  });
 }
 
 function updateMoons() {
@@ -4232,6 +4323,38 @@ function applySharePayload(payload) {
     rebuildMoonControls();
   }
 
+  // Rings (optional array)
+  if (Array.isArray(data.rings)) {
+    params.rings = data.rings.map((r) => ({
+      style: r.style || "Texture",
+      color: r.color || "#c7b299",
+      start: Math.max(1.05, r.start ?? 1.6),
+      end: Math.max((r.start ?? 1.6) + 0.05, r.end ?? 2.4),
+      opacity: THREE.MathUtils.clamp(r.opacity ?? 0.6, 0, 1),
+      noiseScale: Math.max(0.2, r.noiseScale ?? 3.2),
+      noiseStrength: THREE.MathUtils.clamp(r.noiseStrength ?? 0.55, 0, 1),
+      spinSpeed: r.spinSpeed ?? 0.05,
+      brightness: r.brightness ?? 1
+    }));
+    params.ringCount = params.rings.length;
+    guiControllers.ringCount?.setValue?.(params.ringCount);
+    guiControllers.rebuildRingControls?.();
+  }
+  // Backward compatibility: old single-ring fields
+  if (!Array.isArray(data.rings) && (data.ringStart !== undefined || data.ringEnd !== undefined || data.ringColor !== undefined)) {
+    const start = Math.max(1.05, data.ringStart ?? (params.rings[0]?.start ?? 1.6));
+    const end = Math.max(start + 0.05, data.ringEnd ?? (params.rings[0]?.end ?? (start + 0.6)));
+    const color = data.ringColor ?? (params.rings[0]?.color ?? "#c7b299");
+    const opacity = THREE.MathUtils.clamp(data.ringOpacity ?? (params.rings[0]?.opacity ?? 0.6), 0, 1);
+    const noiseScale = Math.max(0.2, data.ringNoiseScale ?? (params.rings[0]?.noiseScale ?? 3.2));
+    const noiseStrength = THREE.MathUtils.clamp(data.ringNoiseStrength ?? (params.rings[0]?.noiseStrength ?? 0.55), 0, 1);
+    const spinSpeed = data.ringSpinSpeed ?? (params.rings[0]?.spinSpeed ?? params.ringSpinSpeed ?? 0.05);
+    params.rings = [{ style: "Texture", color, start, end, opacity, noiseScale, noiseStrength, spinSpeed, brightness: 1 }];
+    params.ringCount = 1;
+    guiControllers.ringCount?.setValue?.(params.ringCount);
+    guiControllers.rebuildRingControls?.();
+  }
+
   if (payload.preset && presets[payload.preset]) {
     params.preset = payload.preset;
     guiControllers.preset?.setValue?.(payload.preset);
@@ -4427,6 +4550,21 @@ function buildSharePayload() {
   shareKeys.forEach((key) => {
     data[key] = params[key];
   });
+  // Include rings array if present
+  if (Array.isArray(params.rings)) {
+    data.rings = params.rings.map((r) => ({
+      style: r.style,
+      color: r.color,
+      start: r.start,
+      end: r.end,
+      opacity: r.opacity,
+      noiseScale: r.noiseScale,
+      noiseStrength: r.noiseStrength,
+      spinSpeed: r.spinSpeed,
+      brightness: r.brightness
+    }));
+    data.ringCount = params.ringCount ?? params.rings.length;
+  }
   const moons = moonSettings.slice(0, params.moonCount).map((moon) => ({
     size: moon.size,
     distance: moon.distance,
@@ -5160,17 +5298,46 @@ function surpriseMe() {
     const enableRings = rng.next() > 0.45;
     params.ringEnabled = enableRings;
     if (enableRings) {
-      const ringHue = (hue + 0.15 + rng.next() * 0.25) % 1;
-      params.ringColor = `#${new THREE.Color().setHSL(ringHue, 0.35 + rng.next() * 0.3, 0.58 + rng.next() * 0.25).getHexString()}`;
-      params.ringStart = THREE.MathUtils.lerp(1.15, 2.6, rng.next());
-      const maxEnd = params.ringStart + 2.5;
-      params.ringEnd = Math.max(params.ringStart + 0.25, THREE.MathUtils.lerp(params.ringStart + 0.35, maxEnd, rng.next()));
+      // Between 1-4 rings, separated like Saturn
+      const count = Math.max(1, Math.round(THREE.MathUtils.lerp(1, 4, rng.next())));
+      params.ringCount = count;
+      params.rings = [];
+      const baseStart = THREE.MathUtils.lerp(1.2, 2.4, rng.next());
+      let lastEnd = baseStart;
+      // Choose a single style for all rings: Texture or Noise
+      const allUseNoise = rng.next() > 0.5;
+      const chosenStyle = allUseNoise ? "Noise" : "Texture";
+      for (let i = 0; i < count; i += 1) {
+        const start = (i === 0 ? baseStart : lastEnd + THREE.MathUtils.lerp(0.06, 0.22, rng.next()));
+        const thickness = THREE.MathUtils.lerp(0.15, 0.55, rng.next());
+        const end = start + thickness;
+        lastEnd = end;
+        const ringHue = (hue + 0.1 + rng.next() * 0.2 + i * 0.06) % 1;
+        const color = `#${new THREE.Color().setHSL(ringHue, 0.3 + rng.next() * 0.3, 0.58 + rng.next() * 0.25).getHexString()}`;
+        const noiseScale = THREE.MathUtils.lerp(0.6, 5.5, rng.next());
+        const noiseStrength = THREE.MathUtils.lerp(0.25, 0.85, rng.next());
+        const spinSign = rng.next() > 0.5 ? 1 : -1;
+        const spinSpeed = spinSign * THREE.MathUtils.lerp(0.01, 0.35, rng.next());
+        const opacity = THREE.MathUtils.lerp(0.35, 0.95, rng.next());
+        const brightness = THREE.MathUtils.lerp(0.6, 1.4, rng.next());
+        params.rings.push({
+          style: chosenStyle,
+          color,
+          start,
+          end,
+          opacity,
+          noiseScale,
+          noiseStrength,
+          spinSpeed,
+          brightness
+        });
+      }
       params.ringAngle = THREE.MathUtils.lerp(-25, 25, rng.next());
-      params.ringOpacity = THREE.MathUtils.lerp(0.35, 0.85, rng.next());
-      params.ringNoiseScale = THREE.MathUtils.lerp(1.2, 6.5, rng.next());
-      params.ringNoiseStrength = THREE.MathUtils.lerp(0.35, 0.85, rng.next());
-      const spinSign = rng.next() > 0.5 ? 1 : -1;
-      params.ringSpinSpeed = spinSign * THREE.MathUtils.lerp(0.01, 0.35, rng.next());
+      const globalSign = rng.next() > 0.5 ? 1 : -1;
+      params.ringSpinSpeed = globalSign * THREE.MathUtils.lerp(0.01, 0.28, rng.next());
+    } else {
+      params.rings = [];
+      params.ringCount = 0;
     }
   }
 

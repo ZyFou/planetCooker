@@ -670,46 +670,29 @@ export function setupPlanetControls({
       scheduleShareUpdate();
     });
 
-  // Rings
+  // Rings (overview + global controls; per-ring controls are managed in ringControls.js)
   const ringsFolder = registerFolder(environmentFolder.addFolder("Rings"), { close: true });
 
   guiControllers.ringEnabled = ringsFolder.add(params, "ringEnabled")
     .name("Enable Rings")
     .onChange(() => {
+      guiControllers.rebuildRingControls?.();
       updateRings?.();
       scheduleShareUpdate();
     });
 
-  guiControllers.ringColor = ringsFolder.addColor(params, "ringColor")
-    .name("Color")
-    .onChange(() => {
-      updateRings?.();
-      scheduleShareUpdate();
-    });
-
-  guiControllers.ringOpacity = ringsFolder.add(params, "ringOpacity", 0, 1, 0.01)
-    .name("Opacity")
-    .onChange(() => {
-      updateRings?.();
-      scheduleShareUpdate();
-    });
-
-  guiControllers.ringStart = ringsFolder.add(params, "ringStart", 1.05, 6, 0.01)
-    .name("Start Distance (radii)")
-    .onChange(() => {
-      if (params.ringEnd < params.ringStart + 0.02) params.ringEnd = params.ringStart + 0.02;
-      guiControllers.ringEnd?.updateDisplay?.();
-      updateRings?.();
-      scheduleShareUpdate();
-    });
-
-  guiControllers.ringEnd = ringsFolder.add(params, "ringEnd", 1.1, 10, 0.01)
-    .name("End Distance (radii)")
-    .onChange(() => {
-      if (params.ringEnd < params.ringStart + 0.02) params.ringEnd = params.ringStart + 0.02;
-      updateRings?.();
-      scheduleShareUpdate();
-    });
+  // Number of ring segments
+  if (typeof params.ringCount === "number") {
+    guiControllers.ringCount = ringsFolder.add(params, "ringCount", 0, 6, 1)
+      .name("Ring Count")
+      .onChange(() => {
+        // Per-ring controls module will react and rebuild controls
+        guiControllers.normalizeRingSettings?.();
+        guiControllers.rebuildRingControls?.();
+        updateRings?.();
+        scheduleShareUpdate();
+      });
+  }
 
   guiControllers.ringAngle = ringsFolder.add(params, "ringAngle", -90, 90, 0.5)
     .name("Angle (deg)")
@@ -718,25 +701,14 @@ export function setupPlanetControls({
       scheduleShareUpdate();
     });
 
-  guiControllers.ringNoiseScale = ringsFolder.add(params, "ringNoiseScale", 0.5, 10, 0.1)
-    .name("Noise Scale")
-    .onChange(() => {
-      updateRings?.();
-      scheduleShareUpdate();
-    });
-
-  guiControllers.ringNoiseStrength = ringsFolder.add(params, "ringNoiseStrength", 0, 1, 0.01)
-    .name("Noise Strength")
-    .onChange(() => {
-      updateRings?.();
-      scheduleShareUpdate();
-    });
-
-  guiControllers.ringSpinSpeed = ringsFolder.add(params, "ringSpinSpeed", -2, 2, 0.01)
-    .name("Spin Speed")
-    .onChange(() => {
-      scheduleShareUpdate();
-    });
+  // Keep a global spin speed for convenience (per-ring spin can also exist)
+  if (typeof params.ringSpinSpeed === "number") {
+    guiControllers.ringSpinSpeed = ringsFolder.add(params, "ringSpinSpeed", -2, 2, 0.01)
+      .name("Global Spin Speed")
+      .onChange(() => {
+        scheduleShareUpdate();
+      });
+  }
 
   guiControllers.ringAllowRandom = ringsFolder.add(params, "ringAllowRandom")
     .name("Allow Surprise Me")
@@ -814,17 +786,21 @@ export function setupPlanetControls({
       scheduleShareUpdate();
     });
 
+  // Attach folders on guiControllers so other modules (rings) can find them
+  guiControllers.folders = {
+    planetFolder,
+    paletteFolder,
+    motionFolder,
+    environmentFolder,
+    sunFolder,
+    ringsFolder,
+    spaceFolder,
+    effectsFolder
+  };
+
   return {
     presetController,
-    folders: {
-      planetFolder,
-      paletteFolder,
-      motionFolder,
-      environmentFolder,
-      sunFolder,
-      spaceFolder,
-      effectsFolder
-    }
+    folders: guiControllers.folders
   };
 }
 
