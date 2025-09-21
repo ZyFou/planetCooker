@@ -1692,8 +1692,31 @@ mobileSurprise?.addEventListener("click", () => {
   surpriseMeButton?.click();
   closeMobileMenu();
 });
-mobileCopy?.addEventListener("click", () => {
-  copyShareButton?.click();
+mobileCopy?.addEventListener("click", async () => {
+  console.log("Mobile copy clicked");
+  try {
+    // Reuse the same logic as the desktop copy handler
+    const payload = buildSharePayload();
+    try {
+      const result = await saveConfigurationToAPI(payload, {
+        name: `Planet ${payload.data.seed}`,
+        description: `A ${payload.preset} planet with ${payload.data.moonCount} moon(s)`,
+        preset: payload.preset,
+        moonCount: payload.data.moonCount
+      });
+      await copyToClipboard(result.id);
+      flashShareFeedback(`✅ Saved! ID: ${result.id}`);
+    } catch (apiError) {
+      console.warn("⚠️ API not available, using fallback (mobile menu):", apiError.message);
+      const code = getCurrentShareCode();
+      if (!code) throw new Error("No share code available");
+      await copyToClipboard(code);
+      flashShareFeedback("📋 Copied (offline mode)");
+    }
+  } catch (error) {
+    console.error("❌ Mobile share failed:", error);
+    flashShareFeedback("❌ Share failed");
+  }
   closeMobileMenu();
 });
 mobileReset?.addEventListener("click", () => {
