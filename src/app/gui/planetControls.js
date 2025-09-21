@@ -59,6 +59,16 @@ export function setupPlanetControls({
 
   const planetFolder = registerFolder(gui.addFolder("Planet"), { close: true });
 
+  guiControllers.planetType = planetFolder
+    .add(params, "planetType", ["rocky", "gas_giant"])
+    .name("Planet Type")
+    .onChange((value) => {
+      if (getIsApplyingPreset()) return;
+      refreshPlanetTypeVisibility(value);
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
   guiControllers.seed = planetFolder
     .add(params, "seed")
     .name("Seed")
@@ -119,6 +129,44 @@ export function setupPlanetControls({
 
   guiControllers.oceanLevel = planetFolder.add(params, "oceanLevel", 0, 0.95, 0.01)
     .name("Ocean Level")
+    .onFinishChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  // Gas Giant subfolder with controls that only appear when planetType is "gas_giant"
+  const gasGiantFolder = registerFolder(planetFolder.addFolder("Gas Giant"), { close: true });
+
+  guiControllers.strataCount = gasGiantFolder.add(params, "strataCount", 1, 6, 1)
+    .name("Strata Count")
+    .onFinishChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.strataColors = gasGiantFolder.add(params, "strataColors")
+    .name("Strata Colors")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.strataSizes = gasGiantFolder.add(params, "strataSizes")
+    .name("Strata Sizes")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.gasGiantNoiseScale = gasGiantFolder.add(params, "gasGiantNoiseScale", 0.1, 4.0, 0.05)
+    .name("Noise Scale")
+    .onFinishChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.gasGiantNoiseStrength = gasGiantFolder.add(params, "gasGiantNoiseStrength", 0, 1, 0.01)
+    .name("Noise Strength")
     .onFinishChange(() => {
       markPlanetDirty();
       scheduleShareUpdate();
@@ -311,6 +359,70 @@ export function setupPlanetControls({
 
   // Expose to main so programmatic variant changes can update visibility
   guiControllers.refreshStarVariantVisibility = refreshStarVariantVisibility;
+
+  // Function to refresh planet type visibility
+  const refreshPlanetTypeVisibility = (nextPlanetType = params.planetType) => {
+    const isGasGiant = nextPlanetType === "gas_giant";
+    const terrainControllers = [
+      guiControllers.subdivisions,
+      guiControllers.noiseLayers,
+      guiControllers.noiseFrequency,
+      guiControllers.noiseAmplitude,
+      guiControllers.persistence,
+      guiControllers.lacunarity,
+      guiControllers.oceanLevel
+    ];
+
+    const paletteControllers = [
+      guiControllers.colorOcean,
+      guiControllers.colorShallow,
+      guiControllers.colorFoam,
+      guiControllers.foamEnabled,
+      guiControllers.colorLow,
+      guiControllers.colorMid,
+      guiControllers.colorHigh,
+      guiControllers.coreEnabled,
+      guiControllers.coreSize,
+      guiControllers.coreVisible
+    ];
+
+    const gasGiantControllers = [
+      guiControllers.strataCount,
+      guiControllers.strataColors,
+      guiControllers.strataSizes,
+      guiControllers.gasGiantNoiseScale,
+      guiControllers.gasGiantNoiseStrength
+    ];
+
+    // Show/hide terrain controls (always hidden for gas giants)
+    terrainControllers.forEach((controller) => {
+      if (!controller) return;
+      if (isGasGiant) controller.hide(); else controller.show();
+    });
+
+    // Show/hide palette controls (always hidden for gas giants)
+    paletteControllers.forEach((controller) => {
+      if (!controller) return;
+      if (isGasGiant) controller.hide(); else controller.show();
+    });
+
+    // Show/hide gas giant controls
+    gasGiantControllers.forEach((controller) => {
+      if (!controller) return;
+      if (isGasGiant) controller.show(); else controller.hide();
+    });
+
+    // Show/hide gas giant folder
+    if (gasGiantFolder) {
+      if (isGasGiant) gasGiantFolder.show(); else gasGiantFolder.hide();
+    }
+  };
+
+  // Expose to main so programmatic changes can update visibility
+  guiControllers.refreshPlanetTypeVisibility = refreshPlanetTypeVisibility;
+
+  // Initial visibility update
+  refreshPlanetTypeVisibility();
 
   guiControllers.sunVariant = sunFolder.add(params, "sunVariant", ["Star", "Black Hole"])
     .name("Star Type")
