@@ -670,6 +670,59 @@ export function setupPlanetControls({
       scheduleShareUpdate();
     });
 
+  // Freezing System
+  const freezingFolder = registerFolder(environmentFolder.addFolder("Freezing"), { close: true });
+
+  guiControllers.freezingEnabled = freezingFolder.add(params, "freezingEnabled")
+    .name("Enable Freezing")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.iceColor = freezingFolder.addColor(params, "iceColor")
+    .name("Ice Color")
+    .onChange(() => {
+      updatePalette();
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.globalTemperature = freezingFolder.add(params, "globalTemperature", -100, 100, 1)
+    .name("Global Temperature (°C)")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.freezingThreshold = freezingFolder.add(params, "freezingThreshold", -100, 100, 1)
+    .name("Freezing Threshold (°C)")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.iceIntensity = freezingFolder.add(params, "iceIntensity", 0, 2, 0.1)
+    .name("Ice Intensity")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.poleFreezeRadius = freezingFolder.add(params, "poleFreezeRadius", 0, 1, 0.05)
+    .name("Pole Freeze Radius")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.equatorFreezeRadius = freezingFolder.add(params, "equatorFreezeRadius", 0, 1, 0.05)
+    .name("Equator Freeze Radius")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
   // Rings (overview + global controls; per-ring controls are managed in ringControls.js)
   const ringsFolder = registerFolder(environmentFolder.addFolder("Rings"), { close: true });
 
@@ -793,6 +846,7 @@ export function setupPlanetControls({
     motionFolder,
     environmentFolder,
     sunFolder,
+    freezingFolder,
     ringsFolder,
     spaceFolder,
     effectsFolder

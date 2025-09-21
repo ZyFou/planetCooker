@@ -928,10 +928,18 @@ const params = {
   // Physics options
   impactDeformation: true,
   // Impact tuning
-  impactStrengthMul: 2.5,
-  impactSpeedMul: 1.2,
-  impactMassMul: 2.0,
-  impactElongationMul: 1.6,
+    impactStrengthMul: 2.5,
+    impactSpeedMul: 1.2,
+    impactMassMul: 2.0,
+    impactElongationMul: 1.6,
+    // Freezing System - disabled by default for temperate planet
+    freezingEnabled: false,
+    iceColor: "#e8f4fd",
+    globalTemperature: 15,
+    freezingThreshold: 0,
+    iceIntensity: 0.8,
+    poleFreezeRadius: 0.3,
+    equatorFreezeRadius: 0.8,
   // Effects: explosion customization
   explosionEnabled: true,
   explosionColor: "#ffaa66",
@@ -951,12 +959,112 @@ const params = {
   ringSpinSpeed: 0.05, // global fallback
   ringAllowRandom: true,
   ringCount: 0,
-  rings: []
+  rings: [],
+  // Freezing System
+  freezingEnabled: true,
+  iceColor: "#e8f4fd",
+  globalTemperature: 15, // Celsius
+  freezingThreshold: 0, // Temperature below which ice forms
+  iceIntensity: 0.8, // How intense the ice appearance is
+  poleFreezeRadius: 0.3, // How far from poles to freeze (0-1)
+  equatorFreezeRadius: 0.8 // Minimum distance from equator for freezing (0-1)
 };
 
 let currentSunVariant = params.sunVariant || "Star";
+let currentSunColor = params.sunColor || "#ffd27f";
+let currentSunIntensity = params.sunIntensity || 1.6;
 
 const presets = {
+  "Frozen": {
+    seed: "ICEWORLD",
+    radius: 1.2,
+    subdivisions: 6,
+    noiseLayers: 4,
+    noiseFrequency: 3.2,
+    noiseAmplitude: 0.35,
+    persistence: 0.45,
+    lacunarity: 2.1,
+    oceanLevel: 0.2,
+    colorOcean: "#1b3c6d",
+    colorShallow: "#2f7fb6",
+    colorLow: "#f2f6f5",
+    colorMid: "#b49e74",
+    colorHigh: "#ffffff",
+    atmosphereColor: "#7baeff",
+    atmosphereOpacity: 0.18,
+    cloudsOpacity: 0.35,
+    axisTilt: 15,
+    rotationSpeed: 0.08,
+    simulationSpeed: 0.12,
+    gravity: 7.8,
+    sunColor: "#9fc4ff",
+    sunIntensity: 0.8, // Low intensity = less heating = more ice
+    sunDistance: 120, // Far distance = less heating = more ice
+    sunSize: 1.2,
+    sunHaloSize: 7.2,
+    sunGlowStrength: 1.1,
+    sunPulseSpeed: 0.3,
+    moonMassScale: 0.8,
+    starCount: 1800,
+    starBrightness: 0.7,
+    starTwinkleSpeed: 0.5,
+    moons: [
+      { size: 0.18, distance: 3.8, orbitSpeed: 0.25, inclination: 3, color: "#d0d0d0", phase: 0.8, eccentricity: 0.02 }
+    ],
+    // Freezing System
+    freezingEnabled: true,
+    iceColor: "#b8e6ff",
+    globalTemperature: -20, // Cold base temperature
+    freezingThreshold: -10, // Ice forms at -10°C and below
+    iceIntensity: 1.5, // Strong ice appearance
+    poleFreezeRadius: 0.15,
+    equatorFreezeRadius: 0.5
+  },
+  "Hot": {
+    seed: "SUNWORLD",
+    radius: 1.3,
+    subdivisions: 6,
+    noiseLayers: 5,
+    noiseFrequency: 2.8,
+    noiseAmplitude: 0.4,
+    persistence: 0.48,
+    lacunarity: 2.25,
+    oceanLevel: 0.3,
+    colorOcean: "#1b3c6d",
+    colorShallow: "#2f7fb6",
+    colorLow: "#8b4513",
+    colorMid: "#d2691e",
+    colorHigh: "#ff6347",
+    atmosphereColor: "#ff7f50",
+    atmosphereOpacity: 0.25,
+    cloudsOpacity: 0.2,
+    axisTilt: 10,
+    rotationSpeed: 0.15,
+    simulationSpeed: 0.12,
+    gravity: 10.5,
+    sunColor: "#ffd700",
+    sunIntensity: 3.0, // High intensity = more heating = less ice
+    sunDistance: 35, // Close distance = more heating = less ice
+    sunSize: 1.5,
+    sunHaloSize: 8.5,
+    sunGlowStrength: 2.5,
+    sunPulseSpeed: 0.8,
+    moonMassScale: 0.9,
+    starCount: 2500,
+    starBrightness: 1.2,
+    starTwinkleSpeed: 0.7,
+    moons: [
+      { size: 0.22, distance: 4.5, orbitSpeed: 0.55, inclination: 5, color: "#deb887", phase: 1.2, eccentricity: 0.03 }
+    ],
+    // Freezing System - ice should barely form due to hot conditions
+    freezingEnabled: true,
+    iceColor: "#e0f7fa",
+    globalTemperature: 15, // Warm base temperature
+    freezingThreshold: 0, // Ice only forms below 0°C
+    iceIntensity: 0.3, // Weak ice appearance
+    poleFreezeRadius: 0.05,
+    equatorFreezeRadius: 0.1
+  },
   "Earth-like": {
     seed: "BLUEHOME",
     radius: 1.32,
@@ -1668,7 +1776,15 @@ const shareKeys = [
   "ringAngle",
   "ringSpinSpeed",
   "ringAllowRandom",
-  "ringCount"
+  "ringCount",
+  // Freezing System
+  "freezingEnabled",
+  "iceColor",
+  "globalTemperature",
+  "freezingThreshold",
+  "iceIntensity",
+  "poleFreezeRadius",
+  "equatorFreezeRadius"
 ];
 //#endregion
 
@@ -1681,7 +1797,8 @@ const palette = {
   mid: new THREE.Color(params.colorMid),
   high: new THREE.Color(params.colorHigh),
   core: new THREE.Color(params.colorCore),
-  atmosphere: new THREE.Color(params.atmosphereColor)
+  atmosphere: new THREE.Color(params.atmosphereColor),
+  ice: new THREE.Color(params.iceColor)
 };
 
 let cloudTexture = null;
@@ -3034,7 +3151,7 @@ function rebuildPlanet() {
     vertex.copy(normal).multiplyScalar(finalRadius);
     positions.setXYZ(i, vertex.x, vertex.y, vertex.z);
 
-    const color = sampleColor(normalized, finalRadius);
+    const color = sampleColor(normalized, finalRadius, normal);
     colors[i * 3 + 0] = color.r;
     colors[i * 3 + 1] = color.g;
     colors[i * 3 + 2] = color.b;
@@ -3211,8 +3328,13 @@ function rebuildPlanet() {
   
   // Update core sphere
   updateCore();
-  
+
   updateRings();
+
+  // Update icing colors if enabled
+  if (params.freezingEnabled) {
+    updateIcingColors();
+  }
 
   scheduleShareUpdate();
 }
@@ -3251,9 +3373,60 @@ function deriveTerrainProfile(seed) {
   };
 }
 
-function sampleColor(elevation, radius) {
+function calculateLocalTemperature(vertexNormal) {
+  // Base temperature from global setting
+  let temperature = params.globalTemperature;
+
+  // Calculate star heating effect - stronger/closer stars add more heat
+  const starDistance = params.sunDistance || 48;
+  const starIntensity = params.sunIntensity || 1.6;
+
+  // Base heating from star (inverse square law)
+  const baseStarHeating = Math.max(0, 100 / Math.pow(starDistance / 50, 2));
+  // Additional heating from star intensity
+  const intensityHeating = (starIntensity - 1.0) * 25; // Each unit above 1.0 adds 25°C
+
+  // Apply star heating to base temperature
+  temperature += baseStarHeating + intensityHeating;
+
+  // Calculate latitude from vertex normal
+  const latitude = Math.asin(vertexNormal.y) / (Math.PI / 2); // -1 to 1 (south to north)
+
+  // Calculate angle to sun (how much sunlight reaches this point)
+  // Use the actual sunLight direction for more accurate lighting calculation
+  const sunDirection = sunLight.position.clone().normalize();
+  const angleToSun = vertexNormal.dot(sunDirection);
+
+  // More direct sunlight = warmer
+  const sunlightFactor = Math.max(0, angleToSun); // 0 to 1
+  const sunlightHeating = sunlightFactor * 40; // Up to 40°C additional heating from direct sunlight
+  temperature += sunlightHeating;
+
+  // Temperature decreases towards poles, but more so when facing away from sun
+  const poleTempDrop = Math.pow(Math.abs(latitude), 2) * 25; // Up to 25°C drop at poles
+  temperature -= poleTempDrop;
+
+  // Areas facing away from sun get additional temperature penalty
+  if (angleToSun < 0) {
+    const facingAwayPenalty = -angleToSun * 20; // Up to 20°C additional drop
+    temperature -= facingAwayPenalty;
+  }
+
+  // Apply axis tilt effect - tilted planets have seasonal effects
+  const axisTilt = params.axisTilt || 0;
+  if (axisTilt > 0) {
+    const tiltRadians = THREE.MathUtils.degToRad(axisTilt);
+    // Simulate seasonal variation based on tilt and current rotation
+    const seasonalFactor = Math.cos(tiltRadians) * 0.3; // Up to 30% seasonal variation
+    temperature += seasonalFactor * Math.sin(tiltRadians);
+  }
+
+  return temperature;
+}
+
+function sampleColor(elevation, radius, vertexNormal) {
   let baseColor;
-  
+
   if (elevation <= params.oceanLevel) {
     const oceanT = params.oceanLevel <= 0 ? 0 : THREE.MathUtils.clamp(elevation / Math.max(params.oceanLevel, 1e-6), 0, 1);
     baseColor = palette.ocean.clone().lerp(palette.shallow, Math.pow(oceanT, 0.65));
@@ -3266,6 +3439,19 @@ function sampleColor(elevation, radius) {
     } else {
       const highT = Math.pow((landT - 0.5) / 0.5, 1.3);
       baseColor = palette.mid.clone().lerp(palette.high, highT);
+    }
+  }
+
+  // Apply freezing effect if enabled
+  if (params.freezingEnabled) {
+    const localTemp = calculateLocalTemperature(vertexNormal);
+    const isFrozen = localTemp <= params.freezingThreshold;
+    const iceStrength = THREE.MathUtils.clamp((params.freezingThreshold - localTemp) / Math.max(1, params.freezingThreshold), 0, 1);
+
+    if (isFrozen && iceStrength > 0) {
+      const iceColor = palette.ice.clone();
+      const iceBlend = iceStrength * params.iceIntensity;
+      baseColor.lerp(iceColor, iceBlend);
     }
   }
 
@@ -3283,6 +3469,7 @@ function updatePalette() {
   palette.high.set(params.colorHigh);
   palette.core.set(params.colorCore);
   palette.atmosphere.set(params.atmosphereColor);
+  palette.ice.set(params.iceColor);
   atmosphereMaterial.color.copy(palette.atmosphere);
 }
 
@@ -3327,6 +3514,78 @@ function updateTilt() {
   tiltGroup.rotation.z = radians;
   moonsGroup.rotation.z = radians;
   orbitLinesGroup.rotation.z = radians;
+
+  // Update icing when tilt changes
+  if (params.freezingEnabled) {
+    updateIcingColors();
+  }
+}
+
+function updateIcingColors() {
+  if (!planetMesh || !planetMesh.geometry || !params.freezingEnabled) return;
+
+  const geometry = planetMesh.geometry;
+  const positions = geometry.getAttribute('position');
+  const colors = geometry.getAttribute('color');
+
+  if (!positions || !colors) return;
+
+  const vertex = new THREE.Vector3();
+  const worldNormal = new THREE.Vector3();
+  const sunDirection = sunLight.position.clone().normalize();
+
+  // Get the current planet rotation to account for day/night cycle
+  const planetRotation = spinGroup.rotation.y;
+
+  for (let i = 0; i < positions.count; i++) {
+    // Get vertex position and normal
+    vertex.fromBufferAttribute(positions, i);
+    const normal = vertex.clone().normalize();
+
+    // Transform normal to world space accounting for planet rotation and tilt
+    worldNormal.copy(normal).applyQuaternion(spinGroup.quaternion).applyQuaternion(tiltGroup.quaternion);
+    worldNormal.normalize();
+
+    // Calculate temperature based on real-time lighting
+    const localTemp = calculateLocalTemperature(worldNormal);
+    const isFrozen = localTemp <= params.freezingThreshold;
+    const iceStrength = THREE.MathUtils.clamp((params.freezingThreshold - localTemp) / Math.max(1, params.freezingThreshold), 0, 1);
+
+    if (isFrozen && iceStrength > 0) {
+      // Get current vertex color
+      const r = colors.getX(i);
+      const g = colors.getY(i);
+      const b = colors.getZ(i);
+
+      const currentColor = new THREE.Color(r, g, b);
+      const iceColor = palette.ice.clone();
+
+      // Blend with ice color based on strength and intensity
+      const iceBlend = iceStrength * params.iceIntensity;
+      currentColor.lerp(iceColor, iceBlend);
+
+      // Update the vertex color
+      colors.setXYZ(i, currentColor.r, currentColor.g, currentColor.b);
+    }
+  }
+
+  colors.needsUpdate = true;
+  geometry.attributes.color.needsUpdate = true;
+}
+
+// Performance optimization: only update icing every few frames during rotation
+let icingUpdateCounter = 0;
+const ICING_UPDATE_FREQUENCY = 5; // Update every 5 frames during animation
+
+// Add icing update to animation loop (throttled for performance)
+function updateIcingDuringAnimation() {
+  if (!params.freezingEnabled) return;
+
+  icingUpdateCounter++;
+  if (icingUpdateCounter >= ICING_UPDATE_FREQUENCY) {
+    updateIcingColors();
+    icingUpdateCounter = 0;
+  }
 }
 
 function updateSun() {
@@ -3348,6 +3607,23 @@ function updateSun() {
   sunLight.intensity = Math.max(0, params.sunIntensity);
   sunLight.target = planetRoot;
   sunLight.target.updateMatrixWorld();
+
+  // Update icing when sun changes
+  if (params.freezingEnabled) {
+    updateIcingColors();
+  }
+
+  // Force immediate update when sun parameters change significantly
+  if (params.freezingEnabled && (
+    Math.abs(distance - (params.sunDistance || 48)) > 5 ||
+    Math.abs(params.sunIntensity - currentSunIntensity) > 0.3 ||
+    params.sunColor !== currentSunColor
+  )) {
+    // Reset counter for immediate update
+    icingUpdateCounter = ICING_UPDATE_FREQUENCY;
+    currentSunColor = params.sunColor;
+    currentSunIntensity = params.sunIntensity;
+  }
 
   sunVisual.visible = !isBlackHole;
   sunCorona.visible = !isBlackHole;
