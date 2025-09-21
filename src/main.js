@@ -4448,6 +4448,12 @@ function applyPreset(name, { skipShareUpdate = false, keepSeed = false } = {}) {
     updateSeedDisplay();
   }
 
+  // Always ensure core is enabled and visible
+  params.coreEnabled = true;
+  params.coreVisible = true;
+  guiControllers.coreEnabled?.setValue?.(true);
+  guiControllers.coreVisible?.setValue?.(true);
+
   if (Array.isArray(preset.moons)) {
     moonSettings.splice(0, moonSettings.length, ...preset.moons.map((moon, index) => ({ ...createDefaultMoon(index), ...moon })));
     params.moonCount = moonSettings.length;
@@ -5568,9 +5574,9 @@ function surpriseMe() {
     params.colorMid = `#${new THREE.Color().setHSL(hue2, 0.36, 0.58).getHexString()}`;
     params.colorHigh = `#${new THREE.Color().setHSL(hue3, 0.15, 0.92).getHexString()}`;
     params.colorCore = `#${new THREE.Color().setHSL(hue, 0.4, 0.3).getHexString()}`;
-    params.coreEnabled = rng.next() > 0.3;
+    params.coreEnabled = true; // Always enable core
     params.coreSize = THREE.MathUtils.lerp(0.2, 0.6, rng.next());
-    params.coreVisible = rng.next() > 0.8;
+    params.coreVisible = true; // Always show core
   }
 
   // Common randomizations

@@ -24,6 +24,9 @@ export function setupPlanetControls({
   onPresetChange,
   onStarPresetChange
 }) {
+  // Initialize folders object early so it can be used throughout the function
+  guiControllers.folders = guiControllers.folders || {};
+  
   // Build grouped preset UI: base presets + Real Worlds
   const presetNames = Object.keys(presets);
   const shouldSkipStarUpdate = () => (getIsApplyingPreset?.() || getIsApplyingStarPreset?.());
@@ -914,7 +917,7 @@ export function setupPlanetControls({
     });
 
   // Attach folders on guiControllers so other modules (rings) can find them
-  guiControllers.folders = {
+  Object.assign(guiControllers.folders, {
     planetFolder,
     paletteFolder,
     motionFolder,
@@ -924,7 +927,7 @@ export function setupPlanetControls({
     spaceFolder,
     effectsFolder,
     gasGiantFolder
-  };
+  });
 
   refreshPlanetTypeVisibility();
 
