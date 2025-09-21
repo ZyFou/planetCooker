@@ -1043,8 +1043,8 @@ const presets = {
     simulationSpeed: 0.12,
     gravity: 10.5,
     sunColor: "#ffd700",
-    sunIntensity: 3.0, // High intensity = more heating = less ice
-    sunDistance: 35, // Close distance = more heating = less ice
+    sunIntensity: 3.0, // High intensity - when changed to lower, ice will form
+    sunDistance: 35, // Close distance - when changed to farther, ice will form
     sunSize: 1.5,
     sunHaloSize: 8.5,
     sunGlowStrength: 2.5,
@@ -1056,14 +1056,14 @@ const presets = {
     moons: [
       { size: 0.22, distance: 4.5, orbitSpeed: 0.55, inclination: 5, color: "#deb887", phase: 1.2, eccentricity: 0.03 }
     ],
-    // Freezing System - ice should barely form due to hot conditions
+    // Freezing System - start with conditions that create ice, then melt when sun gets hotter
     freezingEnabled: true,
     iceColor: "#e0f7fa",
-    globalTemperature: 15, // Warm base temperature
-    freezingThreshold: 0, // Ice only forms below 0°C
-    iceIntensity: 0.3, // Weak ice appearance
-    poleFreezeRadius: 0.05,
-    equatorFreezeRadius: 0.1
+    globalTemperature: -10, // Cold base temperature to start with ice
+    freezingThreshold: 0, // Ice forms below 0°C
+    iceIntensity: 1.0, // Strong ice appearance
+    poleFreezeRadius: 0.2,
+    equatorFreezeRadius: 0.4
   },
   "Earth-like": {
     seed: "BLUEHOME",
@@ -3331,9 +3331,10 @@ function rebuildPlanet() {
 
   updateRings();
 
-  // Update icing colors if enabled
+  // Update icing colors if enabled (do this after planet is fully generated)
   if (params.freezingEnabled) {
-    updateIcingColors();
+    // Small delay to ensure planet generation is complete
+    setTimeout(() => updateIcingColors(), 100);
   }
 
   scheduleShareUpdate();
@@ -3551,22 +3552,28 @@ function updateIcingColors() {
     const isFrozen = localTemp <= params.freezingThreshold;
     const iceStrength = THREE.MathUtils.clamp((params.freezingThreshold - localTemp) / Math.max(1, params.freezingThreshold), 0, 1);
 
+    // Get current vertex color
+    const r = colors.getX(i);
+    const g = colors.getY(i);
+    const b = colors.getZ(i);
+
+    const currentColor = new THREE.Color(r, g, b);
+
     if (isFrozen && iceStrength > 0) {
-      // Get current vertex color
-      const r = colors.getX(i);
-      const g = colors.getY(i);
-      const b = colors.getZ(i);
-
-      const currentColor = new THREE.Color(r, g, b);
+      // Apply ice color when frozen
       const iceColor = palette.ice.clone();
-
-      // Blend with ice color based on strength and intensity
       const iceBlend = iceStrength * params.iceIntensity;
       currentColor.lerp(iceColor, iceBlend);
-
-      // Update the vertex color
-      colors.setXYZ(i, currentColor.r, currentColor.g, currentColor.b);
+    } else {
+      // Remove ice color when not frozen - restore original terrain colors
+      // Use the sampleColor function to get the proper original color
+      const elevation = vertex.length() - params.radius;
+      const originalColor = sampleColor(elevation / params.noiseAmplitude + 0.5, params.radius + elevation, normal);
+      currentColor.copy(originalColor);
     }
+
+    // Update the vertex color
+    colors.setXYZ(i, currentColor.r, currentColor.g, currentColor.b);
   }
 
   colors.needsUpdate = true;
