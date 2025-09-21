@@ -182,6 +182,11 @@ export function setupPlanetControls({
           markPlanetDirty();
           scheduleShareUpdate();
         });
+      folder
+        .add(band, "turbulence", 0, 4, 0.01).name("Turbulence").onChange(() => {
+          markPlanetDirty();
+          scheduleShareUpdate();
+        });
       gasStrataFolders.push(folder);
     });
   }
@@ -206,6 +211,24 @@ export function setupPlanetControls({
     });
   guiControllers.gasNoiseStrength = gasFolder.add(params, "gasNoiseStrength", 0, 2, 0.01)
     .name("Noise Strength")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  guiControllers.gasWarpStrength = gasFolder.add(params, "gasWarpStrength", 0, 3, 0.01)
+    .name("Warp Strength")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  guiControllers.gasWarpFrequency = gasFolder.add(params, "gasWarpFrequency", 0.2, 10, 0.05)
+    .name("Warp Frequency")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  guiControllers.gasStreakStrength = gasFolder.add(params, "gasStreakStrength", 0, 3, 0.01)
+    .name("Streak Strength")
     .onChange(() => {
       markPlanetDirty();
       scheduleShareUpdate();

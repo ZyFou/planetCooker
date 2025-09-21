@@ -256,6 +256,9 @@ export function generateGasGiantTexture(params) {
 
   const nScale = Math.max(0.1, params.gasNoiseScale ?? 3.0);
   const nStrength = THREE.MathUtils.clamp(params.gasNoiseStrength ?? 0.4, 0, 2);
+  const warpStrength = THREE.MathUtils.clamp(params.gasWarpStrength ?? 0.6, 0, 3);
+  const warpFreq = Math.max(0.2, params.gasWarpFrequency ?? 3.0);
+  const streakStrength = THREE.MathUtils.clamp(params.gasStreakStrength ?? 0.8, 0, 3);
   const twist = THREE.MathUtils.clamp(params.gasBandTwist ?? 0.2, -2, 2);
   const sharp = THREE.MathUtils.clamp(params.gasBandSharpness ?? 0.6, 0.05, 3);
 
@@ -280,7 +283,10 @@ export function generateGasGiantTexture(params) {
     const t = Math.pow(localT, sharp);
     const colA = new THREE.Color(strata[aIdx].color || 0xffffff);
     const colB = new THREE.Color(strata[bIdx].color || strata[aIdx].color || 0xffffff);
-    return colA.lerp(colB, t);
+    const color = colA.lerp(colB, t);
+    // Per-band turbulence alters brightness subtly
+    const bandTurb = THREE.MathUtils.clamp(Number(strata[aIdx].turbulence ?? 1), 0, 4);
+    return { color, bandIndex: aIdx, bandTurb };
   }
 
   for (let y = 0; y < height; y += 1) {
@@ -294,13 +300,21 @@ export function generateGasGiantTexture(params) {
       const nx = Math.cos(theta);
       const ny = Math.sin(theta);
       const wobble = noise(nx * nScale, ny * nScale, v * nScale) * 0.5 + 0.5;
-      const vWobble = THREE.MathUtils.clamp(v + (wobble - 0.5) * 0.06 * nStrength + Math.sin(theta * 2.0) * 0.01 * twist, 0, 1);
+      // Global warp and per-band turbulence influence latitude wobble
+      const baseWarp = (wobble - 0.5) * 0.12 * nStrength * warpStrength;
+      const swirl = Math.sin(theta * 2.0) * 0.02 * twist;
+      let vWobble = THREE.MathUtils.clamp(v + baseWarp + swirl, 0, 1);
 
-      const base = sampleBandColor(vWobble);
+      const sampled = sampleBandColor(vWobble);
+      const base = sampled.color;
+      // Add per-band local deformation (moves within the band subtly)
+      const bandNoise = noise(nx * warpFreq, v * warpFreq, ny * warpFreq) * 0.5 + 0.5;
+      vWobble = THREE.MathUtils.clamp(vWobble + (bandNoise - 0.5) * 0.05 * sampled.bandTurb * warpStrength, 0, 1);
 
-      // Subtle streaking along longitude for texture richness
+      // Nonlinear streaking along longitude for richer detail
       const streak = noise((nx + v * 0.5) * nScale * 1.6, (ny - v * 0.5) * nScale * 1.6, v * nScale * 0.6) * 0.5 + 0.5;
-      const brightness = THREE.MathUtils.lerp(0.82, 1.18, THREE.MathUtils.clamp(THREE.MathUtils.lerp(0.5, streak, nStrength), 0, 1));
+      const streakMix = THREE.MathUtils.clamp(THREE.MathUtils.lerp(0.5, streak, nStrength * streakStrength * sampled.bandTurb), 0, 1);
+      const brightness = THREE.MathUtils.lerp(0.78, 1.24, streakMix);
 
       const r = THREE.MathUtils.clamp(base.r * brightness, 0, 1) * 255;
       const g = THREE.MathUtils.clamp(base.g * brightness, 0, 1) * 255;

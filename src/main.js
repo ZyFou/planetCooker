@@ -980,6 +980,9 @@ const params = {
   ],
   gasNoiseScale: 3.0,
   gasNoiseStrength: 0.4,
+  gasWarpStrength: 0.6,
+  gasWarpFrequency: 3.0,
+  gasStreakStrength: 0.8,
   gasBandTwist: 0.2,
   gasBandSharpness: 0.6
 };
@@ -1809,6 +1812,9 @@ const shareKeys = [
   "gasStrata",
   "gasNoiseScale",
   "gasNoiseStrength",
+  "gasWarpStrength",
+  "gasWarpFrequency",
+  "gasStreakStrength",
   "gasBandTwist",
   "gasBandSharpness"
 ];
@@ -5695,10 +5701,21 @@ function stepMoonPhysics(dt) {
 
       // For Gas Giant: shrink radius instead of deformation/destruction
       if (params.planetType === "Gas Giant") {
-        const shrink = THREE.MathUtils.clamp((mesh?.scale?.x || 0.2) * 0.12, 0.02, Math.min(0.5, params.radius * 0.25));
-        params.radius = Math.max(0.2, params.radius - shrink);
+        // Shrink both planet and moon; no explosion effect
+        const moonSize = Math.max(0.02, mesh?.scale?.x || 0.2);
+        const planetShrink = THREE.MathUtils.clamp(moonSize * 0.08, 0.01, Math.min(0.5, params.radius * 0.2));
+        const moonShrink = THREE.MathUtils.clamp(moonSize * 0.5, 0.01, moonSize);
+        params.radius = Math.max(0.2, params.radius - planetShrink);
         guiControllers.radius?.setValue?.(params.radius);
-        spawnExplosion(pos, new THREE.Color(params.atmosphereColor), 1.2 * strength);
+        // Reduce moon size; if too small, remove it
+        mesh.scale.setScalar(Math.max(0.02, moonSize - moonShrink));
+        if (mesh.scale.x <= 0.03) {
+          // Remove pivot and the moon
+          moonsGroup.remove(pivot);
+          if (mesh.geometry) mesh.geometry.dispose();
+          if (mesh.material) mesh.material.dispose();
+          moonSettings.splice(idx, 1);
+        }
       } else if (params.impactDeformation && mesh && !isCoreCollision) {
         try {
           const moonRadius = mesh.scale.x; // in world units (approx projectile radius)
@@ -5747,14 +5764,16 @@ function stepMoonPhysics(dt) {
         }
       }
 
-      // Different explosion for core vs surface collisions (skipped special core case for gas giant)
+      // Different explosion for core vs surface collisions (no explosions for gas giants)
       if (params.planetType !== "Gas Giant" && isCoreCollision) {
         // Core collision: more dramatic explosion with core color
         const coreColor = new THREE.Color(params.colorCore);
         spawnExplosion(pos, coreColor, 3 * strength);
       } else {
-        // Surface collision: normal explosion
-        spawnExplosion(pos, color, 2 * strength);
+        if (params.planetType !== "Gas Giant") {
+          // Surface collision: normal explosion
+          spawnExplosion(pos, color, 2 * strength);
+        }
       }
 
       // Clean up orbit line for this moon
@@ -5771,9 +5790,11 @@ function stepMoonPhysics(dt) {
         if (mesh.geometry) mesh.geometry.dispose();
         if (mesh.material) mesh.material.dispose();
       }
-      // Remove pivot and the moon regardless of planet type
-      moonsGroup.remove(pivot);
-      moonSettings.splice(idx, 1);
+      if (params.planetType !== "Gas Giant") {
+        // Remove pivot and the moon (terrestrial behavior)
+        moonsGroup.remove(pivot);
+        moonSettings.splice(idx, 1);
+      }
     });
     params.moonCount = moonSettings.length;
     // Avoid firing Moons Count onChange; just refresh UI and debug artifacts
