@@ -21,43 +21,89 @@ export function setupPlanetControls({
   initMoonPhysics,
   getIsApplyingPreset,
   getIsApplyingStarPreset,
+  onPlanetTypeChange,
   onPresetChange,
   onStarPresetChange
 }) {
   // Build grouped preset UI: base presets + Real Worlds
-  const presetNames = Object.keys(presets);
+  const allPresetNames = Object.keys(presets);
   const shouldSkipStarUpdate = () => (getIsApplyingPreset?.() || getIsApplyingStarPreset?.());
   const presetFolder = registerFolder(gui.addFolder("Presets"), { close: true });
-  const presetController = presetFolder.add(params, "preset", presetNames).name("Preset");
+
+  const getPresetNamesForType = (type) => {
+    const target = type === "gas_giant" ? "gas_giant" : "rocky";
+    const names = allPresetNames.filter((name) => (presets[name]?.planetType || "rocky") === target);
+    return names.length ? names : allPresetNames;
+  };
+
+  const ensurePresetSelection = (type) => {
+    const options = getPresetNamesForType(type);
+    if (!options.includes(params.preset)) {
+      params.preset = options[0] || params.preset;
+    }
+    return options;
+  };
+
+  let presetController = presetFolder.add(params, "preset", ensurePresetSelection(params.planetType || "rocky")).name("Preset");
   guiControllers.preset = presetController;
 
-  presetController.onChange((value) => {
-    if (getIsApplyingPreset()) return;
-    onPresetChange?.(value);
-  });
+  const attachPresetHandler = (controller) => {
+    controller.onChange((value) => {
+      if (getIsApplyingPreset()) return;
+      onPresetChange?.(value);
+    });
+  };
+  attachPresetHandler(presetController);
+
+  const updatePresetOptions = (type) => {
+    const options = ensurePresetSelection(type);
+    const updatedController = presetController.options(options);
+    guiControllers.preset = updatedController;
+    presetController = updatedController;
+    attachPresetHandler(updatedController);
+    if (params.preset) {
+      try { updatedController.setValue(params.preset); } catch {}
+    }
+  };
+  guiControllers.updatePresetOptions = updatePresetOptions;
 
   // Real Worlds subfolder (predefined presets for solar system)
   const realWorldsFolder = registerFolder(presetFolder.addFolder("Real Worlds"), { close: true });
-  const real = {
-    mercury: () => onPresetChange?.("Mercury"),
-    venus: () => onPresetChange?.("Venus"),
-    earth: () => onPresetChange?.("Earth-like"),
-    mars: () => onPresetChange?.("Mars"),
-    jupiter: () => onPresetChange?.("Jupiter"),
-    saturn: () => onPresetChange?.("Saturn"),
-    uranus: () => onPresetChange?.("Uranus"),
-    neptune: () => onPresetChange?.("Neptune")
-  };
-  realWorldsFolder.add(real, "mercury").name("Mercury");
-  realWorldsFolder.add(real, "venus").name("Venus");
-  realWorldsFolder.add(real, "earth").name("Earth");
-  realWorldsFolder.add(real, "mars").name("Mars");
-  realWorldsFolder.add(real, "jupiter").name("Jupiter");
-  realWorldsFolder.add(real, "saturn").name("Saturn");
-  realWorldsFolder.add(real, "uranus").name("Uranus");
-  realWorldsFolder.add(real, "neptune").name("Neptune");
+  const realWorldEntries = [
+    { key: "mercury", label: "Mercury", preset: "Mercury", type: "rocky" },
+    { key: "venus", label: "Venus", preset: "Venus", type: "rocky" },
+    { key: "earth", label: "Earth", preset: "Earth-like", type: "rocky" },
+    { key: "mars", label: "Mars", preset: "Mars", type: "rocky" },
+    { key: "jupiter", label: "Jupiter", preset: "Jupiter", type: "gas_giant" },
+    { key: "saturn", label: "Saturn", preset: "Saturn", type: "gas_giant" },
+    { key: "uranus", label: "Uranus", preset: "Uranus", type: "gas_giant" },
+    { key: "neptune", label: "Neptune", preset: "Neptune", type: "gas_giant" }
+  ];
+  const realWorldActions = {};
+  const realWorldControllers = [];
+  realWorldEntries.forEach((entry) => {
+    realWorldActions[entry.key] = () => onPresetChange?.(entry.preset);
+    const controller = realWorldsFolder.add(realWorldActions, entry.key).name(entry.label);
+    realWorldControllers.push({ controller, type: entry.type });
+  });
 
   const planetFolder = registerFolder(gui.addFolder("Planet"), { close: true });
+
+  const rockyControllers = [];
+  const rockyPaletteControllers = [];
+  const gasGiantControllers = [];
+  const gasGiantStrataControllers = [];
+
+  const planetTypes = { Rocky: "rocky", "Gas Giant": "gas_giant" };
+  guiControllers.planetType = planetFolder
+    .add(params, "planetType", planetTypes)
+    .name("Planet Type")
+    .onChange((value) => {
+      const nextType = value === "gas_giant" ? "gas_giant" : "rocky";
+      guiControllers.updatePresetOptions?.(nextType);
+      refreshPlanetTypeVisibility(nextType);
+      onPlanetTypeChange?.(nextType, { fromUI: true });
+    });
 
   guiControllers.seed = planetFolder
     .add(params, "seed")
@@ -81,6 +127,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyControllers.push(guiControllers.subdivisions);
 
   guiControllers.noiseLayers = planetFolder.add(params, "noiseLayers", 1, 8, 1)
     .name("Noise Layers")
@@ -88,6 +135,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyControllers.push(guiControllers.noiseLayers);
 
   guiControllers.noiseFrequency = planetFolder.add(params, "noiseFrequency", 0.3, 8, 0.05)
     .name("Noise Frequency")
@@ -95,6 +143,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyControllers.push(guiControllers.noiseFrequency);
 
   guiControllers.noiseAmplitude = planetFolder.add(params, "noiseAmplitude", 0, 1.4, 0.01)
     .name("Terrain Height")
@@ -102,6 +151,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyControllers.push(guiControllers.noiseAmplitude);
 
   guiControllers.persistence = planetFolder.add(params, "persistence", 0.2, 0.9, 0.01)
     .name("Persistence")
@@ -109,6 +159,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyControllers.push(guiControllers.persistence);
 
   guiControllers.lacunarity = planetFolder.add(params, "lacunarity", 1.2, 3.8, 0.01)
     .name("Lacunarity")
@@ -116,6 +167,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyControllers.push(guiControllers.lacunarity);
 
   guiControllers.oceanLevel = planetFolder.add(params, "oceanLevel", 0, 0.95, 0.01)
     .name("Ocean Level")
@@ -123,6 +175,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyControllers.push(guiControllers.oceanLevel);
 
   const paletteFolder = registerFolder(gui.addFolder("Palette"), { close: true });
 
@@ -133,6 +186,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPaletteControllers.push(guiControllers.colorOcean);
 
   guiControllers.colorShallow = paletteFolder.addColor(params, "colorShallow")
     .name("Shallow Water")
@@ -141,6 +195,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPaletteControllers.push(guiControllers.colorShallow);
 
   guiControllers.colorFoam = paletteFolder.addColor(params, "colorFoam")
     .name("Shore Foam")
@@ -149,6 +204,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPaletteControllers.push(guiControllers.colorFoam);
 
   guiControllers.foamEnabled = paletteFolder.add(params, "foamEnabled")
     .name("Show Foam")
@@ -156,6 +212,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPaletteControllers.push(guiControllers.foamEnabled);
 
   guiControllers.colorLow = paletteFolder.addColor(params, "colorLow")
     .name("Lowlands")
@@ -164,6 +221,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPaletteControllers.push(guiControllers.colorLow);
 
   guiControllers.colorMid = paletteFolder.addColor(params, "colorMid")
     .name("Highlands")
@@ -172,6 +230,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPaletteControllers.push(guiControllers.colorMid);
 
   guiControllers.colorHigh = paletteFolder.addColor(params, "colorHigh")
     .name("Peaks")
@@ -180,6 +239,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPaletteControllers.push(guiControllers.colorHigh);
 
   guiControllers.colorCore = paletteFolder.addColor(params, "colorCore")
     .name("Core")
@@ -254,6 +314,130 @@ export function setupPlanetControls({
       updateClouds();
       scheduleShareUpdate();
     });
+
+  const gasGiantFolder = registerFolder(planetFolder.addFolder("Gas Giant"), { close: true });
+
+  const updateGasGiantStrataVisibility = (count = params.gasGiantStrataCount) => {
+    const clamped = Math.max(1, Math.min(6, Math.round(count || 1)));
+    gasGiantStrataControllers.forEach((entry, index) => {
+      const show = index < clamped;
+      const method = show ? "show" : "hide";
+      entry.color?.[method]?.();
+      entry.size?.[method]?.();
+    });
+  };
+
+  guiControllers.gasGiantStrataCount = gasGiantFolder.add(params, "gasGiantStrataCount", 1, 6, 1)
+    .name("Strata Count")
+    .onChange((value) => {
+      updateGasGiantStrataVisibility(value);
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  gasGiantControllers.push(guiControllers.gasGiantStrataCount);
+
+  for (let i = 1; i <= 6; i += 1) {
+    const colorKey = `gasGiantStrata${i}Color`;
+    const sizeKey = `gasGiantStrata${i}Size`;
+    const colorController = gasGiantFolder.addColor(params, colorKey)
+      .name(`Stratum ${i} Color`)
+      .onChange(() => {
+        markPlanetDirty();
+        scheduleShareUpdate();
+      });
+    const sizeController = gasGiantFolder.add(params, sizeKey, 0.02, 1, 0.01)
+      .name(`Stratum ${i} Size`)
+      .onChange(() => {
+        markPlanetDirty();
+        scheduleShareUpdate();
+      });
+    gasGiantStrataControllers.push({ color: colorController, size: sizeController });
+    gasGiantControllers.push(colorController, sizeController);
+  }
+
+  guiControllers.gasGiantNoiseScale = gasGiantFolder.add(params, "gasGiantNoiseScale", 0.4, 6, 0.05)
+    .name("Noise Scale")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  gasGiantControllers.push(guiControllers.gasGiantNoiseScale);
+
+  guiControllers.gasGiantNoiseStrength = gasGiantFolder.add(params, "gasGiantNoiseStrength", 0, 1, 0.01)
+    .name("Noise Strength")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  gasGiantControllers.push(guiControllers.gasGiantNoiseStrength);
+
+  guiControllers.gasGiantBandContrast = gasGiantFolder.add(params, "gasGiantBandContrast", 0, 1, 0.01)
+    .name("Band Contrast")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  gasGiantControllers.push(guiControllers.gasGiantBandContrast);
+
+  guiControllers.gasGiantBandSoftness = gasGiantFolder.add(params, "gasGiantBandSoftness", 0.05, 0.6, 0.01)
+    .name("Band Softness")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  gasGiantControllers.push(guiControllers.gasGiantBandSoftness);
+
+  guiControllers.gasGiantOpacity = gasGiantFolder.add(params, "gasGiantOpacity", 0.4, 1, 0.01)
+    .name("Layer Opacity")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  gasGiantControllers.push(guiControllers.gasGiantOpacity);
+
+  const gasActions = {
+    resetToRocky: () => {
+      try { guiControllers.planetType?.setValue?.("rocky"); } catch {}
+    }
+  };
+  const resetController = gasGiantFolder.add(gasActions, "resetToRocky").name("Reset to Rocky");
+  gasGiantControllers.push(resetController);
+
+  updateGasGiantStrataVisibility(params.gasGiantStrataCount);
+
+  function refreshPlanetTypeVisibility(type = params.planetType) {
+    const isGasGiant = type === "gas_giant";
+    if (gasGiantFolder?.show) gasGiantFolder.show(isGasGiant);
+    rockyControllers.forEach((controller) => {
+      if (!controller) return;
+      if (isGasGiant) controller.hide?.(); else controller.show?.();
+    });
+    rockyPaletteControllers.forEach((controller) => {
+      if (!controller) return;
+      if (isGasGiant) controller.hide?.(); else controller.show?.();
+    });
+    gasGiantControllers.forEach((controller) => {
+      if (!controller) return;
+      if (isGasGiant) controller.show?.(); else controller.hide?.();
+    });
+    realWorldControllers.forEach(({ controller, type }) => {
+      if (!controller) return;
+      if (!type || type === "both") {
+        controller.show?.();
+        return;
+      }
+      if (type === "gas_giant") {
+        if (isGasGiant) controller.show?.(); else controller.hide?.();
+      } else {
+        if (isGasGiant) controller.hide?.(); else controller.show?.();
+      }
+    });
+    if (isGasGiant) {
+      updateGasGiantStrataVisibility(params.gasGiantStrataCount);
+    }
+  }
+  guiControllers.refreshPlanetTypeVisibility = refreshPlanetTypeVisibility;
+  refreshPlanetTypeVisibility(params.planetType || "rocky");
 
   const motionFolder = registerFolder(gui.addFolder("Motion"), { close: true });
 

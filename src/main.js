@@ -10,7 +10,11 @@ import { setupPlanetControls } from "./app/gui/planetControls.js";
 import { setupMoonControls } from "./app/gui/moonControls.js";
 import { setupRingControls } from "./app/gui/ringControls.js";
 import { createStarfield as createStarfieldExt, createSunTexture as createSunTextureExt } from "./app/stars.js";
-import { generateRingTexture as generateRingTextureExt, generateAnnulusTexture as generateAnnulusTextureExt } from "./app/textures.js";
+import {
+  generateRingTexture as generateRingTextureExt,
+  generateAnnulusTexture as generateAnnulusTextureExt,
+  generateGasGiantTexture as generateGasGiantTextureExt
+} from "./app/textures.js";
 import { encodeShare as encodeShareExt, decodeShare as decodeShareExt, padBase64 as padBase64Ext, saveConfigurationToAPI as saveConfigurationToAPIExt, loadConfigurationFromAPI as loadConfigurationFromAPIExt } from "./app/shareCore.js";
 import { initOnboarding, showOnboarding } from "./app/onboarding.js";
 
@@ -312,6 +316,20 @@ const planetMaterial = new THREE.MeshStandardMaterial({
   flatShading: false
 });
 
+const gasGiantMaterial = new THREE.MeshStandardMaterial({
+  color: 0xffffff,
+  roughness: 0.45,
+  metalness: 0.08,
+  transparent: true,
+  opacity: 0.85,
+  depthWrite: false,
+  flatShading: false,
+  side: THREE.FrontSide
+});
+gasGiantMaterial.vertexColors = false;
+gasGiantMaterial.emissive = new THREE.Color(0.08, 0.08, 0.08);
+gasGiantMaterial.emissiveIntensity = 0.35;
+
 const initialGeometry = new THREE.IcosahedronGeometry(1, 5);
 const planetMesh = new THREE.Mesh(initialGeometry, planetMaterial);
 planetMesh.castShadow = true;
@@ -386,6 +404,7 @@ const foamMaterial = new THREE.MeshBasicMaterial({
   depthWrite: false
 });
 let foamTexture = null;
+let gasGiantTexture = null;
 const foamMesh = new THREE.Mesh(new THREE.SphereGeometry(1.002, 128, 128), foamMaterial);
 foamMesh.castShadow = false;
 foamMesh.receiveShadow = false;
@@ -848,6 +867,7 @@ const focusMoonsContainer = document.getElementById("focus-moons-container");
 //#region Parameters and presets
 const params = {
   preset: "Earth-like",
+  planetType: "rocky",
   seed: "BLUEHOME",
   radius: 1.32,
   subdivisions: 6,
@@ -865,6 +885,24 @@ const params = {
   colorMid: "#b49e74",
   colorHigh: "#f2f6f5",
   colorCore: "#8b4513",
+  gasGiantStrataCount: 5,
+  gasGiantStrata1Color: "#c58a5f",
+  gasGiantStrata2Color: "#b6713a",
+  gasGiantStrata3Color: "#f0d0a6",
+  gasGiantStrata4Color: "#8d5a2d",
+  gasGiantStrata5Color: "#e3be83",
+  gasGiantStrata6Color: "#b6844d",
+  gasGiantStrata1Size: 0.18,
+  gasGiantStrata2Size: 0.12,
+  gasGiantStrata3Size: 0.22,
+  gasGiantStrata4Size: 0.18,
+  gasGiantStrata5Size: 0.16,
+  gasGiantStrata6Size: 0.14,
+  gasGiantNoiseScale: 2.6,
+  gasGiantNoiseStrength: 0.35,
+  gasGiantBandContrast: 0.45,
+  gasGiantBandSoftness: 0.22,
+  gasGiantOpacity: 0.82,
   coreEnabled: true,
   coreSize: 0.4,
   coreVisible: true,
@@ -1041,27 +1079,38 @@ const presets = {
     ]
   },
   "Jupiter": {
+    planetType: "gas_giant",
     seed: "JUPITER",
     radius: 3.5,
     subdivisions: 5,
-    noiseLayers: 3,
-    noiseFrequency: 1.2,
-    noiseAmplitude: 0.22,
-    persistence: 0.38,
-    lacunarity: 1.6,
-    oceanLevel: 0.55,
-    colorOcean: "#1b1f33",
-    colorShallow: "#2b3555",
-    colorLow: "#6a6f9a",
-    colorMid: "#c7b59a",
-    colorHigh: "#efe7dd",
+    gasGiantStrataCount: 6,
+    gasGiantStrata1Color: "#c98a52",
+    gasGiantStrata2Color: "#e6c79b",
+    gasGiantStrata3Color: "#9e6134",
+    gasGiantStrata4Color: "#f4e1c3",
+    gasGiantStrata5Color: "#b8733f",
+    gasGiantStrata6Color: "#efe0c4",
+    gasGiantStrata1Size: 0.19,
+    gasGiantStrata2Size: 0.14,
+    gasGiantStrata3Size: 0.18,
+    gasGiantStrata4Size: 0.16,
+    gasGiantStrata5Size: 0.17,
+    gasGiantStrata6Size: 0.16,
+    gasGiantNoiseScale: 2.3,
+    gasGiantNoiseStrength: 0.45,
+    gasGiantBandContrast: 0.52,
+    gasGiantBandSoftness: 0.2,
+    gasGiantOpacity: 0.8,
     colorCore: "#8b4513",
     coreEnabled: true,
-    coreSize: 0.4,
+    coreSize: 0.26,
     coreVisible: true,
-    atmosphereColor: "#d9c7a0",
-    atmosphereOpacity: 0.38,
-    cloudsOpacity: 0.7,
+    atmosphereColor: "#d6c0a1",
+    atmosphereOpacity: 0.3,
+    cloudsOpacity: 0.56,
+    cloudHeight: 0.07,
+    cloudDensity: 0.62,
+    cloudNoiseScale: 2.1,
     axisTilt: 3,
     rotationSpeed: 0.48,
     simulationSpeed: 0.32,
@@ -1085,28 +1134,38 @@ const presets = {
     ]
   },
   "Saturn": {
+    planetType: "gas_giant",
     seed: "SATURN",
     radius: 3.2,
     subdivisions: 5,
-    noiseLayers: 3,
-    noiseFrequency: 1.3,
-    noiseAmplitude: 0.2,
-    persistence: 0.38,
-    lacunarity: 1.6,
-    oceanLevel: 0.6,
-    // Pale golden/banded tones
-    colorOcean: "#4a3d2a",
-    colorShallow: "#6b5a3a",
-    colorLow: "#bda77e",
-    colorMid: "#dccfb0",
-    colorHigh: "#f3ecde",
+    gasGiantStrataCount: 5,
+    gasGiantStrata1Color: "#d8caa1",
+    gasGiantStrata2Color: "#b48a55",
+    gasGiantStrata3Color: "#f6e7c9",
+    gasGiantStrata4Color: "#987043",
+    gasGiantStrata5Color: "#eddcb7",
+    gasGiantStrata6Color: "#c7a879",
+    gasGiantStrata1Size: 0.2,
+    gasGiantStrata2Size: 0.16,
+    gasGiantStrata3Size: 0.22,
+    gasGiantStrata4Size: 0.18,
+    gasGiantStrata5Size: 0.14,
+    gasGiantStrata6Size: 0.1,
+    gasGiantNoiseScale: 2.0,
+    gasGiantNoiseStrength: 0.38,
+    gasGiantBandContrast: 0.46,
+    gasGiantBandSoftness: 0.26,
+    gasGiantOpacity: 0.78,
     colorCore: "#8b4513",
     coreEnabled: true,
-    coreSize: 0.4,
+    coreSize: 0.3,
     coreVisible: true,
     atmosphereColor: "#e6d8b5",
-    atmosphereOpacity: 0.33,
-    cloudsOpacity: 0.6,
+    atmosphereOpacity: 0.3,
+    cloudsOpacity: 0.54,
+    cloudHeight: 0.09,
+    cloudDensity: 0.5,
+    cloudNoiseScale: 2.2,
     axisTilt: 27,
     rotationSpeed: 0.42,
     simulationSpeed: 0.32,
@@ -1128,9 +1187,9 @@ const presets = {
     ringCount: 4,
     rings: [
       { style: "Texture", color: "#bfb39a", start: 1.28, end: 1.35, opacity: 0.5, noiseScale: 2.4, noiseStrength: 0.15, spinSpeed: 0.03, brightness: 0.9 },
-      { style: "Texture", color: "#e3dccb", start: 1.38, end: 1.80, opacity: 0.95, noiseScale: 2.8, noiseStrength: 0.25, spinSpeed: 0.03, brightness: 1.2 },
-      { style: "Texture", color: "#d7ccb4", start: 1.88, end: 2.30, opacity: 0.9, noiseScale: 2.6, noiseStrength: 0.22, spinSpeed: 0.03, brightness: 1.1 },
-      { style: "Texture", color: "#f3eee2", start: 2.35, end: 2.42, opacity: 0.6, noiseScale: 2.0, noiseStrength: 0.10, spinSpeed: 0.035, brightness: 1.1 }
+      { style: "Texture", color: "#e3dccb", start: 1.38, end: 1.8, opacity: 0.95, noiseScale: 2.8, noiseStrength: 0.25, spinSpeed: 0.03, brightness: 1.2 },
+      { style: "Texture", color: "#d7ccb4", start: 1.88, end: 2.3, opacity: 0.9, noiseScale: 2.6, noiseStrength: 0.22, spinSpeed: 0.03, brightness: 1.1 },
+      { style: "Texture", color: "#f3eee2", start: 2.35, end: 2.42, opacity: 0.6, noiseScale: 2.0, noiseStrength: 0.1, spinSpeed: 0.035, brightness: 1.1 }
     ],
     moons: [
       { size: 0.3, distance: 10.0, orbitSpeed: 0.3, inclination: 2, color: "#d9d6cf", phase: 0.1, eccentricity: 0.01 },
@@ -1216,28 +1275,38 @@ const presets = {
     moons: []
   },
   "Uranus": {
+    planetType: "gas_giant",
     seed: "URANUS",
     radius: 2.7,
     subdivisions: 5,
-    noiseLayers: 3,
-    noiseFrequency: 1.4,
-    noiseAmplitude: 0.25,
-    persistence: 0.42,
-    lacunarity: 1.7,
-    oceanLevel: 0.65,
-    // Cyan/teal tones
-    colorOcean: "#164a5c",
-    colorShallow: "#1f6d86",
-    colorLow: "#54c4d7",
-    colorMid: "#86dceb",
-    colorHigh: "#d6f4fb",
+    gasGiantStrataCount: 5,
+    gasGiantStrata1Color: "#94d8e4",
+    gasGiantStrata2Color: "#5eb4c8",
+    gasGiantStrata3Color: "#b7f0fa",
+    gasGiantStrata4Color: "#3f8ea3",
+    gasGiantStrata5Color: "#c6f6ff",
+    gasGiantStrata6Color: "#72c3d6",
+    gasGiantStrata1Size: 0.24,
+    gasGiantStrata2Size: 0.2,
+    gasGiantStrata3Size: 0.2,
+    gasGiantStrata4Size: 0.18,
+    gasGiantStrata5Size: 0.1,
+    gasGiantStrata6Size: 0.08,
+    gasGiantNoiseScale: 1.8,
+    gasGiantNoiseStrength: 0.32,
+    gasGiantBandContrast: 0.38,
+    gasGiantBandSoftness: 0.28,
+    gasGiantOpacity: 0.86,
     colorCore: "#8b4513",
     coreEnabled: true,
-    coreSize: 0.4,
+    coreSize: 0.24,
     coreVisible: true,
     atmosphereColor: "#9adbe7",
-    atmosphereOpacity: 0.33,
-    cloudsOpacity: 0.6,
+    atmosphereOpacity: 0.28,
+    cloudsOpacity: 0.42,
+    cloudHeight: 0.08,
+    cloudDensity: 0.48,
+    cloudNoiseScale: 1.9,
     axisTilt: 98,
     rotationSpeed: -0.25,
     simulationSpeed: 0.22,
@@ -1258,38 +1327,48 @@ const presets = {
     ringSpinSpeed: 0.02,
     ringCount: 4,
     rings: [
-      { style: "Texture", color: "#2f2f2f", start: 1.45, end: 1.48, opacity: 0.35, noiseScale: 1.6, noiseStrength: 0.2, spinSpeed: 0.02, brightness: 0.8 },
-      { style: "Texture", color: "#3a3a3a", start: 1.58, end: 1.61, opacity: 0.35, noiseScale: 1.6, noiseStrength: 0.2, spinSpeed: 0.02, brightness: 0.8 },
-      { style: "Texture", color: "#2b2b2b", start: 1.72, end: 1.75, opacity: 0.32, noiseScale: 1.6, noiseStrength: 0.2, spinSpeed: 0.02, brightness: 0.8 },
-      { style: "Texture", color: "#3c3c3c", start: 1.90, end: 1.93, opacity: 0.3, noiseScale: 1.6, noiseStrength: 0.2, spinSpeed: 0.02, brightness: 0.8 }
+      { style: "Noise", color: "#2f2f2f", start: 1.45, end: 1.48, opacity: 0.35, noiseScale: 1.6, noiseStrength: 0.2, spinSpeed: 0.02, brightness: 0.8 },
+      { style: "Noise", color: "#3a3a3a", start: 1.58, end: 1.61, opacity: 0.35, noiseScale: 1.6, noiseStrength: 0.22, spinSpeed: 0.02, brightness: 0.85 },
+      { style: "Noise", color: "#2b2b2b", start: 1.72, end: 1.75, opacity: 0.32, noiseScale: 1.6, noiseStrength: 0.24, spinSpeed: 0.02, brightness: 0.8 },
+      { style: "Noise", color: "#3c3c3c", start: 1.9, end: 1.93, opacity: 0.3, noiseScale: 1.6, noiseStrength: 0.22, spinSpeed: 0.02, brightness: 0.8 }
     ],
     moons: [
       { size: 0.18, distance: 6.5, orbitSpeed: 0.4, inclination: 1, color: "#d5eaf6", phase: 0.2, eccentricity: 0.03 }
     ]
   },
   "Neptune": {
+    planetType: "gas_giant",
     seed: "NEPTUNE",
     radius: 2.6,
     subdivisions: 5,
-    noiseLayers: 3,
-    noiseFrequency: 1.5,
-    noiseAmplitude: 0.28,
-    persistence: 0.45,
-    lacunarity: 1.8,
-    oceanLevel: 0.65,
-    // Deep cobalt blues
-    colorOcean: "#0b1f5b",
-    colorShallow: "#163b8c",
-    colorLow: "#2e60bf",
-    colorMid: "#5b8ee6",
-    colorHigh: "#b7d0ff",
+    gasGiantStrataCount: 5,
+    gasGiantStrata1Color: "#1d3f93",
+    gasGiantStrata2Color: "#0b1f5b",
+    gasGiantStrata3Color: "#2e60bf",
+    gasGiantStrata4Color: "#5b8ee6",
+    gasGiantStrata5Color: "#9ec5ff",
+    gasGiantStrata6Color: "#133472",
+    gasGiantStrata1Size: 0.22,
+    gasGiantStrata2Size: 0.2,
+    gasGiantStrata3Size: 0.18,
+    gasGiantStrata4Size: 0.2,
+    gasGiantStrata5Size: 0.12,
+    gasGiantStrata6Size: 0.08,
+    gasGiantNoiseScale: 2.2,
+    gasGiantNoiseStrength: 0.36,
+    gasGiantBandContrast: 0.42,
+    gasGiantBandSoftness: 0.24,
+    gasGiantOpacity: 0.88,
     colorCore: "#8b4513",
     coreEnabled: true,
-    coreSize: 0.4,
+    coreSize: 0.26,
     coreVisible: true,
     atmosphereColor: "#7fb0ff",
-    atmosphereOpacity: 0.33,
-    cloudsOpacity: 0.6,
+    atmosphereOpacity: 0.3,
+    cloudsOpacity: 0.5,
+    cloudHeight: 0.08,
+    cloudDensity: 0.52,
+    cloudNoiseScale: 2.1,
     axisTilt: 28,
     rotationSpeed: 0.26,
     simulationSpeed: 0.22,
@@ -1310,9 +1389,9 @@ const presets = {
     ringSpinSpeed: 0.02,
     ringCount: 3,
     rings: [
-      { style: "Texture", color: "#3a3832", start: 1.50, end: 1.53, opacity: 0.25, noiseScale: 1.6, noiseStrength: 0.2, spinSpeed: 0.02, brightness: 0.8 },
-      { style: "Texture", color: "#3f3c36", start: 1.68, end: 1.72, opacity: 0.25, noiseScale: 1.6, noiseStrength: 0.2, spinSpeed: 0.02, brightness: 0.8 },
-      { style: "Texture", color: "#35322d", start: 1.88, end: 1.92, opacity: 0.22, noiseScale: 1.6, noiseStrength: 0.2, spinSpeed: 0.02, brightness: 0.8 }
+      { style: "Noise", color: "#3a3832", start: 1.5, end: 1.53, opacity: 0.27, noiseScale: 1.7, noiseStrength: 0.24, spinSpeed: 0.02, brightness: 0.85 },
+      { style: "Noise", color: "#3f3c36", start: 1.68, end: 1.72, opacity: 0.25, noiseScale: 1.7, noiseStrength: 0.26, spinSpeed: 0.02, brightness: 0.82 },
+      { style: "Noise", color: "#35322d", start: 1.88, end: 1.92, opacity: 0.22, noiseScale: 1.7, noiseStrength: 0.24, spinSpeed: 0.02, brightness: 0.8 }
     ],
     moons: [
       { size: 0.24, distance: 8.6, orbitSpeed: 0.34, inclination: 0.1, color: "#d1e2ff", phase: 0.8, eccentricity: 0.01 }
@@ -1445,27 +1524,38 @@ const presets = {
     ]
   },
   "Gas Giant": {
+    planetType: "gas_giant",
     seed: "AEROX",
     radius: 3.6,
     subdivisions: 4,
-    noiseLayers: 4,
-    noiseFrequency: 1.6,
-    noiseAmplitude: 0.3,
-    persistence: 0.4,
-    lacunarity: 1.7,
-    oceanLevel: 0.55,
-    colorOcean: "#14203b",
-    colorShallow: "#253a66",
-    colorLow: "#34527f",
-    colorMid: "#8f9ec8",
-    colorHigh: "#dcdff7",
+    gasGiantStrataCount: 5,
+    gasGiantStrata1Color: "#c58a5f",
+    gasGiantStrata2Color: "#b6713a",
+    gasGiantStrata3Color: "#f0d0a6",
+    gasGiantStrata4Color: "#8d5a2d",
+    gasGiantStrata5Color: "#e3be83",
+    gasGiantStrata6Color: "#b6844d",
+    gasGiantStrata1Size: 0.2,
+    gasGiantStrata2Size: 0.13,
+    gasGiantStrata3Size: 0.22,
+    gasGiantStrata4Size: 0.18,
+    gasGiantStrata5Size: 0.17,
+    gasGiantStrata6Size: 0.1,
+    gasGiantNoiseScale: 2.6,
+    gasGiantNoiseStrength: 0.42,
+    gasGiantBandContrast: 0.48,
+    gasGiantBandSoftness: 0.24,
+    gasGiantOpacity: 0.82,
     colorCore: "#8b4513",
     coreEnabled: true,
-    coreSize: 0.4,
+    coreSize: 0.28,
     coreVisible: true,
-    atmosphereColor: "#c1d6ff",
-    atmosphereOpacity: 0.38,
-    cloudsOpacity: 0.7,
+    atmosphereColor: "#d9c4a7",
+    atmosphereOpacity: 0.32,
+    cloudsOpacity: 0.62,
+    cloudHeight: 0.08,
+    cloudDensity: 0.58,
+    cloudNoiseScale: 2.4,
     axisTilt: 12,
     rotationSpeed: 0.45,
     simulationSpeed: 0.4,
@@ -1568,8 +1658,14 @@ const starPresets = {
   }
 };
 
+function getPresetNamesByType(type) {
+  const target = type === "gas_giant" ? "gas_giant" : "rocky";
+  return Object.keys(presets).filter((name) => (presets[name]?.planetType || "rocky") === target);
+}
+
 const shareKeys = [
   "seed",
+  "planetType",
   "radius",
   "subdivisions",
   "noiseLayers",
@@ -1585,6 +1681,24 @@ const shareKeys = [
   "colorLow",
   "colorMid",
   "colorHigh",
+  "gasGiantStrataCount",
+  "gasGiantStrata1Color",
+  "gasGiantStrata2Color",
+  "gasGiantStrata3Color",
+  "gasGiantStrata4Color",
+  "gasGiantStrata5Color",
+  "gasGiantStrata6Color",
+  "gasGiantStrata1Size",
+  "gasGiantStrata2Size",
+  "gasGiantStrata3Size",
+  "gasGiantStrata4Size",
+  "gasGiantStrata5Size",
+  "gasGiantStrata6Size",
+  "gasGiantNoiseScale",
+  "gasGiantNoiseStrength",
+  "gasGiantBandContrast",
+  "gasGiantBandSoftness",
+  "gasGiantOpacity",
   // Palette/core additions
   "colorCore",
   "coreEnabled",
@@ -1702,6 +1816,7 @@ let guiVisible = true;
 let sunPulsePhase = 0;
 let cloudTexOffsetX = 0;
 let isApplyingStarPreset = false;
+let suppressPlanetTypeChange = false;
 
 const { registerFolder, unregisterFolder, applyControlSearch } = initControlSearch({
   controlsContainer,
@@ -1736,6 +1851,10 @@ setupPlanetControls({
   initMoonPhysics,
   getIsApplyingPreset: () => isApplyingPreset,
   getIsApplyingStarPreset: () => isApplyingStarPreset,
+  onPlanetTypeChange: (value, options) => {
+    if (suppressPlanetTypeChange) return;
+    setPlanetType(value, { skipShareUpdate: true, fromUI: !!options?.fromUI });
+  },
   onPresetChange: (value) => applyPreset(value),
   onStarPresetChange: (value) => applyStarPreset(value)
 });
@@ -2207,8 +2326,11 @@ async function applyConfigurationFromAPI(apiResult) {
     console.log("🔄 No moons to update");
   }
 
+  setPlanetType(data.data?.planetType ?? data.planetType ?? params.planetType, { skipShareUpdate: true });
+
   // Update GUI controllers
   let updatedControllers = 0;
+  suppressPlanetTypeChange = true;
   Object.keys(guiControllers).forEach(key => {
     if (params[key] !== undefined && guiControllers[key]?.setValue) {
       if (key === "sunPreset") {
@@ -2221,6 +2343,7 @@ async function applyConfigurationFromAPI(apiResult) {
       updatedControllers++;
     }
   });
+  suppressPlanetTypeChange = false;
   console.log(`🎛️ Updated ${updatedControllers} GUI controllers`);
 
   // Rebuild moon controls
@@ -2910,8 +3033,41 @@ function animate(timestamp) {
 //#region Planet generation
 const scratchColor = new THREE.Color();
 
-function rebuildPlanet() {
-  updatePalette();
+function setPlanetType(type, { skipShareUpdate = false, fromUI = false } = {}) {
+  const nextType = type === "gas_giant" ? "gas_giant" : "rocky";
+  const previousType = params.planetType;
+
+  guiControllers.updatePresetOptions?.(nextType);
+
+  if (previousType !== nextType) {
+    params.planetType = nextType;
+    if (!fromUI) {
+      suppressPlanetTypeChange = true;
+      try { guiControllers.planetType?.setValue?.(nextType); } catch {}
+      suppressPlanetTypeChange = false;
+    }
+    markPlanetDirty();
+    markMoonsDirty();
+    updateClouds();
+    updatePalette();
+    updateCore();
+    updateRings();
+    if (!skipShareUpdate) {
+      scheduleShareUpdate();
+    }
+  }
+
+  guiControllers.refreshPlanetTypeVisibility?.(nextType);
+}
+
+function rebuildRockyPlanet() {
+  planetMesh.material = planetMaterial;
+  planetMesh.renderOrder = 0;
+  planetMesh.scale.setScalar(1);
+  coreMesh.renderOrder = 0;
+  planetMaterial.vertexColors = true;
+  planetMaterial.transparent = false;
+  planetMaterial.needsUpdate = true;
 
   const rng = new SeededRNG(params.seed);
   const noiseRng = rng.fork();
@@ -3215,6 +3371,72 @@ function rebuildPlanet() {
   updateRings();
 
   scheduleShareUpdate();
+}
+
+function rebuildGasGiantPlanet() {
+  const radius = Math.max(0.1, params.radius || 1);
+  const detail = Math.max(32, Math.round((params.subdivisions || 4) * 24));
+  const geometry = new THREE.SphereGeometry(1, detail, detail);
+
+  planetMesh.material = gasGiantMaterial;
+  planetMesh.renderOrder = 2;
+  planetMesh.scale.setScalar(radius);
+  coreMesh.renderOrder = 1;
+
+  if (planetMesh.geometry) {
+    planetMesh.geometry.dispose();
+  }
+  planetMesh.geometry = geometry;
+
+  const count = Math.max(1, Math.min(6, Math.round(params.gasGiantStrataCount || 1)));
+  const strata = [];
+  let sizeSum = 0;
+  for (let i = 1; i <= count; i += 1) {
+    const colorKey = `gasGiantStrata${i}Color`;
+    const sizeKey = `gasGiantStrata${i}Size`;
+    const color = params[colorKey] || "#ffffff";
+    const size = Math.max(0.01, params[sizeKey] ?? (1 / count));
+    sizeSum += size;
+    strata.push({ color, size });
+  }
+
+  const normalizedStrata = strata.map((layer) => ({
+    color: layer.color,
+    size: layer.size / (sizeSum || 1)
+  }));
+
+  const texture = generateGasGiantTextureExt({
+    seed: params.seed,
+    strata: normalizedStrata,
+    noiseScale: params.gasGiantNoiseScale ?? 2.5,
+    noiseStrength: params.gasGiantNoiseStrength ?? 0.35,
+    bandContrast: params.gasGiantBandContrast ?? 0.45,
+    bandSoftness: params.gasGiantBandSoftness ?? 0.22
+  });
+
+  if (gasGiantTexture && gasGiantTexture.dispose) {
+    gasGiantTexture.dispose();
+  }
+  gasGiantTexture = texture;
+  gasGiantMaterial.map = gasGiantTexture;
+  gasGiantMaterial.opacity = THREE.MathUtils.clamp(params.gasGiantOpacity ?? 0.82, 0.05, 1);
+  gasGiantMaterial.depthWrite = false;
+  gasGiantMaterial.transparent = true;
+  gasGiantMaterial.needsUpdate = true;
+
+  planetMaterial.map = null;
+  planetMaterial.needsUpdate = true;
+  planetMaterial.vertexColors = true;
+  planetMesh.castShadow = true;
+
+  const cloudScale = radius * (1 + Math.max(0.0, params.cloudHeight || 0.05));
+  const atmosphereScale = radius * (1.05 + Math.max(0.0, (params.cloudHeight || 0.05)) * 0.8);
+  cloudsMesh.scale.setScalar(cloudScale);
+  atmosphereMesh.scale.setScalar(atmosphereScale);
+
+  oceanMesh.visible = false;
+  foamMesh.visible = false;
+  planetMesh.rotation.set(0, 0, 0);
 }
 
 function deriveTerrainProfile(seed) {
@@ -4380,6 +4602,8 @@ function applyPreset(name, { skipShareUpdate = false, keepSeed = false } = {}) {
   const preset = presets[name];
   if (!preset) return;
   isApplyingPreset = true;
+  const nextType = preset.planetType || "rocky";
+  setPlanetType(nextType, { skipShareUpdate: true });
   // Ensure the preset selector reflects the applied preset
   try {
     params.preset = name;
@@ -4389,6 +4613,7 @@ function applyPreset(name, { skipShareUpdate = false, keepSeed = false } = {}) {
   Object.entries(preset).forEach(([key, value]) => {
     if (key === "moons") return;
     if (key === "seed" && keepSeed) return;
+    if (key === "planetType") return;
     if (!(key in params)) return;
     if (key === "sunPreset") {
       isApplyingStarPreset = true;
@@ -4985,9 +5210,10 @@ function createSunTexture(opts) { return createSunTextureExt(opts); }
 // Explosion particles when a moon is destroyed
 function spawnExplosion(position, color = new THREE.Color(0xffaa66), strength = 1) {
   if (!params.explosionEnabled) return;
-  const effectiveStrength = Math.max(0.05, params.explosionStrength) * Math.max(0.1, strength);
+  const effectiveStrength = Math.max(0.05, params.explosionStrength) * Math.max(0.1, strength) * (params.planetType === "gas_giant" ? 0.6 : 1);
   const baseCount = Math.max(10, Math.round(params.explosionParticleBase || 80));
-  const count = Math.max(20, Math.floor(baseCount * THREE.MathUtils.clamp(effectiveStrength, 0.2, 4)));
+  const typeMultiplier = params.planetType === "gas_giant" ? 0.35 : 1;
+  const count = Math.max(20, Math.floor(baseCount * typeMultiplier * THREE.MathUtils.clamp(effectiveStrength, 0.2, 4)));
   const geometry = new THREE.BufferGeometry();
   const positions = new Float32Array(count * 3);
   const velocities = new Float32Array(count * 3);
@@ -5346,7 +5572,7 @@ function stepMoonPhysics(dt) {
       const isCoreCollision = pivot.userData._hitCore;
 
       // Apply local crater deformation to the planet surface at impact (only for surface collisions)
-      if (params.impactDeformation && mesh && !isCoreCollision) {
+      if (params.planetType !== "gas_giant" && params.impactDeformation && mesh && !isCoreCollision) {
         try {
           const moonRadius = mesh.scale.x; // in world units (approx projectile radius)
           const planetWorldPos = planetRoot.getWorldPosition(new THREE.Vector3());
@@ -5404,6 +5630,17 @@ function stepMoonPhysics(dt) {
         spawnExplosion(pos, color, 2 * strength);
       }
 
+      if (params.planetType === "gas_giant") {
+        const shrinkAmount = Math.max(0.02, (mesh?.scale?.x || 0.1) * 0.12);
+        const newRadius = Math.max(0.5, params.radius - shrinkAmount);
+        if (newRadius !== params.radius) {
+          params.radius = newRadius;
+          guiControllers.radius?.setValue?.(params.radius);
+          markPlanetDirty();
+          scheduleShareUpdate();
+        }
+      }
+
       // Clean up orbit line for this moon
       if (pivot.userData.orbit) {
         const orbit = pivot.userData.orbit;
@@ -5439,8 +5676,12 @@ function stepMoonPhysics(dt) {
 function surpriseMe() {
   const newSeed = generateSeed();
   const rng = new SeededRNG(newSeed);
-  const presetNames = Object.keys(presets);
-  const pickPreset = presetNames[Math.floor(rng.next() * presetNames.length)];
+  const typeRoll = rng.next();
+  const targetType = typeRoll < 1 / 6 ? "gas_giant" : "rocky";
+  const allPresetNames = Object.keys(presets);
+  const filteredPresetNames = allPresetNames.filter((name) => (presets[name]?.planetType || "rocky") === targetType);
+  const presetPool = filteredPresetNames.length ? filteredPresetNames : allPresetNames;
+  const pickPreset = presetPool[Math.floor(rng.next() * presetPool.length)];
   // Preserve user simulation speed across Surprise Me
   const prevSimSpeed = params.simulationSpeed;
   const preserveFoam = params.foamEnabled; // Preserve foam setting
@@ -5458,14 +5699,16 @@ function surpriseMe() {
         ringSpinSpeed: params.ringSpinSpeed
       }
     : null;
+
   isApplyingPreset = true;
   applyPreset(pickPreset, { skipShareUpdate: true, keepSeed: true });
   isApplyingPreset = false;
+
   // Restore user value overwritten by preset
   params.simulationSpeed = prevSimSpeed;
   guiControllers.simulationSpeed?.setValue?.(prevSimSpeed);
-  
-  // Restore foam setting
+
+  // Restore foam setting (will be overridden for gas giants below)
   params.foamEnabled = preserveFoam;
   guiControllers.foamEnabled?.setValue?.(preserveFoam);
 
@@ -5476,43 +5719,102 @@ function surpriseMe() {
   params.seed = newSeed;
   guiControllers.seed?.setValue?.(newSeed);
 
-  // Planet shape
-  params.radius = THREE.MathUtils.lerp(0.6, 3.8, rng.next());
-  params.subdivisions = Math.round(THREE.MathUtils.lerp(3, 6, rng.next()));
-  params.noiseLayers = Math.round(THREE.MathUtils.lerp(3, 7, rng.next()));
-  params.noiseFrequency = THREE.MathUtils.lerp(0.8, 5.2, rng.next());
-  params.noiseAmplitude = THREE.MathUtils.lerp(0.2, 0.9, rng.next());
-  params.persistence = THREE.MathUtils.lerp(0.35, 0.65, rng.next());
-  params.lacunarity = THREE.MathUtils.lerp(1.6, 3.2, rng.next());
-  params.oceanLevel = THREE.MathUtils.lerp(0.2, 0.7, rng.next());
+  setPlanetType(targetType, { skipShareUpdate: true });
 
-  // Palette (HSL variations)
+  // Palette bases shared across planet types
   const hue = rng.next();
   const hue2 = (hue + 0.12 + rng.next() * 0.2) % 1;
   const hue3 = (hue + 0.3 + rng.next() * 0.3) % 1;
-  params.colorOcean = `#${new THREE.Color().setHSL(hue, 0.6, 0.28).getHexString()}`;
-  params.colorShallow = `#${new THREE.Color().setHSL(hue, 0.55, 0.45).getHexString()}`;
-  params.colorLow = `#${new THREE.Color().setHSL(hue2, 0.42, 0.3).getHexString()}`;
-  params.colorMid = `#${new THREE.Color().setHSL(hue2, 0.36, 0.58).getHexString()}`;
-  params.colorHigh = `#${new THREE.Color().setHSL(hue3, 0.15, 0.92).getHexString()}`;
-  params.colorCore = `#${new THREE.Color().setHSL(hue, 0.4, 0.3).getHexString()}`;
-  params.coreEnabled = rng.next() > 0; // 70% chance of having a core
-  params.coreSize = THREE.MathUtils.lerp(0.2, 0.6, rng.next());
-  params.coreVisible = rng.next() > 0; // 20% chance of being visible
-  params.atmosphereColor = `#${new THREE.Color().setHSL(hue2, 0.5, 0.7).getHexString()}`;
-  params.atmosphereOpacity = THREE.MathUtils.lerp(0.05, 0.5, rng.next());
-  params.cloudsOpacity = THREE.MathUtils.lerp(0.1, 0.8, rng.next());
-  params.cloudHeight = THREE.MathUtils.lerp(0.01, 0.12, rng.next());
-  params.cloudDensity = THREE.MathUtils.lerp(0.25, 0.85, rng.next());
-  params.cloudNoiseScale = THREE.MathUtils.lerp(1.2, 5.0, rng.next());
-  params.cloudDriftSpeed = THREE.MathUtils.lerp(0, 0.06, rng.next());
+
+  if (targetType === "gas_giant") {
+    params.radius = THREE.MathUtils.lerp(1.6, 3.8, rng.next());
+    params.subdivisions = Math.round(THREE.MathUtils.lerp(4, 6, rng.next()));
+    params.noiseLayers = Math.round(THREE.MathUtils.lerp(3, 6, rng.next()));
+    params.noiseFrequency = THREE.MathUtils.lerp(1.2, 3.6, rng.next());
+    params.noiseAmplitude = THREE.MathUtils.lerp(0.02, 0.12, rng.next());
+    params.persistence = THREE.MathUtils.lerp(0.42, 0.6, rng.next());
+    params.lacunarity = THREE.MathUtils.lerp(1.6, 2.2, rng.next());
+    params.oceanLevel = 0;
+    const strataCount = Math.max(1, Math.round(THREE.MathUtils.lerp(2, 6, rng.next())));
+    params.gasGiantStrataCount = strataCount;
+    const baseSaturation = THREE.MathUtils.lerp(0.35, 0.75, rng.next());
+    const baseLightness = THREE.MathUtils.lerp(0.45, 0.76, rng.next());
+    for (let i = 1; i <= 6; i += 1) {
+      const normalizedIndex = strataCount > 1 ? (i - 1) / Math.max(strataCount - 1, 1) - 0.5 : 0;
+      const hueOffset = normalizedIndex * THREE.MathUtils.lerp(0.04, 0.12, rng.next()) + (rng.next() - 0.5) * 0.08;
+      const sat = THREE.MathUtils.clamp(baseSaturation + (rng.next() - 0.5) * 0.2, 0.2, 0.9);
+      const alternating = ((i + (rng.next() > 0.5 ? 1 : 0)) % 2 === 0 ? 1 : -1) * THREE.MathUtils.lerp(0.04, 0.12, rng.next());
+      const light = THREE.MathUtils.clamp(baseLightness + (rng.next() - 0.5) * 0.18 + alternating, 0.2, 0.92);
+      params[`gasGiantStrata${i}Color`] = `#${new THREE.Color().setHSL((hue + hueOffset + 1) % 1, sat, light).getHexString()}`;
+      params[`gasGiantStrata${i}Size`] = THREE.MathUtils.lerp(0.12, 0.28, rng.next());
+    }
+    params.gasGiantNoiseScale = THREE.MathUtils.lerp(0.9, 3.6, rng.next());
+    params.gasGiantNoiseStrength = THREE.MathUtils.lerp(0.18, 0.6, rng.next());
+    params.gasGiantBandContrast = THREE.MathUtils.lerp(0.32, 0.72, rng.next());
+    params.gasGiantBandSoftness = THREE.MathUtils.lerp(0.18, 0.38, rng.next());
+    params.gasGiantOpacity = THREE.MathUtils.lerp(0.65, 0.9, rng.next());
+    params.colorOcean = `#${new THREE.Color().setHSL((hue + 0.02) % 1, 0.32, 0.18).getHexString()}`;
+    params.colorShallow = `#${new THREE.Color().setHSL((hue + 0.05) % 1, 0.3, 0.22).getHexString()}`;
+    params.colorLow = `#${new THREE.Color().setHSL((hue + 0.08) % 1, 0.28, 0.25).getHexString()}`;
+    params.colorMid = `#${new THREE.Color().setHSL((hue + 0.12) % 1, 0.24, 0.28).getHexString()}`;
+    params.colorHigh = `#${new THREE.Color().setHSL((hue + 0.15) % 1, 0.22, 0.32).getHexString()}`;
+    params.colorCore = `#${new THREE.Color().setHSL((hue + 0.06) % 1, 0.55, 0.32).getHexString()}`;
+    params.coreEnabled = rng.next() > 0.15;
+    params.coreSize = THREE.MathUtils.lerp(0.18, 0.38, rng.next());
+    params.coreVisible = rng.next() > 0.55;
+    params.atmosphereColor = `#${new THREE.Color().setHSL(hue2, 0.5, 0.68).getHexString()}`;
+    params.atmosphereOpacity = THREE.MathUtils.lerp(0.2, 0.58, rng.next());
+    params.cloudsOpacity = THREE.MathUtils.lerp(0.32, 0.82, rng.next());
+    params.cloudHeight = THREE.MathUtils.lerp(0.05, 0.16, rng.next());
+    params.cloudDensity = THREE.MathUtils.lerp(0.4, 0.9, rng.next());
+    params.cloudNoiseScale = THREE.MathUtils.lerp(1.4, 3.4, rng.next());
+    params.cloudDriftSpeed = THREE.MathUtils.lerp(0.02, 0.12, rng.next());
+  } else {
+    params.radius = THREE.MathUtils.lerp(0.6, 3.8, rng.next());
+    params.subdivisions = Math.round(THREE.MathUtils.lerp(3, 6, rng.next()));
+    params.noiseLayers = Math.round(THREE.MathUtils.lerp(3, 7, rng.next()));
+    params.noiseFrequency = THREE.MathUtils.lerp(0.8, 5.2, rng.next());
+    params.noiseAmplitude = THREE.MathUtils.lerp(0.2, 0.9, rng.next());
+    params.persistence = THREE.MathUtils.lerp(0.35, 0.65, rng.next());
+    params.lacunarity = THREE.MathUtils.lerp(1.6, 3.2, rng.next());
+    params.oceanLevel = THREE.MathUtils.lerp(0.2, 0.7, rng.next());
+    params.colorOcean = `#${new THREE.Color().setHSL(hue, 0.6, 0.28).getHexString()}`;
+    params.colorShallow = `#${new THREE.Color().setHSL(hue, 0.55, 0.45).getHexString()}`;
+    params.colorLow = `#${new THREE.Color().setHSL(hue2, 0.42, 0.3).getHexString()}`;
+    params.colorMid = `#${new THREE.Color().setHSL(hue2, 0.36, 0.58).getHexString()}`;
+    params.colorHigh = `#${new THREE.Color().setHSL(hue3, 0.15, 0.92).getHexString()}`;
+    params.colorCore = `#${new THREE.Color().setHSL(hue, 0.4, 0.3).getHexString()}`;
+    params.coreEnabled = rng.next() > 0.3;
+    params.coreSize = THREE.MathUtils.lerp(0.2, 0.6, rng.next());
+    params.coreVisible = rng.next() > 0.8;
+    params.atmosphereColor = `#${new THREE.Color().setHSL(hue2, 0.5, 0.7).getHexString()}`;
+    params.atmosphereOpacity = THREE.MathUtils.lerp(0.05, 0.5, rng.next());
+    params.cloudsOpacity = THREE.MathUtils.lerp(0.1, 0.8, rng.next());
+    params.cloudHeight = THREE.MathUtils.lerp(0.01, 0.12, rng.next());
+    params.cloudDensity = THREE.MathUtils.lerp(0.25, 0.85, rng.next());
+    params.cloudNoiseScale = THREE.MathUtils.lerp(1.2, 5.0, rng.next());
+    params.cloudDriftSpeed = THREE.MathUtils.lerp(0, 0.06, rng.next());
+  }
+
+  if (targetType === "gas_giant") {
+    params.foamEnabled = false;
+  }
 
   // Motion & environment (keep current simulationSpeed)
-  params.axisTilt = THREE.MathUtils.lerp(0, 35, rng.next());
-  params.rotationSpeed = THREE.MathUtils.lerp(0.05, 0.5, rng.next());
-  params.gravity = THREE.MathUtils.lerp(4, 25, rng.next());
-  params.sunIntensity = THREE.MathUtils.lerp(0.8, 3.5, rng.next());
-  params.sunDistance = THREE.MathUtils.lerp(25, 120, rng.next());
+  const axisTiltMax = targetType === "gas_giant" ? 30 : 35;
+  params.axisTilt = THREE.MathUtils.lerp(0, axisTiltMax, rng.next());
+  const minRotation = targetType === "gas_giant" ? 0.18 : 0.05;
+  const maxRotation = targetType === "gas_giant" ? 0.6 : 0.5;
+  params.rotationSpeed = THREE.MathUtils.lerp(minRotation, maxRotation, rng.next());
+  const gravityMin = targetType === "gas_giant" ? 8 : 4;
+  const gravityMax = targetType === "gas_giant" ? 28 : 25;
+  params.gravity = THREE.MathUtils.lerp(gravityMin, gravityMax, rng.next());
+  const sunIntensityMin = targetType === "gas_giant" ? 1.4 : 0.8;
+  const sunIntensityMax = targetType === "gas_giant" ? 3.6 : 3.5;
+  params.sunIntensity = THREE.MathUtils.lerp(sunIntensityMin, sunIntensityMax, rng.next());
+  const sunDistanceMin = targetType === "gas_giant" ? 80 : 25;
+  const sunDistanceMax = targetType === "gas_giant" ? 180 : 120;
+  params.sunDistance = THREE.MathUtils.lerp(sunDistanceMin, sunDistanceMax, rng.next());
   params.sunColor = `#${new THREE.Color().setHSL((hue + 0.05) % 1, 0.65, 0.7).getHexString()}`;
   params.sunSize = THREE.MathUtils.lerp(0.6, 2.8, rng.next());
   params.sunHaloSize = THREE.MathUtils.lerp(4, 14, rng.next());
@@ -5532,21 +5834,21 @@ function surpriseMe() {
 
   // Rings
   if (params.ringAllowRandom) {
-    const enableRings = rng.next() > 0.45;
+    const enableRings = targetType === "gas_giant" ? rng.next() > 0.25 : rng.next() > 0.55;
     params.ringEnabled = enableRings;
     if (enableRings) {
-      // Between 1-4 rings, separated like Saturn
-      const count = Math.max(1, Math.round(THREE.MathUtils.lerp(1, 4, rng.next())));
+      const minRings = targetType === "gas_giant" ? 2 : 1;
+      const maxRings = targetType === "gas_giant" ? 5 : 4;
+      const count = Math.max(minRings, Math.round(THREE.MathUtils.lerp(minRings, maxRings, rng.next())));
       params.ringCount = count;
       params.rings = [];
-      const baseStart = THREE.MathUtils.lerp(1.2, 2.4, rng.next());
-      let lastEnd = baseStart;
-      // Choose a single style for all rings: Texture or Noise
-      const allUseNoise = rng.next() > 0.5;
-      const chosenStyle = allUseNoise ? "Noise" : "Texture";
+      const startBase = THREE.MathUtils.lerp(targetType === "gas_giant" ? 1.15 : 1.2, targetType === "gas_giant" ? 2.1 : 2.4, rng.next());
+      let lastEnd = startBase;
+      const preferNoise = targetType === "gas_giant" ? rng.next() > 0.2 : rng.next() > 0.5;
+      const chosenStyle = preferNoise ? "Noise" : "Texture";
       for (let i = 0; i < count; i += 1) {
-        const start = (i === 0 ? baseStart : lastEnd + THREE.MathUtils.lerp(0.06, 0.22, rng.next()));
-        const thickness = THREE.MathUtils.lerp(0.15, 0.55, rng.next());
+        const start = i === 0 ? startBase : lastEnd + THREE.MathUtils.lerp(0.05, 0.22, rng.next());
+        const thickness = THREE.MathUtils.lerp(0.12, 0.55, rng.next());
         const end = start + thickness;
         lastEnd = end;
         const ringHue = (hue + 0.1 + rng.next() * 0.2 + i * 0.06) % 1;
@@ -5568,6 +5870,15 @@ function surpriseMe() {
           spinSpeed,
           brightness
         });
+      }
+      if (params.rings.length > 0) {
+        const primaryRing = params.rings[0];
+        params.ringColor = primaryRing.color;
+        params.ringStart = primaryRing.start;
+        params.ringEnd = primaryRing.end;
+        params.ringOpacity = primaryRing.opacity;
+        params.ringNoiseScale = primaryRing.noiseScale;
+        params.ringNoiseStrength = primaryRing.noiseStrength;
       }
       params.ringAngle = THREE.MathUtils.lerp(-25, 25, rng.next());
       const globalSign = rng.next() > 0.5 ? 1 : -1;
@@ -5630,36 +5941,49 @@ function surpriseMe() {
   // Explosions (effects)
   params.explosionEnabled = true;
   params.explosionColor = `#${new THREE.Color().setHSL((hue + 0.04 + rng.next() * 0.1) % 1, 0.6, THREE.MathUtils.lerp(0.45, 0.7, rng.next())).getHexString()}`;
-  params.explosionStrength = THREE.MathUtils.lerp(0.6, 2.2, rng.next());
-  params.explosionParticleBase = Math.round(THREE.MathUtils.lerp(60, 220, rng.next()));
+  const explosionStrengthRange = targetType === "gas_giant" ? [0.5, 1.6] : [0.6, 2.2];
+  params.explosionStrength = THREE.MathUtils.lerp(explosionStrengthRange[0], explosionStrengthRange[1], rng.next());
+  const particleMin = targetType === "gas_giant" ? 30 : 60;
+  const particleMax = targetType === "gas_giant" ? 140 : 220;
+  params.explosionParticleBase = Math.round(THREE.MathUtils.lerp(particleMin, particleMax, rng.next()));
   params.explosionSize = THREE.MathUtils.lerp(0.5, 1.6, rng.next());
   params.explosionGravity = 0; // Always 0 since we removed gravity
   params.explosionDamping = THREE.MathUtils.lerp(0.78, 0.96, rng.next());
   params.explosionLifetime = THREE.MathUtils.lerp(0.8, 2.8, rng.next());
-  
+
   // Additional explosion variations for surprise me
   params.explosionColorVariation = THREE.MathUtils.lerp(0.2, 0.8, rng.next()); // How much color variation
   params.explosionSpeedVariation = THREE.MathUtils.lerp(0.5, 2.0, rng.next()); // Speed variation multiplier
   params.explosionSizeVariation = THREE.MathUtils.lerp(0.3, 1.5, rng.next()); // Size variation multiplier
-  
+
   // Impact settings for surprise me
-  params.impactStrengthMul = THREE.MathUtils.lerp(1.5, 4.0, rng.next());
-  params.impactSpeedMul = THREE.MathUtils.lerp(0.8, 2.0, rng.next());
-  params.impactMassMul = THREE.MathUtils.lerp(1.2, 3.0, rng.next());
+  params.impactStrengthMul = THREE.MathUtils.lerp(targetType === "gas_giant" ? 1.2 : 1.5, targetType === "gas_giant" ? 3.0 : 4.0, rng.next());
+  params.impactSpeedMul = THREE.MathUtils.lerp(targetType === "gas_giant" ? 0.7 : 0.8, targetType === "gas_giant" ? 1.6 : 2.0, rng.next());
+  params.impactMassMul = THREE.MathUtils.lerp(targetType === "gas_giant" ? 1.0 : 1.2, targetType === "gas_giant" ? 2.4 : 3.0, rng.next());
 
   // Moons
-  params.moonCount = Math.round(THREE.MathUtils.lerp(0, 4, rng.next()));
-  params.moonMassScale = THREE.MathUtils.lerp(0.6, 2.5, rng.next());
+  const moonMin = targetType === "gas_giant" ? 2 : 0;
+  const moonMax = targetType === "gas_giant" ? 7 : 4;
+  params.moonCount = Math.round(THREE.MathUtils.lerp(moonMin, moonMax, rng.next()));
+  params.moonMassScale = THREE.MathUtils.lerp(targetType === "gas_giant" ? 1.2 : 0.6, targetType === "gas_giant" ? 3.2 : 2.5, rng.next());
   moonSettings.splice(0, moonSettings.length);
   for (let i = 0; i < params.moonCount; i += 1) {
+    const sizeRange = targetType === "gas_giant" ? [0.12, 0.42] : [0.08, 0.4];
+    const distanceRange = targetType === "gas_giant" ? [4.5, 18.5] : [2.4, 12.5];
+    const orbitSpeedRange = targetType === "gas_giant" ? [0.25, 0.9] : [0.4, 1.2];
+    const inclinationRange = targetType === "gas_giant" ? [-12, 12] : [-25, 25];
+    const eccentricityRange = targetType === "gas_giant" ? [0.01, 0.25] : [0.02, 0.55];
+    const colorHue = targetType === "gas_giant" ? (hue + 0.45 + rng.next() * 0.15) % 1 : (hue + 0.5 + rng.next() * 0.2) % 1;
+    const colorSat = targetType === "gas_giant" ? 0.12 + rng.next() * 0.22 : 0.15 + rng.next() * 0.3;
+    const colorLum = targetType === "gas_giant" ? 0.55 + rng.next() * 0.25 : 0.6 + rng.next() * 0.2;
     moonSettings.push({
-      size: THREE.MathUtils.lerp(0.08, 0.4, rng.next()),
-      distance: THREE.MathUtils.lerp(2.4, 12.5, rng.next()),
-      orbitSpeed: THREE.MathUtils.lerp(0.4, 1.2, rng.next()),
-      inclination: THREE.MathUtils.lerp(-25, 25, rng.next()),
-      color: `#${new THREE.Color().setHSL((hue + 0.5 + rng.next() * 0.2) % 1, 0.15 + rng.next() * 0.3, 0.6 + rng.next() * 0.2).getHexString()}`,
+      size: THREE.MathUtils.lerp(sizeRange[0], sizeRange[1], rng.next()),
+      distance: THREE.MathUtils.lerp(distanceRange[0], distanceRange[1], rng.next()),
+      orbitSpeed: THREE.MathUtils.lerp(orbitSpeedRange[0], orbitSpeedRange[1], rng.next()),
+      inclination: THREE.MathUtils.lerp(inclinationRange[0], inclinationRange[1], rng.next()),
+      color: `#${new THREE.Color().setHSL(colorHue, colorSat, colorLum).getHexString()}`,
       phase: rng.next() * Math.PI * 2,
-      eccentricity: THREE.MathUtils.lerp(0.02, 0.55, rng.next())
+      eccentricity: THREE.MathUtils.lerp(eccentricityRange[0], eccentricityRange[1], rng.next())
     });
   }
 
@@ -5681,6 +6005,8 @@ function surpriseMe() {
     Object.values(guiControllers).forEach((ctrl) => ctrl?.updateDisplay?.());
   } catch {}
 
+  guiControllers.refreshPlanetTypeVisibility?.(params.planetType);
+
   normalizeMoonSettings();
   handleSeedChanged({ skipShareUpdate: true });
   updatePalette();
@@ -5700,6 +6026,7 @@ function surpriseMe() {
 
 // Deform planet mesh around an impact point to create a simple crater
 function applyImpactDeformation(worldPosition, impactRadius, { strength = 1, directionWorld = null, obliquity = 0 } = {}) {
+  if (params.planetType === "gas_giant") return;
   if (!planetMesh || !planetMesh.geometry || !worldPosition) return;
   const geometry = planetMesh.geometry;
   const positions = geometry.getAttribute('position');

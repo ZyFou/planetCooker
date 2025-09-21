@@ -202,3 +202,145 @@ export function generateAnnulusTexture({ innerRatio, color, opacity = 1, noiseSc
 }
 
 
+export function generateGasGiantTexture({
+  seed = "gas",
+  strata = [],
+  noiseScale = 2.4,
+  noiseStrength = 0.35,
+  bandContrast = 0.45,
+  bandSoftness = 0.22
+} = {}) {
+  const width = 2048;
+  const height = 1024;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+
+  const buildFallbackTexture = () => {
+    const fallback = new THREE.CanvasTexture(canvas);
+    fallback.colorSpace = THREE.SRGBColorSpace;
+    fallback.wrapS = THREE.RepeatWrapping;
+    fallback.wrapT = THREE.ClampToEdgeWrapping;
+    fallback.anisotropy = 8;
+    fallback.generateMipmaps = true;
+    fallback.minFilter = THREE.LinearMipMapLinearFilter;
+    fallback.magFilter = THREE.LinearFilter;
+    fallback.needsUpdate = true;
+    return fallback;
+  };
+
+  if (!ctx) {
+    return buildFallbackTexture();
+  }
+
+  const normalized = (() => {
+    if (!Array.isArray(strata) || strata.length === 0) {
+      return [
+        { color: "#d9b48f", size: 0.18 },
+        { color: "#a66e3f", size: 0.22 },
+        { color: "#f1d7b5", size: 0.2 },
+        { color: "#8a4f2b", size: 0.18 }
+      ];
+    }
+    return strata.map((layer) => ({
+      color: layer.color || "#ffffff",
+      size: Math.max(0.01, layer.size || 0.01)
+    }));
+  })();
+
+  const totalSize = normalized.reduce((sum, layer) => sum + layer.size, 0) || 1;
+  const layers = normalized.map((layer, index) => {
+    const color = new THREE.Color(layer.color);
+    return {
+      start: index === 0 ? 0 : normalized.slice(0, index).reduce((sum, l) => sum + l.size, 0) / totalSize,
+      end: normalized.slice(0, index + 1).reduce((sum, l) => sum + l.size, 0) / totalSize,
+      color,
+      highlight: color.clone().lerp(new THREE.Color(1, 1, 1), 0.45),
+      shadow: color.clone().lerp(new THREE.Color(0, 0, 0), 0.35),
+      index
+    };
+  });
+
+  const rngSeed = `${seed}-gas-${width}-${height}`;
+  const rand = (() => {
+    let s = Array.from(rngSeed).reduce((acc, ch) => acc + ch.charCodeAt(0), 0) >>> 0;
+    return () => {
+      let t = (s += 0x6d2b79f5);
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  })();
+
+  const noise = createNoise3D(() => rand());
+  const image = ctx.createImageData(width, height);
+  const data = image.data;
+
+  const clamp01 = (value) => Math.min(1, Math.max(0, value));
+  const sampleLayer = (v) => {
+    const value = clamp01(v);
+    for (let i = 0; i < layers.length; i += 1) {
+      const layer = layers[i];
+      if (value >= layer.start && value <= layer.end) {
+        return layer;
+      }
+    }
+    return layers[layers.length - 1];
+  };
+
+  const softness = THREE.MathUtils.lerp(0.6, 3.6, clamp01(bandSoftness));
+  const contrast = clamp01(bandContrast);
+  const nStrength = clamp01(noiseStrength);
+  const nScale = Math.max(0.2, noiseScale);
+
+  for (let y = 0; y < height; y += 1) {
+    const v = y / (height - 1);
+    const latWarp = noise(0.1, v * nScale, 7.31) * 0.5 + 0.5;
+    const warpedV = clamp01(v + (latWarp - 0.5) * 0.12 * (0.25 + bandSoftness));
+    const layer = sampleLayer(warpedV);
+    const bandHeight = Math.max(1e-5, layer.end - layer.start);
+    const localT = clamp01((warpedV - layer.start) / bandHeight);
+    const bandProfileBase = clamp01(1 - Math.abs(localT - 0.5) * 2);
+    const bandProfile = Math.pow(bandProfileBase, softness);
+
+    for (let x = 0; x < width; x += 1) {
+      const u = x / (width - 1);
+      const idx = (y * width + x) * 4;
+
+      const turbulence = noise(u * nScale * 2.2, warpedV * nScale * 0.6, layer.index * 1.7 + 0.5) * 0.5 + 0.5;
+      const flow = noise(u * nScale * 0.7 + warpedV * 3.1, warpedV * nScale * 1.6, layer.index * 0.9 + 11.8) * 0.5 + 0.5;
+      const swirl = noise(u * nScale * 1.2, warpedV * nScale * 1.8, layer.index * 2.4 + 4.2) * 0.5 + 0.5;
+      const detail = clamp01((turbulence * 0.5 + flow * 0.35 + swirl * 0.15) - 0.5);
+      const mixNoise = clamp01(0.5 + detail * nStrength);
+
+      const equatorBoost = Math.pow(1 - Math.abs(warpedV - 0.5) * 2, 2.2);
+      const mixBase = clamp01(THREE.MathUtils.lerp(0.5, bandProfile, contrast));
+      const mix = clamp01(mixBase + (mixNoise - 0.5) * 0.6 + equatorBoost * 0.08 * (1 - contrast));
+
+      const r = THREE.MathUtils.lerp(layer.shadow.r, layer.highlight.r, mix) * 255;
+      const g = THREE.MathUtils.lerp(layer.shadow.g, layer.highlight.g, mix) * 255;
+      const b = THREE.MathUtils.lerp(layer.shadow.b, layer.highlight.b, mix) * 255;
+      const alpha = clamp01(0.72 + (mix - 0.5) * 0.18 + equatorBoost * 0.05);
+
+      data[idx + 0] = Math.max(0, Math.min(255, Math.round(r)));
+      data[idx + 1] = Math.max(0, Math.min(255, Math.round(g)));
+      data[idx + 2] = Math.max(0, Math.min(255, Math.round(b)));
+      data[idx + 3] = Math.max(0, Math.min(255, Math.round(alpha * 255)));
+    }
+  }
+
+  ctx.putImageData(image, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.anisotropy = 8;
+  texture.generateMipmaps = true;
+  texture.minFilter = THREE.LinearMipMapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+
