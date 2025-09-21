@@ -98,6 +98,59 @@ button:hover {
   min-height: 0;
 }
 
+/* Photo mode controls */
+.photo-toggle {
+  position: absolute;
+  top: 16px; /* desktop: top-right overlay on canvas */
+  right: 16px;
+  z-index: 14;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid rgba(135, 169, 218, 0.4);
+  background: rgba(24, 36, 68, 0.8);
+  color: #d9e6ff;
+  font-size: 1.3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s ease; /* no movement */
+  backdrop-filter: blur(8px);
+}
+
+.photo-toggle:hover {
+  background: rgba(53, 80, 131, 0.9);
+  transform: none; /* keep fixed */
+}
+
+
+.photo-shutter {
+  position: absolute;
+  bottom: 16px; /* same as mobile: bottom center */
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 14;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: 3px solid rgba(217, 230, 255, 0.95);
+  background: rgba(8, 13, 26, 0.85);
+  color: #d9e6ff;
+  font-size: 1.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s ease; /* no movement */
+  box-shadow: 0 10px 28px rgba(5, 10, 26, 0.6);
+}
+
+.photo-shutter:hover {
+  background: rgba(18, 28, 52, 0.92);
+  transform: translateX(-50%); /* keep position, override global hover transform */
+}
+
 .camera-mode-btn {
   position: absolute;
   right: 16px;
@@ -578,6 +631,30 @@ canvas {
   .mobile-focus-menu[hidden] {
     display: none !important;
   }
+
+  /* Reposition photo controls on mobile */
+  .photo-toggle {
+    top: auto;
+    bottom: 72px; /* just above the focus button */
+    right: 16px;
+    width: 48px;
+    height: 48px;
+    font-size: 1.3rem;
+    z-index: 14;
+  }
+
+  .photo-shutter {
+    top: auto;
+    bottom: 16px;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    width: 60px;
+    height: 60px;
+    font-size: 1.4rem;
+    border-width: 3px;
+    z-index: 14;
+  }
 }
 
 #orbit-stability {
@@ -890,6 +967,48 @@ body.preview-mode #panel-scrim,
 body.preview-mode .mobile-focus-toggle,
 body.preview-mode .mobile-focus-menu {
   display: none !important;
+}
+
+/* Hide photo controls in preview embed */
+body.preview-mode .photo-toggle,
+body.preview-mode .photo-shutter {
+  display: none !important;
+}
+
+/* Photo mode layout: hide all UI except the photo buttons */
+body.photo-mode #header,
+body.photo-mode #info,
+body.photo-mode .hint,
+body.photo-mode #panel-scrim,
+body.photo-mode .mobile-menu,
+body.photo-mode .mobile-controls-toggle,
+body.photo-mode .desktop-only,
+body.photo-mode .header-actions,
+body.photo-mode #control-search-bar,
+body.photo-mode #hud-fps,
+body.photo-mode .mobile-focus-toggle,
+body.photo-mode .mobile-focus-menu {
+  display: none !important;
+}
+
+body.photo-mode #main {
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  width: 100vw;
+  position: fixed;
+  top: 0;
+  left: 0;
+}
+
+body.photo-mode #scene {
+  position: relative;
+  flex: 1;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 #exit-overlay {

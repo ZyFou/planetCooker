@@ -49,6 +49,8 @@ const mobileHomeButton = document.getElementById("mobile-home");
 const helpButton = document.getElementById("help");
 const mobileHelpButton = document.getElementById("mobile-help");
 const exitOverlay = document.getElementById("exit-overlay");
+const photoToggleButton = document.getElementById("photo-toggle");
+const photoShutterButton = document.getElementById("photo-shutter");
 const previewMode = new URLSearchParams(window.location.search).get("preview") === "1";
 if (previewMode) {
   document.body.classList.add("preview-mode");
@@ -69,7 +71,7 @@ if (!controlsContainer) {
   throw new Error("Missing controls container element");
 }
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(sceneContainer.clientWidth, sceneContainer.clientHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -96,6 +98,149 @@ if (previewMode) {
   controls.autoRotate = true;
   controls.autoRotateSpeed = 0.35;
 }
+
+// Photo mode state
+let isPhotoMode = false;
+
+function enterPhotoMode() {
+  if (previewMode) return; // no photo mode in embed
+  isPhotoMode = true;
+  document.body.classList.add("photo-mode");
+  if (photoToggleButton) {
+    photoToggleButton.setAttribute("aria-pressed", "true");
+    photoToggleButton.textContent = "🌍";
+    photoToggleButton.title = "Exit photo mode";
+  }
+  if (photoShutterButton) photoShutterButton.hidden = false;
+  positionPhotoButtons();
+}
+
+function exitPhotoMode() {
+  isPhotoMode = false;
+  document.body.classList.remove("photo-mode");
+  if (photoToggleButton) {
+    photoToggleButton.setAttribute("aria-pressed", "false");
+    photoToggleButton.textContent = "📷";
+    photoToggleButton.title = "Photo mode";
+  }
+  if (photoShutterButton) photoShutterButton.hidden = true;
+  positionPhotoButtons();
+}
+
+function togglePhotoMode() {
+  if (isPhotoMode) enterUiMode(); else enterPhotoMode();
+}
+
+function enterUiMode() {
+  exitPhotoMode();
+}
+
+function dataURLtoBlob(dataurl) {
+  const parts = dataurl.split(',');
+  const mime = parts[0].match(/:(.*?);/)[1];
+  const bstr = atob(parts[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n);
+  }
+  return new Blob([u8arr], { type: mime });
+}
+
+function takeScreenshot() {
+  try {
+    // Force one render to be safe
+    renderer.render(scene, camera);
+    const dataURL = renderer.domElement.toDataURL("image/png");
+    const blob = dataURLtoBlob(dataURL);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    link.href = url;
+    link.download = `planet-studio-${timestamp}.png`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  } catch (err) {
+    console.warn("Screenshot failed", err);
+  }
+}
+
+photoToggleButton?.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (isPhotoMode) {
+    exitPhotoMode();
+  } else {
+    enterPhotoMode();
+  }
+});
+
+photoShutterButton?.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  takeScreenshot();
+});
+
+// Position photo buttons relative to the actual canvas bounds (desktop only)
+function positionPhotoButtons() {
+  if (!renderer || !renderer.domElement) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  const isMobile = isMobileLayout();
+
+  // Toggle button
+  if (photoToggleButton) {
+    if (isMobile) {
+      // Let CSS handle mobile placement
+      photoToggleButton.style.position = "";
+      photoToggleButton.style.top = "";
+      photoToggleButton.style.left = "";
+      photoToggleButton.style.right = "";
+      photoToggleButton.style.bottom = "";
+      photoToggleButton.style.transform = "";
+    } else {
+      const w = photoToggleButton.offsetWidth || 48;
+      const h = photoToggleButton.offsetHeight || 48;
+      const top = Math.round(rect.bottom - 16 - h);
+      const left = Math.round(rect.right - 16 - w);
+      photoToggleButton.style.position = "fixed";
+      photoToggleButton.style.top = `${top}px`;
+      photoToggleButton.style.left = `${left}px`;
+      photoToggleButton.style.right = "";
+      photoToggleButton.style.bottom = "";
+      photoToggleButton.style.transform = "none";
+      photoToggleButton.style.zIndex = "100";
+    }
+  }
+  
+  // Shutter button
+  if (photoShutterButton) {
+    if (isMobile) {
+      // Let CSS handle mobile placement
+      photoShutterButton.style.position = "";
+      photoShutterButton.style.top = "";
+      photoShutterButton.style.left = "";
+      photoShutterButton.style.right = "";
+      photoShutterButton.style.bottom = "";
+      photoShutterButton.style.transform = "";
+    } else {
+      const h = photoShutterButton.offsetHeight || 60;
+      const top = Math.round(rect.bottom - 16 - h);
+      const left = Math.round(rect.left + rect.width / 2);
+      photoShutterButton.style.position = "fixed";
+      photoShutterButton.style.top = `${top}px`;
+      photoShutterButton.style.left = `${left}px`;
+      photoShutterButton.style.right = "";
+      photoShutterButton.style.bottom = "";
+      photoShutterButton.style.transform = "translateX(-50%)";
+      photoShutterButton.style.zIndex = "100";
+    }
+  }
+}
+
+// Keep positions updated
+window.addEventListener("resize", positionPhotoButtons);
+// Initial position after first render/layout
+requestAnimationFrame(() => positionPhotoButtons());
 
 const ambientLight = new THREE.AmbientLight(0x6f87b6, 0.35);
 scene.add(ambientLight);
@@ -2362,6 +2507,20 @@ window.addEventListener("resize", onWindowResize);
 
 if (!previewMode) {
   document.addEventListener("keydown", (event) => {
+    // Toggle photo mode with P, take photo with Space when in photo mode
+    if (event.key.toLowerCase() === "p") {
+      if (isPhotoMode) {
+        exitPhotoMode();
+      } else {
+        enterPhotoMode();
+      }
+      return;
+    }
+    if (isPhotoMode && (event.code === "Space" || event.key === " ")) {
+      event.preventDefault();
+      takeScreenshot();
+      return;
+    }
     if (event.key.toLowerCase() === "h") {
       guiVisible = !guiVisible;
       if (guiVisible) {
@@ -2371,7 +2530,11 @@ if (!previewMode) {
       }
     }
     if (event.key === "Escape") {
-      closeMobilePanel();
+      if (isPhotoMode) {
+        exitPhotoMode();
+      } else {
+        closeMobilePanel();
+      }
     }
   });
 }
