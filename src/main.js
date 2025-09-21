@@ -3060,6 +3060,14 @@ function setPlanetType(type, { skipShareUpdate = false, fromUI = false } = {}) {
   guiControllers.refreshPlanetTypeVisibility?.(nextType);
 }
 
+function rebuildPlanet() {
+  if (params.planetType === "gas_giant") {
+    rebuildGasGiantPlanet();
+  } else {
+    rebuildRockyPlanet();
+  }
+}
+
 function rebuildRockyPlanet() {
   planetMesh.material = planetMaterial;
   planetMesh.renderOrder = 0;
