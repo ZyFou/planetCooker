@@ -65,6 +65,12 @@ export function setupRingControls({
 
 		normalizeRingSettings();
 		const parent = getRingsFolder?.() || gui;
+		// No folders when there are no rings
+		if (!Array.isArray(params.rings) || params.rings.length === 0) {
+			updateRings?.();
+			applyControlSearch?.({ scrollToFirst: false });
+			return;
+		}
 		params.rings.forEach((ring, index) => {
 			const folder = registerFolder(parent.addFolder(`Ring ${index + 1}`));
 			folder

@@ -3858,26 +3858,27 @@ function updateRings() {
     return;
   }
 
-  // Backwards compatibility: single-ring params vs multi-ring array
-  const hasArray = Array.isArray(params.rings);
+  // Use multi-ring array only; if empty, show no rings
   const angle = THREE.MathUtils.degToRad(params.ringAngle || 0);
   const segments = 256;
-
-  const ringDefs = hasArray && params.rings.length
-    ? params.rings
-    : [
-        {
-          style: (params.ringStyle || "Texture"), // Texture or Noise
-          color: params.ringColor || "#c7b299",
-          start: Math.max(1.05, params.ringStart ?? 1.6),
-          end: Math.max((params.ringStart ?? 1.6) + 0.05, params.ringEnd ?? 2.4),
-          opacity: THREE.MathUtils.clamp(params.ringOpacity ?? 0.6, 0, 1),
-          noiseScale: Math.max(0.2, params.ringNoiseScale ?? 3.2),
-          noiseStrength: THREE.MathUtils.clamp(params.ringNoiseStrength ?? 0.55, 0, 1),
-          spinSpeed: params.ringSpinSpeed ?? 0.05,
-          brightness: 1
-        }
-      ];
+  const ringDefs = Array.isArray(params.rings) ? params.rings : [];
+  if (ringDefs.length === 0) {
+    // Clear any existing meshes/textures and exit
+    ringMeshes.forEach((mesh) => {
+      if (!mesh) return;
+      if (mesh.material) {
+        mesh.material.map = null;
+        mesh.material.alphaMap = null;
+      }
+      if (mesh.parent) mesh.parent.remove(mesh);
+      if (mesh.geometry) mesh.geometry.dispose();
+      if (mesh.material) mesh.material.dispose();
+    });
+    ringMeshes = [];
+    ringTextures.forEach((tex) => tex?.dispose?.());
+    ringTextures = [];
+    return;
+  }
 
   // Ensure we have matching number of meshes
   while (ringMeshes.length > ringDefs.length) {
@@ -5571,9 +5572,15 @@ function surpriseMe() {
       params.ringAngle = THREE.MathUtils.lerp(-25, 25, rng.next());
       const globalSign = rng.next() > 0.5 ? 1 : -1;
       params.ringSpinSpeed = globalSign * THREE.MathUtils.lerp(0.01, 0.28, rng.next());
+      // Ensure GUI reflects new ring array
+      params.ringCount = params.rings.length;
+      guiControllers.ringCount?.setValue?.(params.ringCount);
+      guiControllers.rebuildRingControls?.();
     } else {
       params.rings = [];
       params.ringCount = 0;
+      guiControllers.ringCount?.setValue?.(params.ringCount);
+      guiControllers.rebuildRingControls?.();
     }
   }
 
