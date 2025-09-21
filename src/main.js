@@ -102,6 +102,18 @@ if (previewMode) {
 // Photo mode state
 let isPhotoMode = false;
 
+function relayoutForMode() {
+  // Allow CSS class changes to apply before measuring
+  requestAnimationFrame(() => {
+    try {
+      onWindowResize();
+    } catch {}
+    try {
+      positionPhotoButtons();
+    } catch {}
+  });
+}
+
 function enterPhotoMode() {
   if (previewMode) return; // no photo mode in embed
   isPhotoMode = true;
@@ -112,7 +124,7 @@ function enterPhotoMode() {
     photoToggleButton.title = "Exit photo mode";
   }
   if (photoShutterButton) photoShutterButton.hidden = false;
-  positionPhotoButtons();
+  relayoutForMode();
 }
 
 function exitPhotoMode() {
@@ -124,7 +136,7 @@ function exitPhotoMode() {
     photoToggleButton.title = "Photo mode";
   }
   if (photoShutterButton) photoShutterButton.hidden = true;
-  positionPhotoButtons();
+  relayoutForMode();
 }
 
 function togglePhotoMode() {
