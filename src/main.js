@@ -956,7 +956,19 @@ const params = {
   // Gas giant parameters
   strataCount: 4,
   strataColors: ["#c7b59a", "#e6d8b5", "#d9c7a0", "#b8a58f"],
+  strataColor0: "#c7b59a",
+  strataColor1: "#e6d8b5", 
+  strataColor2: "#d9c7a0",
+  strataColor3: "#b8a58f",
+  strataColor4: "#a68b7a",
+  strataColor5: "#9a7b6a",
   strataSizes: [0.3, 0.25, 0.2, 0.25],
+  strataSize0: 0.3,
+  strataSize1: 0.25,
+  strataSize2: 0.2,
+  strataSize3: 0.25,
+  strataSize4: 0.0,
+  strataSize5: 0.0,
   gasGiantNoiseScale: 2.0,
   gasGiantNoiseStrength: 0.4
 };
@@ -1062,6 +1074,12 @@ const presets = {
     oceanLevel: 0.6,
     strataCount: 4,
     strataColors: ["#d4c4a8", "#c7b59a", "#b8a58f", "#a68b7a"],
+    strataColor0: "#d4c4a8",
+    strataColor1: "#c7b59a",
+    strataColor2: "#b8a58f", 
+    strataColor3: "#a68b7a",
+    strataColor4: "#a68b7a",
+    strataColor5: "#9a7b6a",
     strataSizes: [0.35, 0.25, 0.2, 0.2],
     gasGiantNoiseScale: 2.2,
     gasGiantNoiseStrength: 0.3,
@@ -1111,6 +1129,12 @@ const presets = {
     oceanLevel: 0.65,
     strataCount: 4,
     strataColors: ["#f0e6d2", "#e6d8b5", "#d9c7a0", "#c7b59a"],
+    strataColor0: "#f0e6d2",
+    strataColor1: "#e6d8b5",
+    strataColor2: "#d9c7a0", 
+    strataColor3: "#c7b59a",
+    strataColor4: "#b8a58f",
+    strataColor5: "#a68b7a",
     strataSizes: [0.3, 0.3, 0.2, 0.2],
     gasGiantNoiseScale: 2.0,
     gasGiantNoiseStrength: 0.35,
@@ -1248,6 +1272,12 @@ const presets = {
     oceanLevel: 0.7,
     strataCount: 4,
     strataColors: ["#a8d4e0", "#86dceb", "#6bb8d6", "#54a5c4"],
+    strataColor0: "#a8d4e0",
+    strataColor1: "#86dceb",
+    strataColor2: "#6bb8d6", 
+    strataColor3: "#54a5c4",
+    strataColor4: "#4298b8",
+    strataColor5: "#3a8ba8",
     strataSizes: [0.3, 0.25, 0.25, 0.2],
     gasGiantNoiseScale: 2.5,
     gasGiantNoiseStrength: 0.25,
@@ -1304,6 +1334,12 @@ const presets = {
     oceanLevel: 0.72,
     strataCount: 4,
     strataColors: ["#2e60bf", "#5b8ee6", "#7fb0ff", "#a8c8f0"],
+    strataColor0: "#2e60bf",
+    strataColor1: "#5b8ee6",
+    strataColor2: "#7fb0ff", 
+    strataColor3: "#a8c8f0",
+    strataColor4: "#8bb3e6",
+    strataColor5: "#7aa3dc",
     strataSizes: [0.3, 0.25, 0.25, 0.2],
     gasGiantNoiseScale: 2.8,
     gasGiantNoiseStrength: 0.22,
@@ -1736,6 +1772,26 @@ let sunPulsePhase = 0;
 let cloudTexOffsetX = 0;
 let isApplyingStarPreset = false;
 
+// Function to sync individual color properties with strataColors array
+function syncStrataColors() {
+  if (!params.strataColors) params.strataColors = [];
+  for (let i = 0; i < 6; i++) {
+    if (params[`strataColor${i}`] !== undefined) {
+      params.strataColors[i] = params[`strataColor${i}`];
+    }
+  }
+}
+
+// Function to sync individual size properties with strataSizes array
+function syncStrataSizes() {
+  if (!params.strataSizes) params.strataSizes = [];
+  for (let i = 0; i < 6; i++) {
+    if (params[`strataSize${i}`] !== undefined) {
+      params.strataSizes[i] = params[`strataSize${i}`];
+    }
+  }
+}
+
 const { registerFolder, unregisterFolder, applyControlSearch } = initControlSearch({
   controlsContainer,
   searchInput: controlSearchInput,
@@ -1769,7 +1825,11 @@ setupPlanetControls({
   initMoonPhysics,
   getIsApplyingPreset: () => isApplyingPreset,
   getIsApplyingStarPreset: () => isApplyingStarPreset,
-  onPresetChange: (value) => applyPreset(value),
+  onPresetChange: (value) => {
+    applyPreset(value);
+    syncStrataColors();
+    syncStrataSizes();
+  },
   onStarPresetChange: (value) => applyStarPreset(value)
 });
 
@@ -2629,6 +2689,8 @@ const tmpQuatB = new THREE.Quaternion();
 async function initializeApp() {
   const loadedFromHash = await initFromHash();
   if (!loadedFromHash) {
+    syncStrataColors();
+    syncStrataSizes();
     updatePalette();
     updateClouds();
     updateCore();
@@ -5639,12 +5701,20 @@ function surpriseMe() {
       `#${new THREE.Color().setHSL(hue3, 0.6, 0.4).getHexString()}`,
       `#${new THREE.Color().setHSL((hue + 0.5) % 1, 0.45, 0.5).getHexString()}`
     ];
+    // Sync individual color properties
+    for (let i = 0; i < 6; i++) {
+      params[`strataColor${i}`] = params.strataColors[i] || params.strataColors[0];
+    }
     params.strataSizes = [
       THREE.MathUtils.lerp(0.2, 0.4, rng.next()),
       THREE.MathUtils.lerp(0.2, 0.3, rng.next()),
       THREE.MathUtils.lerp(0.15, 0.25, rng.next()),
       THREE.MathUtils.lerp(0.2, 0.3, rng.next())
     ];
+    // Sync individual size properties
+    for (let i = 0; i < 6; i++) {
+      params[`strataSize${i}`] = params.strataSizes[i] ?? 0;
+    }
     params.gasGiantNoiseScale = THREE.MathUtils.lerp(1.5, 3.5, rng.next());
     params.gasGiantNoiseStrength = THREE.MathUtils.lerp(0.2, 0.6, rng.next());
 

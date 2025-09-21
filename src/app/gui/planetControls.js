@@ -144,19 +144,34 @@ export function setupPlanetControls({
       scheduleShareUpdate();
     });
 
-  guiControllers.strataColors = gasGiantFolder.add(params, "strataColors")
-    .name("Strata Colors")
-    .onChange(() => {
-      markPlanetDirty();
-      scheduleShareUpdate();
-    });
+  // Create individual color controllers for each stratum
+  guiControllers.strataColors = [];
+  for (let i = 0; i < 6; i++) {
+    const colorController = gasGiantFolder.addColor(params, `strataColor${i}`)
+      .name(`Strata ${i + 1}`)
+      .onChange(() => {
+        // Update the strataColors array when individual colors change
+        if (!params.strataColors) params.strataColors = [];
+        params.strataColors[i] = params[`strataColor${i}`];
+        markPlanetDirty();
+        scheduleShareUpdate();
+      });
+    guiControllers.strataColors.push(colorController);
+  }
 
-  guiControllers.strataSizes = gasGiantFolder.add(params, "strataSizes")
-    .name("Strata Sizes")
-    .onChange(() => {
-      markPlanetDirty();
-      scheduleShareUpdate();
-    });
+  // Create individual size sliders per stratum (0..1 each). We'll normalize in texture generation
+  guiControllers.strataSizes = [];
+  for (let i = 0; i < 6; i++) {
+    const sizeController = gasGiantFolder.add(params, `strataSize${i}`, 0.0, 1.0, 0.01)
+      .name(`Size ${i + 1}`)
+      .onChange(() => {
+        if (!params.strataSizes) params.strataSizes = [];
+        params.strataSizes[i] = params[`strataSize${i}`];
+        markPlanetDirty();
+        scheduleShareUpdate();
+      });
+    guiControllers.strataSizes.push(sizeController);
+  }
 
   guiControllers.gasGiantNoiseScale = gasGiantFolder.add(params, "gasGiantNoiseScale", 0.1, 4.0, 0.05)
     .name("Noise Scale")
@@ -388,8 +403,8 @@ export function setupPlanetControls({
 
     const gasGiantControllers = [
       guiControllers.strataCount,
-      guiControllers.strataColors,
-      guiControllers.strataSizes,
+      ...(Array.isArray(guiControllers.strataColors) ? guiControllers.strataColors : (guiControllers.strataColors ? [guiControllers.strataColors] : [])),
+      ...(Array.isArray(guiControllers.strataSizes) ? guiControllers.strataSizes : (guiControllers.strataSizes ? [guiControllers.strataSizes] : [])),
       guiControllers.gasGiantNoiseScale,
       guiControllers.gasGiantNoiseStrength
     ];
