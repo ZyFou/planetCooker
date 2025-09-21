@@ -25,7 +25,9 @@ export function setupPlanetControls({
   onStarPresetChange
 }) {
   // Build grouped preset UI: base presets + Real Worlds
-  const presetNames = Object.keys(presets);
+  const allPresetNames = Object.keys(presets);
+  const realWorlds = new Set(["Mercury", "Venus", "Earth-like", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune"]);
+  const presetNames = allPresetNames.filter((n) => !realWorlds.has(n));
   const shouldSkipStarUpdate = () => (getIsApplyingPreset?.() || getIsApplyingStarPreset?.());
   const presetFolder = registerFolder(gui.addFolder("Presets"), { close: true });
   const presetController = presetFolder.add(params, "preset", presetNames).name("Preset");
@@ -58,6 +60,16 @@ export function setupPlanetControls({
   realWorldsFolder.add(real, "neptune").name("Neptune");
 
   const planetFolder = registerFolder(gui.addFolder("Planet"), { close: true });
+
+  // Planet Type selector
+  guiControllers.planetType = planetFolder
+    .add(params, "planetType", ["Terrestrial", "Gas Giant"]) // added type
+    .name("Planet Type")
+    .onChange(() => {
+      guiControllers.refreshPlanetTypeVisibility?.();
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
 
   guiControllers.seed = planetFolder
     .add(params, "seed")
@@ -123,6 +135,94 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+
+  // Gas Giant controls (dynamic strata)
+  const gasStrataFolders = [];
+  const gasFolder = registerFolder(planetFolder.addFolder("Gas Giant"), { close: true });
+
+  function ensureGasParams() {
+    if (!Array.isArray(params.gasStrata)) {
+      params.gasStrata = [
+        { color: "#c9b48f", size: 1 },
+        { color: "#a68d6a", size: 1 },
+        { color: "#d8c8a8", size: 1 },
+        { color: "#8a7a5a", size: 1 },
+        { color: "#e6dcc4", size: 1 }
+      ];
+    }
+    if (typeof params.gasStrataCount !== "number") {
+      params.gasStrataCount = Math.max(1, params.gasStrata.length);
+    }
+  }
+
+  function normalizeGasStrata() {
+    ensureGasParams();
+    while (params.gasStrata.length < params.gasStrataCount) {
+      params.gasStrata.push({ color: "#c9b48f", size: 1 });
+    }
+    while (params.gasStrata.length > params.gasStrataCount) {
+      params.gasStrata.pop();
+    }
+  }
+
+  function rebuildGasStrataControls() {
+    gasStrataFolders.splice(0, gasStrataFolders.length).forEach((folder) => {
+      folder.destroy();
+    });
+    if (!Array.isArray(params.gasStrata) || params.gasStrata.length === 0) return;
+    params.gasStrata.forEach((band, index) => {
+      const folder = registerFolder(gasFolder.addFolder(`Band ${index + 1}`));
+      folder
+        .addColor(band, "color").name("Color").onChange(() => {
+          markPlanetDirty();
+          scheduleShareUpdate();
+        });
+      folder
+        .add(band, "size", 0.1, 3, 0.01).name("Size").onChange(() => {
+          markPlanetDirty();
+          scheduleShareUpdate();
+        });
+      gasStrataFolders.push(folder);
+    });
+  }
+
+  ensureGasParams();
+  normalizeGasStrata();
+
+  guiControllers.gasStrataCount = gasFolder.add(params, "gasStrataCount", 1, 12, 1)
+    .name("Band Count")
+    .onChange(() => {
+      normalizeGasStrata();
+      rebuildGasStrataControls();
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.gasNoiseScale = gasFolder.add(params, "gasNoiseScale", 0.2, 10, 0.05)
+    .name("Noise Scale")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  guiControllers.gasNoiseStrength = gasFolder.add(params, "gasNoiseStrength", 0, 2, 0.01)
+    .name("Noise Strength")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  guiControllers.gasBandTwist = gasFolder.add(params, "gasBandTwist", -2, 2, 0.01)
+    .name("Band Twist")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  guiControllers.gasBandSharpness = gasFolder.add(params, "gasBandSharpness", 0.05, 3, 0.01)
+    .name("Band Sharpness")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  rebuildGasStrataControls();
 
   const paletteFolder = registerFolder(gui.addFolder("Palette"), { close: true });
 
@@ -722,6 +822,60 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+
+  // Toggle control visibility based on Planet Type
+  function refreshPlanetTypeVisibility() {
+    const isGas = params.planetType === "Gas Giant";
+
+    // Structural controllers to hide for gas giants
+    [
+      guiControllers.subdivisions,
+      guiControllers.noiseLayers,
+      guiControllers.noiseFrequency,
+      guiControllers.noiseAmplitude,
+      guiControllers.persistence,
+      guiControllers.lacunarity,
+      guiControllers.oceanLevel,
+      guiControllers.colorOcean,
+      guiControllers.colorShallow,
+      guiControllers.colorFoam,
+      guiControllers.foamEnabled,
+      guiControllers.colorLow,
+      guiControllers.colorMid,
+      guiControllers.colorHigh,
+      guiControllers.freezingEnabled,
+      guiControllers.iceColor,
+      guiControllers.globalTemperature,
+      guiControllers.freezingThreshold,
+      guiControllers.iceIntensity,
+      guiControllers.poleFreezeRadius,
+      guiControllers.equatorFreezeRadius
+    ].forEach((c) => {
+      if (!c) return;
+      if (isGas) c.hide(); else c.show();
+    });
+
+    // Gas-only folder visibility via its controllers
+    [
+      guiControllers.gasStrataCount,
+      guiControllers.gasNoiseScale,
+      guiControllers.gasNoiseStrength,
+      guiControllers.gasBandTwist,
+      guiControllers.gasBandSharpness
+    ].forEach((c) => {
+      if (!c) return;
+      if (isGas) c.show(); else c.hide();
+    });
+
+    // Also hide/show individual Gas Band folders
+    gasStrataFolders.forEach((folder) => {
+      try { isGas ? folder.show() : folder.hide(); } catch {}
+    });
+
+    // Core and atmosphere controls remain visible for both types
+  }
+  guiControllers.refreshPlanetTypeVisibility = refreshPlanetTypeVisibility;
+  refreshPlanetTypeVisibility();
 
   // Rings (overview + global controls; per-ring controls are managed in ringControls.js)
   const ringsFolder = registerFolder(environmentFolder.addFolder("Rings"), { close: true });

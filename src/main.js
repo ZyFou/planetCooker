@@ -10,7 +10,7 @@ import { setupPlanetControls } from "./app/gui/planetControls.js";
 import { setupMoonControls } from "./app/gui/moonControls.js";
 import { setupRingControls } from "./app/gui/ringControls.js";
 import { createStarfield as createStarfieldExt, createSunTexture as createSunTextureExt } from "./app/stars.js";
-import { generateRingTexture as generateRingTextureExt, generateAnnulusTexture as generateAnnulusTextureExt } from "./app/textures.js";
+import { generateRingTexture as generateRingTextureExt, generateAnnulusTexture as generateAnnulusTextureExt, generateGasGiantTexture as generateGasGiantTextureExt } from "./app/textures.js";
 import { encodeShare as encodeShareExt, decodeShare as decodeShareExt, padBase64 as padBase64Ext, saveConfigurationToAPI as saveConfigurationToAPIExt, loadConfigurationFromAPI as loadConfigurationFromAPIExt } from "./app/shareCore.js";
 import { initOnboarding, showOnboarding } from "./app/onboarding.js";
 
@@ -967,7 +967,21 @@ const params = {
   freezingThreshold: 0, // Temperature below which ice forms
   iceIntensity: 0.8, // How intense the ice appearance is
   poleFreezeRadius: 0.3, // How far from poles to freeze (0-1)
-  equatorFreezeRadius: 0.8 // Minimum distance from equator for freezing (0-1)
+  equatorFreezeRadius: 0.8, // Minimum distance from equator for freezing (0-1)
+  // Planet Type & Gas Giant params
+  planetType: "Terrestrial",
+  gasStrataCount: 5,
+  gasStrata: [
+    { color: "#c9b48f", size: 1 },
+    { color: "#a68d6a", size: 1 },
+    { color: "#d8c8a8", size: 1 },
+    { color: "#8a7a5a", size: 1 },
+    { color: "#e6dcc4", size: 1 }
+  ],
+  gasNoiseScale: 3.0,
+  gasNoiseStrength: 0.4,
+  gasBandTwist: 0.2,
+  gasBandSharpness: 0.6
 };
 
 let currentSunVariant = params.sunVariant || "Star";
@@ -1555,25 +1569,29 @@ const presets = {
   "Gas Giant": {
     seed: "AEROX",
     radius: 3.6,
-    subdivisions: 4,
-    noiseLayers: 4,
-    noiseFrequency: 1.6,
-    noiseAmplitude: 0.3,
-    persistence: 0.4,
-    lacunarity: 1.7,
-    oceanLevel: 0.55,
-    colorOcean: "#14203b",
-    colorShallow: "#253a66",
-    colorLow: "#34527f",
-    colorMid: "#8f9ec8",
-    colorHigh: "#dcdff7",
+    planetType: "Gas Giant",
+    // keep core
     colorCore: "#8b4513",
     coreEnabled: true,
-    coreSize: 0.4,
+    coreSize: 0.35,
     coreVisible: true,
+    // gas bands
+    gasStrataCount: 5,
+    gasStrata: [
+      { color: "#c9b48f", size: 1 },
+      { color: "#a68d6a", size: 1 },
+      { color: "#d8c8a8", size: 1 },
+      { color: "#8a7a5a", size: 1 },
+      { color: "#e6dcc4", size: 1 }
+    ],
+    gasNoiseScale: 3.0,
+    gasNoiseStrength: 0.45,
+    gasBandTwist: 0.25,
+    gasBandSharpness: 0.7,
+    // clouds/atmos
     atmosphereColor: "#c1d6ff",
     atmosphereOpacity: 0.38,
-    cloudsOpacity: 0.7,
+    cloudsOpacity: 0.35,
     axisTilt: 12,
     rotationSpeed: 0.45,
     simulationSpeed: 0.4,
@@ -1784,7 +1802,15 @@ const shareKeys = [
   "freezingThreshold",
   "iceIntensity",
   "poleFreezeRadius",
-  "equatorFreezeRadius"
+  "equatorFreezeRadius",
+  // Planet Type & Gas
+  "planetType",
+  "gasStrataCount",
+  "gasStrata",
+  "gasNoiseScale",
+  "gasNoiseStrength",
+  "gasBandTwist",
+  "gasBandSharpness"
 ];
 //#endregion
 
@@ -1803,6 +1829,7 @@ const palette = {
 
 let cloudTexture = null;
 let cloudTextureDirty = true;
+let gasGiantTexture = null;
 
 const guiControllers = {};
 
@@ -3146,7 +3173,8 @@ function rebuildPlanet() {
 
     normalized = THREE.MathUtils.clamp(normalized, 0, 1);
 
-    const displacement = (normalized - params.oceanLevel) * params.noiseAmplitude;
+    // For Gas Giant, flatten terrain (no displacement), keep spherical shape
+    const displacement = (params.planetType === "Gas Giant") ? 0 : (normalized - params.oceanLevel) * params.noiseAmplitude;
     const finalRadius = params.radius + displacement;
     vertex.copy(normal).multiplyScalar(finalRadius);
     positions.setXYZ(i, vertex.x, vertex.y, vertex.z);
@@ -3163,12 +3191,36 @@ function rebuildPlanet() {
   planetMesh.geometry.dispose();
   planetMesh.geometry = geometry;
 
+  // Configure material based on planet type
+  if (params.planetType === "Gas Giant") {
+    if (gasGiantTexture && gasGiantTexture.dispose) {
+      gasGiantTexture.dispose();
+    }
+    gasGiantTexture = generateGasGiantTextureExt({
+      gasStrata: Array.isArray(params.gasStrata) ? params.gasStrata : [],
+      gasNoiseScale: params.gasNoiseScale,
+      gasNoiseStrength: params.gasNoiseStrength,
+      gasBandTwist: params.gasBandTwist,
+      gasBandSharpness: params.gasBandSharpness,
+      seed: params.seed
+    });
+    planetMaterial.vertexColors = false;
+    planetMaterial.map = gasGiantTexture;
+    planetMaterial.needsUpdate = true;
+  } else {
+    if (planetMaterial.map) {
+      planetMaterial.map = null;
+      planetMaterial.needsUpdate = true;
+    }
+    planetMaterial.vertexColors = true;
+  }
+
   const cloudScale = params.radius * (1 + Math.max(0.0, params.cloudHeight || 0.03));
   const atmosphereScale = params.radius * (1.06 + Math.max(0.0, (params.cloudHeight || 0.03)) * 0.8);
   cloudsMesh.scale.setScalar(cloudScale);
   atmosphereMesh.scale.setScalar(atmosphereScale);
   // Ocean and foam layers
-  const oceanVisible = params.oceanLevel > 0.001 && params.noiseAmplitude > 0.0001;
+  const oceanVisible = params.planetType !== "Gas Giant" && params.oceanLevel > 0.001 && params.noiseAmplitude > 0.0001;
   const oceanScale = params.radius * 1.001;
   const foamScale = params.radius * 1.003;
   oceanMesh.visible = oceanVisible;
@@ -3331,8 +3383,8 @@ function rebuildPlanet() {
 
   updateRings();
 
-  // Update icing colors if enabled (do this after planet is fully generated)
-  if (params.freezingEnabled) {
+  // Update icing colors only for Terrestrial planets
+  if (params.planetType !== "Gas Giant" && params.freezingEnabled) {
     // Small delay to ensure planet generation is complete
     setTimeout(() => updateIcingColors(), 100);
   }
@@ -3426,6 +3478,11 @@ function calculateLocalTemperature(vertexNormal) {
 }
 
 function sampleColor(elevation, radius, vertexNormal) {
+  // For Gas Giant, ignore terrain palette and use banded texture via material map.
+  if (params.planetType === "Gas Giant") {
+    // Use a flat neutral color; actual look comes from texture map
+    return scratchColor.setRGB(0.9, 0.9, 0.9);
+  }
   let baseColor;
 
   if (elevation <= params.oceanLevel) {
@@ -3480,8 +3537,9 @@ function updateCore() {
     coreMesh.scale.setScalar(coreScale);
     coreMesh.material.color.set(params.colorCore);
     
-    // Core is solid when enabled and visible
-    coreMesh.visible = params.coreEnabled && params.coreVisible;
+    // Core is solid when enabled and visible; always keep for Gas Giant
+    const isGas = params.planetType === "Gas Giant";
+    coreMesh.visible = (params.coreEnabled && params.coreVisible) || isGas;
     
     // Update material properties for better rendering
     coreMesh.material.needsUpdate = true;
@@ -3489,7 +3547,8 @@ function updateCore() {
 }
 
 function updateClouds() {
-  cloudsMaterial.opacity = params.cloudsOpacity;
+  const isGas = params.planetType === "Gas Giant";
+  cloudsMaterial.opacity = isGas ? Math.max(0, params.cloudsOpacity) : params.cloudsOpacity;
   atmosphereMaterial.opacity = params.atmosphereOpacity;
   // Toggle visibility based on opacity for reliability
   cloudsMesh.visible = params.cloudsOpacity > 0.001;
@@ -4673,6 +4732,12 @@ function applyPreset(name, { skipShareUpdate = false, keepSeed = false } = {}) {
     if (key === "moons") return;
     if (key === "seed" && keepSeed) return;
     if (!(key in params)) return;
+    // If switching to Gas Giant, turn off irrelevant terrestrial visuals
+    if (key === "planetType" && value === "Gas Giant") {
+      params.oceanLevel = 0; guiControllers.oceanLevel?.setValue?.(0);
+      params.noiseAmplitude = 0; guiControllers.noiseAmplitude?.setValue?.(0);
+      params.freezingEnabled = false; guiControllers.freezingEnabled?.setValue?.(false);
+    }
     if (key === "sunPreset") {
       isApplyingStarPreset = true;
       params.sunPreset = value;
@@ -5628,8 +5693,13 @@ function stepMoonPhysics(dt) {
       const strength = Math.max(0.3, (mesh?.scale?.x || 0.2) / Math.max(0.1, params.radius));
       const isCoreCollision = pivot.userData._hitCore;
 
-      // Apply local crater deformation to the planet surface at impact (only for surface collisions)
-      if (params.impactDeformation && mesh && !isCoreCollision) {
+      // For Gas Giant: shrink radius instead of deformation/destruction
+      if (params.planetType === "Gas Giant") {
+        const shrink = THREE.MathUtils.clamp((mesh?.scale?.x || 0.2) * 0.12, 0.02, Math.min(0.5, params.radius * 0.25));
+        params.radius = Math.max(0.2, params.radius - shrink);
+        guiControllers.radius?.setValue?.(params.radius);
+        spawnExplosion(pos, new THREE.Color(params.atmosphereColor), 1.2 * strength);
+      } else if (params.impactDeformation && mesh && !isCoreCollision) {
         try {
           const moonRadius = mesh.scale.x; // in world units (approx projectile radius)
           const planetWorldPos = planetRoot.getWorldPosition(new THREE.Vector3());
@@ -5677,8 +5747,8 @@ function stepMoonPhysics(dt) {
         }
       }
 
-      // Different explosion for core vs surface collisions
-      if (isCoreCollision) {
+      // Different explosion for core vs surface collisions (skipped special core case for gas giant)
+      if (params.planetType !== "Gas Giant" && isCoreCollision) {
         // Core collision: more dramatic explosion with core color
         const coreColor = new THREE.Color(params.colorCore);
         spawnExplosion(pos, coreColor, 3 * strength);
@@ -5701,10 +5771,8 @@ function stepMoonPhysics(dt) {
         if (mesh.geometry) mesh.geometry.dispose();
         if (mesh.material) mesh.material.dispose();
       }
-      // Remove pivot from scene graph to keep indices aligned
+      // Remove pivot and the moon regardless of planet type
       moonsGroup.remove(pivot);
-
-      // Remove moon from settings; do not trigger a full rebuild
       moonSettings.splice(idx, 1);
     });
     params.moonCount = moonSettings.length;
@@ -5760,31 +5828,57 @@ function surpriseMe() {
   guiControllers.seed?.setValue?.(newSeed);
 
   // Planet shape
-  params.radius = THREE.MathUtils.lerp(0.6, 3.8, rng.next());
+  const spawnGas = rng.next() < 0.35; // 35% chance to spawn a Gas Giant
+  if (spawnGas) {
+    params.planetType = "Gas Giant"; guiControllers.planetType?.setValue?.("Gas Giant");
+    params.radius = THREE.MathUtils.lerp(2.2, 4.0, rng.next());
+    params.noiseAmplitude = 0; guiControllers.noiseAmplitude?.setValue?.(0);
+    params.oceanLevel = 0; guiControllers.oceanLevel?.setValue?.(0);
+    params.freezingEnabled = false; guiControllers.freezingEnabled?.setValue?.(false);
+    // Randomize gas bands
+    const bandCount = Math.round(THREE.MathUtils.lerp(3, 9, rng.next()));
+    params.gasStrataCount = bandCount; guiControllers.gasStrataCount?.setValue?.(bandCount);
+    params.gasStrata = Array.from({ length: bandCount }).map((_, i) => {
+      const h = (rng.next() + i * 0.08) % 1;
+      const s = THREE.MathUtils.lerp(0.25, 0.5, rng.next());
+      const l = THREE.MathUtils.lerp(0.55, 0.8, rng.next());
+      const color = `#${new THREE.Color().setHSL(h, s, l).getHexString()}`;
+      return { color, size: THREE.MathUtils.lerp(0.6, 1.6, rng.next()) };
+    });
+    params.gasNoiseScale = THREE.MathUtils.lerp(1.0, 5.0, rng.next());
+    params.gasNoiseStrength = THREE.MathUtils.lerp(0.2, 0.9, rng.next());
+    params.gasBandTwist = THREE.MathUtils.lerp(-0.6, 0.6, rng.next());
+    params.gasBandSharpness = THREE.MathUtils.lerp(0.4, 1.6, rng.next());
+  } else {
+    params.planetType = "Terrestrial"; guiControllers.planetType?.setValue?.("Terrestrial");
+    params.radius = THREE.MathUtils.lerp(0.6, 3.8, rng.next());
+  }
   params.subdivisions = Math.round(THREE.MathUtils.lerp(3, 6, rng.next()));
   params.noiseLayers = Math.round(THREE.MathUtils.lerp(3, 7, rng.next()));
   params.noiseFrequency = THREE.MathUtils.lerp(0.8, 5.2, rng.next());
-  params.noiseAmplitude = THREE.MathUtils.lerp(0.2, 0.9, rng.next());
+  if (!spawnGas) params.noiseAmplitude = THREE.MathUtils.lerp(0.2, 0.9, rng.next());
   params.persistence = THREE.MathUtils.lerp(0.35, 0.65, rng.next());
   params.lacunarity = THREE.MathUtils.lerp(1.6, 3.2, rng.next());
-  params.oceanLevel = THREE.MathUtils.lerp(0.2, 0.7, rng.next());
+  if (!spawnGas) params.oceanLevel = THREE.MathUtils.lerp(0.2, 0.7, rng.next());
 
   // Palette (HSL variations)
   const hue = rng.next();
   const hue2 = (hue + 0.12 + rng.next() * 0.2) % 1;
   const hue3 = (hue + 0.3 + rng.next() * 0.3) % 1;
-  params.colorOcean = `#${new THREE.Color().setHSL(hue, 0.6, 0.28).getHexString()}`;
-  params.colorShallow = `#${new THREE.Color().setHSL(hue, 0.55, 0.45).getHexString()}`;
-  params.colorLow = `#${new THREE.Color().setHSL(hue2, 0.42, 0.3).getHexString()}`;
-  params.colorMid = `#${new THREE.Color().setHSL(hue2, 0.36, 0.58).getHexString()}`;
-  params.colorHigh = `#${new THREE.Color().setHSL(hue3, 0.15, 0.92).getHexString()}`;
+  if (!spawnGas) {
+    params.colorOcean = `#${new THREE.Color().setHSL(hue, 0.6, 0.28).getHexString()}`;
+    params.colorShallow = `#${new THREE.Color().setHSL(hue, 0.55, 0.45).getHexString()}`;
+    params.colorLow = `#${new THREE.Color().setHSL(hue2, 0.42, 0.3).getHexString()}`;
+    params.colorMid = `#${new THREE.Color().setHSL(hue2, 0.36, 0.58).getHexString()}`;
+    params.colorHigh = `#${new THREE.Color().setHSL(hue3, 0.15, 0.92).getHexString()}`;
+  }
   params.colorCore = `#${new THREE.Color().setHSL(hue, 0.4, 0.3).getHexString()}`;
-  params.coreEnabled = rng.next() > 0; // 70% chance of having a core
+  params.coreEnabled = true; // keep core for both types
   params.coreSize = THREE.MathUtils.lerp(0.2, 0.6, rng.next());
-  params.coreVisible = rng.next() > 0; // 20% chance of being visible
+  params.coreVisible = true;
   params.atmosphereColor = `#${new THREE.Color().setHSL(hue2, 0.5, 0.7).getHexString()}`;
   params.atmosphereOpacity = THREE.MathUtils.lerp(0.05, 0.5, rng.next());
-  params.cloudsOpacity = THREE.MathUtils.lerp(0.1, 0.8, rng.next());
+  params.cloudsOpacity = spawnGas ? THREE.MathUtils.lerp(0.2, 0.6, rng.next()) : THREE.MathUtils.lerp(0.1, 0.8, rng.next());
   params.cloudHeight = THREE.MathUtils.lerp(0.01, 0.12, rng.next());
   params.cloudDensity = THREE.MathUtils.lerp(0.25, 0.85, rng.next());
   params.cloudNoiseScale = THREE.MathUtils.lerp(1.2, 5.0, rng.next());
