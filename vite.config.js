@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 export default defineConfig({
   root: ".",
+  base: "./",
   build: {
     outDir: "dist",
     emptyOutDir: true,
