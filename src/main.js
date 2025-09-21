@@ -103,14 +103,41 @@ if (previewMode) {
 let isPhotoMode = false;
 
 function relayoutForMode() {
-  // Allow CSS class changes to apply before measuring
+  // Allow CSS class changes to apply before measuring (2 frames for safety)
   requestAnimationFrame(() => {
-    try {
-      onWindowResize();
-    } catch {}
-    try {
-      positionPhotoButtons();
-    } catch {}
+    requestAnimationFrame(() => {
+      try {
+        const canvas = renderer.domElement;
+        const usingViewport = isPhotoMode;
+        const container = sceneContainer;
+        const width = Math.max(1, usingViewport ? window.innerWidth : (container?.clientWidth || window.innerWidth));
+        const height = Math.max(1, usingViewport ? window.innerHeight : (container?.clientHeight || window.innerHeight));
+        const pixelRatio = Math.min(window.devicePixelRatio, 2);
+        renderer.setPixelRatio(pixelRatio);
+        renderer.setSize(width, height, true);
+        if (canvas) {
+          if (usingViewport) {
+            // Force viewport-sized canvas in photo mode
+            canvas.style.width = `${width}px`;
+            canvas.style.height = `${height}px`;
+            canvas.style.maxWidth = `${width}px`;
+            canvas.style.maxHeight = `${height}px`;
+          } else {
+            // Clear overrides so canvas conforms to container
+            canvas.style.width = "";
+            canvas.style.height = "";
+            canvas.style.maxWidth = "";
+            canvas.style.maxHeight = "";
+          }
+          canvas.style.display = "block";
+        }
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+      } catch {}
+      try {
+        positionPhotoButtons();
+      } catch {}
+    });
   });
 }
 
@@ -136,7 +163,10 @@ function exitPhotoMode() {
     photoToggleButton.title = "Photo mode";
   }
   if (photoShutterButton) photoShutterButton.hidden = true;
-  relayoutForMode();
+  // Temporary workaround: reload to fully reset layout sizing
+  setTimeout(() => {
+    try { window.location.reload(); } catch {}
+  }, 0);
 }
 
 function togglePhotoMode() {
