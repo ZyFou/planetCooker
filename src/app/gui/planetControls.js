@@ -74,16 +74,14 @@ export function setupPlanetControls({
 
   const refreshPlanetTypeVisibility = (nextPlanetType = params.planetType) => {
     const showGasGiant = nextPlanetType === "gas_giant";
-    gasGiantControllers.forEach((controller) => {
-      if (!controller) return;
-      if (showGasGiant) controller.show(); else controller.hide();
-    });
     if (guiControllers.folders.gasGiantFolder) {
-        if(showGasGiant) guiControllers.folders.gasGiantFolder.show(); else guiControllers.folders.gasGiantFolder.hide();
+      if (showGasGiant) guiControllers.folders.gasGiantFolder.show();
+      else guiControllers.folders.gasGiantFolder.hide();
     }
     rockyPlanetControllers.forEach((controller) => {
       if (!controller) return;
-      if (showGasGiant) controller.hide(); else controller.show();
+      if (showGasGiant) controller.hide();
+      else controller.show();
     });
   };
 
@@ -205,8 +203,6 @@ export function setupPlanetControls({
 
       strataControllers.push(colorCtrl);
       strataControllers.push(sizeCtrl);
-      gasGiantControllers.push(colorCtrl);
-      gasGiantControllers.push(sizeCtrl);
     }
   }
 
@@ -227,6 +223,22 @@ export function setupPlanetControls({
       scheduleShareUpdate();
     });
   gasGiantControllers.push(guiControllers.gasGiantNoiseStrength);
+
+  guiControllers.gasGiantStrataWarp = gasGiantFolder.add(params, "gasGiantStrataWarp", 0, 0.2, 0.001)
+    .name("Strata Warp")
+    .onFinishChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  gasGiantControllers.push(guiControllers.gasGiantStrataWarp);
+
+  guiControllers.gasGiantStrataWarpScale = gasGiantFolder.add(params, "gasGiantStrataWarpScale", 0.5, 20, 0.1)
+    .name("Warp Scale")
+    .onFinishChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  gasGiantControllers.push(guiControllers.gasGiantStrataWarpScale);
 
   const paletteFolder = registerFolder(gui.addFolder("Palette"), { close: true });
 

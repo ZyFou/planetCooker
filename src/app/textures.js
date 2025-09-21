@@ -136,10 +136,21 @@ export function generateGasGiantTexture(params) {
     }
   }
 
-  // Normalize strata sizes
+  // If no strata, return a blank texture
+  if (strata.length === 0) {
+    ctx.putImageData(image, 0, 0);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  // Normalize strata sizes and calculate their center positions
   if (totalSize > 0) {
+    let currentPos = 0;
     for (const stratum of strata) {
       stratum.size /= totalSize;
+      stratum.center = currentPos + stratum.size / 2;
+      currentPos += stratum.size;
     }
   }
 
@@ -149,36 +160,61 @@ export function generateGasGiantTexture(params) {
   const rand = (() => { let s = Array.from(rngSeed).reduce((a,c)=>a+c.charCodeAt(0),0)>>>0; return () => { let t = s += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; })();
   const noise = createNoise3D(() => rand());
 
+  const warpAmount = params.gasGiantStrataWarp ?? 0.03;
+  const warpScale = params.gasGiantStrataWarpScale ?? 4.0;
+
   for (let y = 0; y < canvas.height; y++) {
-    const v = y / (canvas.height - 1); // Latitude from 0 to 1
-
-    let currentPos = 0;
-    let currentStratum = strata[0];
-    for (const stratum of strata) {
-      currentPos += stratum.size;
-      if (v <= currentPos) {
-        currentStratum = stratum;
-        break;
-      }
-    }
-    if(!currentStratum) currentStratum = strata[strata.length-1];
-
-
     for (let x = 0; x < canvas.width; x++) {
       const u = x / (canvas.width - 1); // Longitude from 0 to 1
+      const v = y / (canvas.height - 1); // Latitude from 0 to 1
+
+      // Deform the v coordinate with noise to make the bands wavy
+      const lon = u * Math.PI * 2;
+      const lat = (v - 0.5) * Math.PI;
+      const sx_warp = Math.cos(lat) * Math.cos(lon);
+      const sy_warp = Math.sin(lat);
+      const sz_warp = Math.cos(lat) * Math.sin(lon);
+      const warpNoiseVal = noise(sx_warp * warpScale, sy_warp * warpScale, sz_warp * warpScale);
+      const deformedV = THREE.MathUtils.clamp(v + warpNoiseVal * warpAmount, 0, 1);
+
+      const baseColor = new THREE.Color(0, 0, 0);
+      const blendFactor = 40.0; // Higher value = sharper blend
+
+      if (strata.length > 1) {
+        let totalWeight = 0;
+        for (const stratum of strata) {
+          const dist = Math.abs(deformedV - stratum.center);
+          const weight = Math.exp(-blendFactor * Math.pow(dist, 2) / stratum.size);
+          baseColor.add(stratum.color.clone().multiplyScalar(weight));
+          totalWeight += weight;
+        }
+
+        if (totalWeight > 0) {
+          baseColor.multiplyScalar(1 / totalWeight);
+        } else {
+          // Fallback: find the closest stratum if weights are all zero
+          let closestDist = Infinity;
+          for (const s of strata) {
+            const d = Math.abs(deformedV - s.center);
+            if (d < closestDist) {
+              closestDist = d;
+              baseColor.copy(s.color);
+            }
+          }
+        }
+      } else if (strata.length === 1) {
+        baseColor.copy(strata[0].color);
+      }
 
       const idx = (y * canvas.width + x) * 4;
 
-      const baseColor = currentStratum.color;
       const highlight = baseColor.clone().lerp(new THREE.Color(1, 1, 1), 0.2);
       const shadow = baseColor.clone().lerp(new THREE.Color(0, 0, 0), 0.2);
 
       // Noise based on 3D coordinates on a sphere to avoid polar pinching
-      const lon = u * Math.PI * 2;
-      const lat = (v - 0.5) * Math.PI;
-      const sx = Math.cos(lat) * Math.cos(lon);
-      const sy = Math.sin(lat);
-      const sz = Math.cos(lat) * Math.sin(lon);
+      const sx = sx_warp;
+      const sy = sy_warp;
+      const sz = sz_warp;
 
       let noiseVal = 0;
       let amp = 1.0;

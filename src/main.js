@@ -865,6 +865,8 @@ const params = {
   gasGiantStrataSize6: 0.1,
   gasGiantNoiseScale: 2.0,
   gasGiantNoiseStrength: 0.1,
+  gasGiantStrataWarp: 0.03,
+  gasGiantStrataWarpScale: 4.0,
   seed: "BLUEHOME",
   radius: 1.32,
   subdivisions: 6,
@@ -1584,6 +1586,8 @@ const shareKeys = [
   "gasGiantStrataSize6",
   "gasGiantNoiseScale",
   "gasGiantNoiseStrength",
+  "gasGiantStrataWarp",
+  "gasGiantStrataWarpScale",
   "radius",
   "subdivisions",
   "noiseLayers",
@@ -5486,11 +5490,11 @@ function surpriseMe() {
   const newSeed = generateSeed();
   const rng = new SeededRNG(newSeed);
 
-  const isGasGiant = rng.next() < 1/6;
+  const isGasGiant = rng.next() < 1 / 6;
 
-  // Preserve user simulation speed across Surprise Me
+  // Preserve user simulation speed and other settings
   const prevSimSpeed = params.simulationSpeed;
-  const preserveFoam = params.foamEnabled; // Preserve foam setting
+  const preserveFoam = params.foamEnabled;
   const preserveRings = !params.ringAllowRandom;
   const prevRingSettings = preserveRings
     ? {
@@ -5498,12 +5502,12 @@ function surpriseMe() {
         ringAngle: params.ringAngle,
         ringSpinSpeed: params.ringSpinSpeed,
         ringCount: params.ringCount,
-        rings: params.rings,
+        rings: params.rings.map(r => ({...r})),
       }
     : null;
 
   isApplyingPreset = true;
-  if(isGasGiant) {
+  if (isGasGiant) {
     params.planetType = "gas_giant";
     const gasGiantPresets = Object.keys(presets).filter(p => presets[p].planetType === 'gas_giant');
     const pickPreset = gasGiantPresets[Math.floor(rng.next() * gasGiantPresets.length)];
@@ -5516,23 +5520,17 @@ function surpriseMe() {
   }
   isApplyingPreset = false;
 
-  // Restore user value overwritten by preset
+  // Restore user-preserved values
   params.simulationSpeed = prevSimSpeed;
-  guiControllers.simulationSpeed?.setValue?.(prevSimSpeed);
-  
-  // Restore foam setting
   params.foamEnabled = preserveFoam;
-  guiControllers.foamEnabled?.setValue?.(preserveFoam);
-
   if (preserveRings && prevRingSettings) {
     Object.assign(params, prevRingSettings);
   }
 
   params.seed = newSeed;
-  guiControllers.seed?.setValue?.(newSeed);
 
+  // Randomize planet parameters
   if (isGasGiant) {
-    // Randomize gas giant params
     params.radius = THREE.MathUtils.lerp(2.0, 4.0, rng.next());
     params.gasGiantStrataCount = Math.round(THREE.MathUtils.lerp(2, 6, rng.next()));
     let totalSize = 0;
@@ -5543,7 +5541,6 @@ function surpriseMe() {
       params[`gasGiantStrataSize${i}`] = size;
       totalSize += size;
     }
-    // Normalize sizes
     if (totalSize > 0) {
       for (let i = 1; i <= params.gasGiantStrataCount; i++) {
         params[`gasGiantStrataSize${i}`] /= totalSize;
@@ -5551,17 +5548,17 @@ function surpriseMe() {
     }
     params.gasGiantNoiseScale = THREE.MathUtils.lerp(1.0, 8.0, rng.next());
     params.gasGiantNoiseStrength = THREE.MathUtils.lerp(0.05, 0.3, rng.next());
+    params.gasGiantStrataWarp = THREE.MathUtils.lerp(0.01, 0.1, rng.next());
+    params.gasGiantStrataWarpScale = THREE.MathUtils.lerp(2.0, 12.0, rng.next());
   } else {
-    // Randomize rocky params
     params.radius = THREE.MathUtils.lerp(0.6, 2.0, rng.next());
-    params.subdivisions = Math.round(THREE.MathUtils.lerp(3, 6, rng.next()));
+    params.subdivisions = Math.round(THREE.MathUtils.lerp(4, 6, rng.next()));
     params.noiseLayers = Math.round(THREE.MathUtils.lerp(3, 7, rng.next()));
     params.noiseFrequency = THREE.MathUtils.lerp(0.8, 5.2, rng.next());
     params.noiseAmplitude = THREE.MathUtils.lerp(0.2, 0.9, rng.next());
     params.persistence = THREE.MathUtils.lerp(0.35, 0.65, rng.next());
     params.lacunarity = THREE.MathUtils.lerp(1.6, 3.2, rng.next());
-    params.oceanLevel = THREE.MathUtils.lerp(0.0, 0.75, rng.next());
-
+    params.oceanLevel = THREE.MathUtils.lerp(0.0, 0.75, rng.next() * rng.next());
     const hue = rng.next();
     const hue2 = (hue + 0.12 + rng.next() * 0.2) % 1;
     const hue3 = (hue + 0.3 + rng.next() * 0.3) % 1;
@@ -5577,9 +5574,11 @@ function surpriseMe() {
   }
 
   // Common randomizations
-  params.axisTilt = THREE.MathUtils.lerp(0, 35, rng.next());
+  params.axisTilt = THREE.MathUtils.lerp(0, 45, rng.next());
   params.rotationSpeed = THREE.MathUtils.lerp(0.05, 0.5, rng.next());
   params.gravity = THREE.MathUtils.lerp(4, 25, rng.next());
+  const atmHue = rng.next();
+  params.atmosphereColor = `#${new THREE.Color().setHSL(atmHue, 0.6, 0.55).getHexString()}`;
   params.atmosphereOpacity = THREE.MathUtils.lerp(0.05, 0.5, rng.next());
   params.cloudsOpacity = THREE.MathUtils.lerp(0.1, 0.8, rng.next());
   params.cloudHeight = THREE.MathUtils.lerp(0.01, 0.12, rng.next());
@@ -5587,24 +5586,24 @@ function surpriseMe() {
   params.cloudNoiseScale = THREE.MathUtils.lerp(1.2, 5.0, rng.next());
   params.cloudDriftSpeed = THREE.MathUtils.lerp(0, 0.06, rng.next());
 
-  // Randomly choose Star or Black Hole variant
-  if (rng.next() > 0.5) {
-    params.sunVariant = "Black Hole";
-    // Randomize black hole visuals
-    params.blackHoleCoreSize = THREE.MathUtils.lerp(0.4, 1.6, rng.next());
-    // ... (rest of black hole randomization)
-  } else {
+  // Randomize sun/environment
+  if (rng.next() > 0.2) {
     params.sunVariant = "Star";
-    // Apply star preset only when using Star variant
     const starPresetNames = Object.keys(starPresets);
-    if (starPresetNames.length) {
-      const pickedStarPreset = starPresetNames[Math.floor(rng.next() * starPresetNames.length)];
-      applyStarPreset(pickedStarPreset, { skipShareUpdate: true });
-    }
+    const pickedStarPreset = starPresetNames[Math.floor(rng.next() * starPresetNames.length)];
+    applyStarPreset(pickedStarPreset, { skipShareUpdate: true });
+  } else {
+    params.sunVariant = "Black Hole";
+    params.blackHoleCoreSize = THREE.MathUtils.lerp(0.4, 1.6, rng.next());
+    params.blackHoleDiskRadius = params.blackHoleCoreSize * THREE.MathUtils.lerp(1.8, 4.0, rng.next());
+    params.blackHoleDiskThickness = THREE.MathUtils.lerp(0.1, 0.8, rng.next());
+    params.blackHoleDiskIntensity = THREE.MathUtils.lerp(0.8, 2.5, rng.next());
+    params.blackHoleHaloRadius = params.blackHoleDiskRadius * THREE.MathUtils.lerp(1.1, 1.8, rng.next());
+    params.blackHoleHaloAngle = THREE.MathUtils.lerp(20, 160, rng.next());
   }
 
-  // Moons
-  params.moonCount = Math.round(THREE.MathUtils.lerp(0, 4, rng.next()));
+  // Randomize moons
+  params.moonCount = Math.round(THREE.MathUtils.lerp(0, 4, rng.next() * rng.next()));
   params.moonMassScale = THREE.MathUtils.lerp(0.6, 2.5, rng.next());
   moonSettings.splice(0, moonSettings.length);
   for (let i = 0; i < params.moonCount; i += 1) {
@@ -5619,26 +5618,51 @@ function surpriseMe() {
     });
   }
 
-  // Push to GUI controllers where available
+  // Randomize rings if allowed
+  if (!preserveRings) {
+    params.ringEnabled = rng.next() > 0.5;
+    if (params.ringEnabled) {
+      params.ringCount = Math.round(THREE.MathUtils.lerp(1, 5, rng.next()));
+      params.ringAngle = THREE.MathUtils.lerp(-45, 45, rng.next());
+      params.rings.splice(0, params.rings.length);
+      let lastRadius = 1.2;
+      for (let i = 0; i < params.ringCount; i += 1) {
+        const start = lastRadius + THREE.MathUtils.lerp(0.05, 0.2, rng.next());
+        const end = start + THREE.MathUtils.lerp(0.1, 0.5, rng.next());
+        params.rings.push({
+          style: rng.next() > 0.5 ? "Texture" : "Noise",
+          color: `#${new THREE.Color().setHSL(rng.next(), 0.15, 0.6).getHexString()}`,
+          start,
+          end,
+          opacity: THREE.MathUtils.lerp(0.4, 0.9, rng.next()),
+          noiseScale: THREE.MathUtils.lerp(1.5, 6.0, rng.next()),
+          noiseStrength: THREE.MathUtils.lerp(0.1, 0.6, rng.next()),
+          spinSpeed: THREE.MathUtils.lerp(-0.1, 0.1, rng.next()),
+          brightness: 1
+        });
+        lastRadius = end;
+      }
+    }
+  }
+
+  // Push all randomized values to GUI controllers
   Object.keys(guiControllers).forEach((key) => {
     if (params[key] !== undefined && guiControllers[key]?.setValue) {
-      if (key === "sunPreset" || key === "preset") {
-        isApplyingPreset = true;
-        guiControllers[key].setValue(params[key]);
-        isApplyingPreset = false;
-      } else {
-        guiControllers[key].setValue(params[key]);
-      }
+      // isApplyingPreset flag prevents onChange handlers from firing recursively
+      isApplyingPreset = true;
+      guiControllers[key].setValue(params[key]);
+      isApplyingPreset = false;
     }
   });
 
-  // Force controllers to refresh their displays to the new randomized values
+  // Force controllers to refresh their displays
   try {
     Object.values(guiControllers).forEach((ctrl) => ctrl?.updateDisplay?.());
     guiControllers.refreshPlanetTypeVisibility(params.planetType);
     guiControllers.rebuildRingControls?.();
   } catch {}
 
+  // Update all systems with new parameters
   normalizeMoonSettings();
   handleSeedChanged({ skipShareUpdate: true });
   updatePalette();
