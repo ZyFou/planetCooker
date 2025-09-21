@@ -143,12 +143,20 @@ export function setupPlanetControls({
   function ensureGasParams() {
     if (!Array.isArray(params.gasStrata)) {
       params.gasStrata = [
-        { color: "#c9b48f", size: 1 },
-        { color: "#a68d6a", size: 1 },
-        { color: "#d8c8a8", size: 1 },
-        { color: "#8a7a5a", size: 1 },
-        { color: "#e6dcc4", size: 1 }
+        { color: "#c9b48f", size: 1, turbulence: 1 },
+        { color: "#a68d6a", size: 1, turbulence: 1 },
+        { color: "#d8c8a8", size: 1, turbulence: 1 },
+        { color: "#8a7a5a", size: 1, turbulence: 1 },
+        { color: "#e6dcc4", size: 1, turbulence: 1 }
       ];
+    }
+    // Ensure existing strata entries have a numeric turbulence field
+    if (Array.isArray(params.gasStrata)) {
+      params.gasStrata = params.gasStrata.map((band) => ({
+        color: band?.color ?? "#c9b48f",
+        size: typeof band?.size === "number" ? band.size : (Number(band?.size) || 1),
+        turbulence: typeof band?.turbulence === "number" ? band.turbulence : 1
+      }));
     }
     if (typeof params.gasStrataCount !== "number") {
       params.gasStrataCount = Math.max(1, params.gasStrata.length);
@@ -158,7 +166,7 @@ export function setupPlanetControls({
   function normalizeGasStrata() {
     ensureGasParams();
     while (params.gasStrata.length < params.gasStrataCount) {
-      params.gasStrata.push({ color: "#c9b48f", size: 1 });
+      params.gasStrata.push({ color: "#c9b48f", size: 1, turbulence: 1 });
     }
     while (params.gasStrata.length > params.gasStrataCount) {
       params.gasStrata.pop();
