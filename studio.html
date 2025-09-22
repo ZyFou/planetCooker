@@ -148,6 +148,17 @@
           </div>
           <div class="visual-settings-body">
             <div class="visual-setting">
+              <label for="visual-settings-preset">Preset:</label>
+              <select id="visual-settings-preset" class="visual-setting-select">
+                <option value="custom">Custom</option>
+                <option value="ultra">Ultra</option>
+                <option value="high">High</option>
+                <option value="default">Default</option>
+                <option value="low">Low</option>
+                <option value="potato">Potato</option>
+              </select>
+            </div>
+            <div class="visual-setting">
               <label for="frame-rate-control">Target Frame Rate:</label>
               <select id="frame-rate-control" class="visual-setting-select">
                 <option value="unlimited">Unlimited</option>
@@ -179,10 +190,31 @@
               </div>
             </div>
             <div class="visual-setting">
+              <label for="star-max">Starfield Max Count:</label>
+              <div class="lighting-scale-container">
+                <input type="range" id="star-max" min="0" max="4000" step="100" value="4000" class="visual-setting-slider">
+                <span id="star-max-value" class="lighting-scale-value">4000</span>
+              </div>
+            </div>
+            <div class="visual-setting">
               <label for="noise-resolution">Noise Resolution:</label>
               <div class="lighting-scale-container">
                 <input type="range" id="noise-resolution" min="0.25" max="2.0" step="0.25" value="1.0" class="visual-setting-slider">
                 <span id="noise-resolution-value" class="lighting-scale-value">100%</span>
+              </div>
+            </div>
+            <div class="visual-setting">
+              <label for="gas-resolution">Gas Giant Resolution:</label>
+              <div class="lighting-scale-container">
+                <input type="range" id="gas-resolution" min="0.25" max="2.0" step="0.25" value="1.0" class="visual-setting-slider">
+                <span id="gas-resolution-value" class="lighting-scale-value">100%</span>
+              </div>
+            </div>
+            <div class="visual-setting">
+              <label for="ring-detail">Ring Detail:</label>
+              <div class="lighting-scale-container">
+                <input type="range" id="ring-detail" min="0.25" max="1.5" step="0.25" value="1.0" class="visual-setting-slider">
+                <span id="ring-detail-value" class="lighting-scale-value">100%</span>
               </div>
             </div>
           </div>

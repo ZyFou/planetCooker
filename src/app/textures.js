@@ -103,8 +103,10 @@ export function generateRingTexture(innerRatio, params) {
 }
 
 export function generateGasGiantTexture(params) {
-  const scale = Math.max(0.25, Math.min(2.0, params?.noiseResolution || 1.0));
-  const size = Math.max(128, Math.round(1024 * scale)); // Use a larger texture for the planet surface
+  const noiseScale = Math.max(0.25, Math.min(2.0, params?.noiseResolution || 1.0));
+  const gasScale = Math.max(0.25, Math.min(2.0, params?.gasResolution || 1.0));
+  const combinedScale = noiseScale * gasScale;
+  const size = Math.max(64, Math.round(1024 * combinedScale)); // Use a larger texture for the planet surface
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size / 2; // Use a 2:1 aspect ratio for equirectangular projection
@@ -157,13 +159,16 @@ export function generateGasGiantTexture(params) {
   }
 
   const noiseStrength = THREE.MathUtils.clamp(params.gasGiantNoiseStrength ?? 0.1, 0, 1);
-  const freq = Math.max(0.2, params.gasGiantNoiseScale ?? 2.0);
+  const detailFactor = gasScale;
+  const detailT = THREE.MathUtils.clamp((detailFactor - 0.25) / 1.75, 0, 1);
+  const freqBase = Math.max(0.2, params.gasGiantNoiseScale ?? 2.0);
+  const freq = Math.max(0.2, freqBase * THREE.MathUtils.lerp(0.6, 1.45, detailT));
   const rngSeed = `${params.seed || "gasgiant"}-${freq.toFixed(2)}-${noiseStrength.toFixed(2)}`;
   const rand = (() => { let s = Array.from(rngSeed).reduce((a,c)=>a+c.charCodeAt(0),0)>>>0; return () => { let t = s += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; })();
   const noise = createNoise3D(() => rand());
 
-  const warpAmount = params.gasGiantStrataWarp ?? 0.03;
-  const warpScale = params.gasGiantStrataWarpScale ?? 4.0;
+  const warpAmount = (params.gasGiantStrataWarp ?? 0.03) * THREE.MathUtils.lerp(0.6, 1.15, detailT);
+  const warpScale = (params.gasGiantStrataWarpScale ?? 4.0) * THREE.MathUtils.lerp(0.5, 1.5, detailT);
 
   for (let y = 0; y < canvas.height; y++) {
     for (let x = 0; x < canvas.width; x++) {
@@ -180,7 +185,7 @@ export function generateGasGiantTexture(params) {
       const deformedV = THREE.MathUtils.clamp(v + warpNoiseVal * warpAmount, 0, 1);
 
       const baseColor = new THREE.Color(0, 0, 0);
-      const blendFactor = 40.0; // Higher value = sharper blend
+      const blendFactor = THREE.MathUtils.lerp(20, 40, detailT); // Higher value = sharper blend
 
       if (strata.length > 1) {
         let totalWeight = 0;
@@ -221,7 +226,8 @@ export function generateGasGiantTexture(params) {
       let noiseVal = 0;
       let amp = 1.0;
       let f = freq;
-      for(let i=0; i<3; i++) {
+      const octaveCount = detailFactor >= 1.5 ? 4 : detailFactor <= 0.6 ? 2 : 3;
+      for (let i = 0; i < octaveCount; i++) {
         noiseVal += noise(sx * f, sy * f * 2.0, sz * f) * amp;
         amp *= 0.5;
         f *= 2.0;
@@ -244,7 +250,7 @@ export function generateGasGiantTexture(params) {
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.anisotropy = 16;
+  texture.anisotropy = Math.max(1, Math.round(16 * detailFactor));
   texture.generateMipmaps = true;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.magFilter = THREE.LinearFilter;

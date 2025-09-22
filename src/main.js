@@ -60,8 +60,15 @@ const lightingScale = document.getElementById("lighting-scale");
 const lightingScaleValue = document.getElementById("lighting-scale-value");
 const particleMaxInput = document.getElementById("particle-max");
 const particleMaxValue = document.getElementById("particle-max-value");
+const visualSettingsPresetSelect = document.getElementById("visual-settings-preset");
+const starMaxInput = document.getElementById("star-max");
+const starMaxValue = document.getElementById("star-max-value");
 const noiseResolutionInput = document.getElementById("noise-resolution");
 const noiseResolutionValue = document.getElementById("noise-resolution-value");
+const gasResolutionInput = document.getElementById("gas-resolution");
+const gasResolutionValue = document.getElementById("gas-resolution-value");
+const ringDetailInput = document.getElementById("ring-detail");
+const ringDetailValue = document.getElementById("ring-detail-value");
 const photoToggleButton = document.getElementById("photo-toggle");
 const photoShutterButton = document.getElementById("photo-shutter");
 const previewMode = new URLSearchParams(window.location.search).get("preview") === "1";
@@ -867,7 +874,63 @@ const visualSettings = {
   resolutionScale: 1.0, // 0.25 to 2.0
   lightingScale: 1.0, // 0.1 to 2.0
   particleMax: 1000, // clamps sun and explosion particles
-  noiseResolution: 1.0 // texture/noise resolution multiplier (0.25 - 2.0)
+  noiseResolution: 1.0, // texture/noise resolution multiplier (0.25 - 2.0)
+  gasResolution: 1.0, // gas giant texture + mesh detail (0.25 - 2.0)
+  starMax: 4000, // clamps starfield population
+  ringDetail: 1.0 // multiplier for ring geometry resolution
+};
+
+const VISUAL_SETTING_PRESETS = {
+  ultra: {
+    frameRate: "unlimited",
+    resolutionScale: 2.0,
+    lightingScale: 1.2,
+    particleMax: 2000,
+    noiseResolution: 2.0,
+    gasResolution: 2.0,
+    starMax: 4000,
+    ringDetail: 1.25
+  },
+  high: {
+    frameRate: "unlimited",
+    resolutionScale: 1.5,
+    lightingScale: 1.1,
+    particleMax: 1600,
+    noiseResolution: 1.5,
+    gasResolution: 1.5,
+    starMax: 3600,
+    ringDetail: 1.0
+  },
+  default: {
+    frameRate: "unlimited",
+    resolutionScale: 1.0,
+    lightingScale: 1.0,
+    particleMax: 1000,
+    noiseResolution: 1.0,
+    gasResolution: 1.0,
+    starMax: 4000,
+    ringDetail: 1.0
+  },
+  low: {
+    frameRate: "30",
+    resolutionScale: 0.75,
+    lightingScale: 0.85,
+    particleMax: 800,
+    noiseResolution: 0.75,
+    gasResolution: 0.75,
+    starMax: 2000,
+    ringDetail: 0.75
+  },
+  potato: {
+    frameRate: "24",
+    resolutionScale: 0.5,
+    lightingScale: 0.7,
+    particleMax: 400,
+    noiseResolution: 0.5,
+    gasResolution: 0.5,
+    starMax: 800,
+    ringDetail: 0.5
+  }
 };
 
 let frameCapTargetMs = 0;
@@ -2013,64 +2076,144 @@ mobileVisualSettings?.addEventListener("click", () => {
   closeMobileMenu();
 });
 
-// Visual Settings functions
-function closeVisualSettingsPopup() {
-  visualSettingsPopup?.setAttribute("hidden", "");
+// Visual Settings helpers and functions
+function clampVisualSettingsValues() {
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  const clampInt = (value, min, max) => Math.round(clamp(value, min, max));
+  visualSettings.resolutionScale = clamp(parseFloat(visualSettings.resolutionScale ?? 1), 0.25, 2.0);
+  visualSettings.lightingScale = clamp(parseFloat(visualSettings.lightingScale ?? 1), 0.1, 2.0);
+  visualSettings.particleMax = clampInt(parseInt(visualSettings.particleMax ?? 1000, 10), 100, 2000);
+  visualSettings.noiseResolution = clamp(parseFloat(visualSettings.noiseResolution ?? 1), 0.25, 2.0);
+  visualSettings.gasResolution = clamp(parseFloat(visualSettings.gasResolution ?? 1), 0.25, 2.0);
+  visualSettings.starMax = clampInt(parseInt(visualSettings.starMax ?? 4000, 10), 0, 4000);
+  visualSettings.ringDetail = clamp(parseFloat(visualSettings.ringDetail ?? 1), 0.25, 1.5);
+  if (!(visualSettings.frameRate in TARGET_FRAME_TIMES) && visualSettings.frameRate !== "unlimited") {
+    visualSettings.frameRate = "unlimited";
+  }
 }
 
-function openVisualSettingsPopup() {
-  // Load current settings into UI
-  frameRateControl.value = visualSettings.frameRate;
-  resolutionScale.value = visualSettings.resolutionScale;
-  resolutionScaleValue.textContent = Math.round(visualSettings.resolutionScale * 100) + "%";
-  lightingScale.value = visualSettings.lightingScale;
-  lightingScaleValue.textContent = Math.round(visualSettings.lightingScale * 100) + "%";
-  if (particleMaxInput) {
-    particleMaxInput.value = String(visualSettings.particleMax ?? 1000);
-    particleMaxValue.textContent = String(visualSettings.particleMax ?? 1000);
-  }
-  if (noiseResolutionInput) {
-    noiseResolutionInput.value = String(visualSettings.noiseResolution ?? 1.0);
-    noiseResolutionValue.textContent = Math.round((visualSettings.noiseResolution ?? 1.0) * 100) + "%";
-  }
-
-  visualSettingsPopup?.removeAttribute("hidden");
+function visualSettingsMatchesPreset(preset) {
+  if (!preset) return false;
+  const epsilon = 1e-3;
+  return (
+    (preset.frameRate ?? "unlimited") === (visualSettings.frameRate ?? "unlimited") &&
+    Math.abs((preset.resolutionScale ?? 1) - visualSettings.resolutionScale) < epsilon &&
+    Math.abs((preset.lightingScale ?? 1) - visualSettings.lightingScale) < epsilon &&
+    Math.abs((preset.particleMax ?? 0) - visualSettings.particleMax) <= 1 &&
+    Math.abs((preset.noiseResolution ?? 1) - visualSettings.noiseResolution) < epsilon &&
+    Math.abs((preset.gasResolution ?? 1) - visualSettings.gasResolution) < epsilon &&
+    Math.abs((preset.starMax ?? 0) - visualSettings.starMax) <= 1 &&
+    Math.abs((preset.ringDetail ?? 1) - visualSettings.ringDetail) < epsilon
+  );
 }
 
-function resetVisualSettings() {
-  visualSettings.frameRate = "unlimited";
-  visualSettings.resolutionScale = 1.0;
-  visualSettings.lightingScale = 1.0;
-  visualSettings.particleMax = 1000;
-  visualSettings.noiseResolution = 1.0;
+function determineVisualSettingsPreset() {
+  for (const [key, preset] of Object.entries(VISUAL_SETTING_PRESETS)) {
+    if (visualSettingsMatchesPreset(preset)) return key;
+  }
+  return "custom";
+}
 
-  // Update UI
-  frameRateControl.value = visualSettings.frameRate;
-  resolutionScale.value = visualSettings.resolutionScale;
-  resolutionScaleValue.textContent = Math.round(visualSettings.resolutionScale * 100) + "%";
-  lightingScale.value = visualSettings.lightingScale;
-  lightingScaleValue.textContent = Math.round(visualSettings.lightingScale * 100) + "%";
+function syncVisualSettingsUI() {
+  if (frameRateControl) frameRateControl.value = visualSettings.frameRate;
+  if (resolutionScale) resolutionScale.value = String(visualSettings.resolutionScale);
+  if (resolutionScaleValue) resolutionScaleValue.textContent = Math.round(visualSettings.resolutionScale * 100) + "%";
+  if (lightingScale) lightingScale.value = String(visualSettings.lightingScale);
+  if (lightingScaleValue) lightingScaleValue.textContent = Math.round(visualSettings.lightingScale * 100) + "%";
   if (particleMaxInput) {
     particleMaxInput.value = String(visualSettings.particleMax);
     particleMaxValue.textContent = String(visualSettings.particleMax);
+  }
+  if (starMaxInput) {
+    starMaxInput.value = String(visualSettings.starMax);
+    starMaxValue.textContent = String(visualSettings.starMax);
   }
   if (noiseResolutionInput) {
     noiseResolutionInput.value = String(visualSettings.noiseResolution);
     noiseResolutionValue.textContent = Math.round(visualSettings.noiseResolution * 100) + "%";
   }
+  if (gasResolutionInput) {
+    gasResolutionInput.value = String(visualSettings.gasResolution);
+    gasResolutionValue.textContent = Math.round(visualSettings.gasResolution * 100) + "%";
+  }
+  if (ringDetailInput) {
+    ringDetailInput.value = String(visualSettings.ringDetail);
+    ringDetailValue.textContent = Math.round(visualSettings.ringDetail * 100) + "%";
+  }
+  if (visualSettingsPresetSelect) {
+    visualSettingsPresetSelect.value = determineVisualSettingsPreset();
+  }
+}
 
+function markVisualPresetCustom() {
+  if (visualSettingsPresetSelect) {
+    visualSettingsPresetSelect.value = "custom";
+  }
+}
+
+function closeVisualSettingsPopup() {
+  visualSettingsPopup?.setAttribute("hidden", "");
+}
+
+function openVisualSettingsPopup() {
+  clampVisualSettingsValues();
+  syncVisualSettingsUI();
+  visualSettingsPopup?.removeAttribute("hidden");
+}
+
+function resetVisualSettings() {
+  Object.assign(visualSettings, {
+    frameRate: "unlimited",
+    resolutionScale: 1.0,
+    lightingScale: 1.0,
+    particleMax: 1000,
+    noiseResolution: 1.0,
+    gasResolution: 1.0,
+    starMax: 4000,
+    ringDetail: 1.0
+  });
+  clampVisualSettingsValues();
+  syncVisualSettingsUI();
   applyVisualSettings();
 }
 
-function applyVisualSettings() {
-  // Apply frame rate settings
+function updateBlackHoleGeometrySegments() {
+  const detail = Math.max(0.25, Math.min(1.5, visualSettings?.ringDetail ?? 1.0));
+  const segments = Math.max(24, Math.round(256 * detail));
+  if (blackHoleDisk?.geometry?.parameters?.segments !== segments) {
+    const geom = new THREE.CircleGeometry(1, segments);
+    blackHoleDisk.geometry?.dispose?.();
+    blackHoleDisk.geometry = geom;
+  }
+  [blackHoleHalo, blackHoleHaloSecondary].forEach((mesh) => {
+    if (!mesh) return;
+    if (mesh.geometry?.parameters?.segments === segments) return;
+    const geom = new THREE.CircleGeometry(1, segments);
+    mesh.geometry?.dispose?.();
+    mesh.geometry = geom;
+  });
+}
+
+function enforceVisualSettingCaps() {
+  const starLimit = Math.max(0, Math.round(visualSettings.starMax ?? 0));
+  guiControllers.starCount?.min?.(0);
+  guiControllers.starCount?.max?.(Math.max(50, starLimit));
+  if (params.starCount > starLimit) {
+    params.starCount = starLimit;
+    guiControllers.starCount?.updateDisplay?.();
+  }
+}
+
+function applyVisualSettingsState({ persist = true, closePopup = true } = {}) {
+  clampVisualSettingsValues();
+  syncVisualSettingsUI();
+
   if (visualSettings.frameRate === "unlimited") {
     frameCapTargetMs = 0;
   } else {
     frameCapTargetMs = TARGET_FRAME_TIMES[visualSettings.frameRate] || 0;
   }
 
-  // Apply resolution scale immediately
   try {
     const width = Math.max(1, sceneContainer?.clientWidth || window.innerWidth);
     const height = Math.max(1, sceneContainer?.clientHeight || window.innerHeight);
@@ -2084,7 +2227,6 @@ function applyVisualSettings() {
     console.warn("Failed to apply resolution scale", e);
   }
 
-  // Apply lighting scale immediately
   try {
     ambientLight.intensity = 0.35 * visualSettings.lightingScale;
     sunLight.intensity = Math.max(0, params.sunIntensity) * visualSettings.lightingScale;
@@ -2092,19 +2234,32 @@ function applyVisualSettings() {
     console.warn("Failed to apply lighting scale", e);
   }
 
-  // Persist
-  try {
-    localStorage.setItem("planet-visual-settings", JSON.stringify(visualSettings));
-  } catch {}
+  enforceVisualSettingCaps();
+  updateBlackHoleGeometrySegments();
+  planetDirty = true;
+  try { updateRings(); } catch (e) { console.warn("Failed to update rings after visual settings", e); }
+  try { updateSun(); } catch (e) { console.warn("Failed to update star after visual settings", e); }
+  try { regenerateStarfield(); } catch (e) { console.warn("Failed to rebuild starfield after visual settings", e); }
 
-  closeVisualSettingsPopup();
+  if (persist) {
+    try {
+      localStorage.setItem("planet-visual-settings", JSON.stringify(visualSettings));
+    } catch {}
+  }
+
+  if (closePopup) {
+    closeVisualSettingsPopup();
+  }
+}
+
+function applyVisualSettings(options) {
+  applyVisualSettingsState({ persist: true, closePopup: true, ...options });
 }
 
 // Apply visual settings on startup
 function applyInitialVisualSettings() {
-  if (typeof visualSettings === 'undefined') return;
+  if (typeof visualSettings === "undefined") return;
 
-  // Load persisted values
   try {
     const raw = localStorage.getItem("planet-visual-settings");
     if (raw) {
@@ -2112,60 +2267,76 @@ function applyInitialVisualSettings() {
       Object.assign(visualSettings, saved);
     }
   } catch {}
-  
-  // Apply resolution scale
-  try {
-    const width = Math.max(1, sceneContainer?.clientWidth || window.innerWidth);
-    const height = Math.max(1, sceneContainer?.clientHeight || window.innerHeight);
-    const pixelRatio = Math.min(window.devicePixelRatio * visualSettings.resolutionScale, 2);
-    renderer.setPixelRatio(pixelRatio);
-    renderer.setSize(width, height, true);
-    if (starField?.material?.uniforms?.uPixelRatio) {
-      starField.material.uniforms.uPixelRatio.value = pixelRatio;
-    }
-  } catch (e) {
-    console.warn("Failed to apply initial resolution scale", e);
-  }
 
-  // Apply lighting scale
-  try {
-    ambientLight.intensity = 0.35 * visualSettings.lightingScale;
-    sunLight.intensity = Math.max(0, params.sunIntensity) * visualSettings.lightingScale;
-  } catch (e) {
-    console.warn("Failed to apply initial lighting scale", e);
-  }
+  applyVisualSettingsState({ persist: false, closePopup: false });
 }
 
 // Popup event handlers
 visualSettingsClose?.addEventListener("click", closeVisualSettingsPopup);
 visualSettingsReset?.addEventListener("click", resetVisualSettings);
-visualSettingsApply?.addEventListener("click", applyVisualSettings);
+visualSettingsApply?.addEventListener("click", () => applyVisualSettings());
 
 // Real-time UI updates
+visualSettingsPresetSelect?.addEventListener("change", (e) => {
+  const value = e.target.value;
+  if (value === "custom") return;
+  const preset = VISUAL_SETTING_PRESETS[value];
+  if (!preset) return;
+  Object.assign(visualSettings, preset);
+  clampVisualSettingsValues();
+  syncVisualSettingsUI();
+});
+
 frameRateControl?.addEventListener("change", (e) => {
   visualSettings.frameRate = e.target.value;
+  markVisualPresetCustom();
 });
 
 resolutionScale?.addEventListener("input", (e) => {
   visualSettings.resolutionScale = parseFloat(e.target.value);
   resolutionScaleValue.textContent = Math.round(visualSettings.resolutionScale * 100) + "%";
+  markVisualPresetCustom();
 });
 
 lightingScale?.addEventListener("input", (e) => {
   visualSettings.lightingScale = parseFloat(e.target.value);
   lightingScaleValue.textContent = Math.round(visualSettings.lightingScale * 100) + "%";
+  markVisualPresetCustom();
 });
 
 particleMaxInput?.addEventListener("input", (e) => {
-  const v = Math.max(100, Math.min(5000, parseInt(e.target.value || "1000", 10)));
+  const v = Math.max(100, Math.min(2000, parseInt(e.target.value || "1000", 10)));
   visualSettings.particleMax = v;
   particleMaxValue.textContent = String(v);
+  markVisualPresetCustom();
+});
+
+starMaxInput?.addEventListener("input", (e) => {
+  const v = Math.max(0, Math.min(4000, parseInt(e.target.value || "0", 10)));
+  visualSettings.starMax = v;
+  starMaxValue.textContent = String(v);
+  markVisualPresetCustom();
 });
 
 noiseResolutionInput?.addEventListener("input", (e) => {
   const v = Math.max(0.25, Math.min(2.0, parseFloat(e.target.value || "1.0")));
   visualSettings.noiseResolution = v;
   noiseResolutionValue.textContent = Math.round(v * 100) + "%";
+  markVisualPresetCustom();
+});
+
+gasResolutionInput?.addEventListener("input", (e) => {
+  const v = Math.max(0.25, Math.min(2.0, parseFloat(e.target.value || "1.0")));
+  visualSettings.gasResolution = v;
+  gasResolutionValue.textContent = Math.round(v * 100) + "%";
+  markVisualPresetCustom();
+});
+
+ringDetailInput?.addEventListener("input", (e) => {
+  const v = Math.max(0.25, Math.min(1.5, parseFloat(e.target.value || "1.0")));
+  visualSettings.ringDetail = v;
+  ringDetailValue.textContent = Math.round(v * 100) + "%";
+  markVisualPresetCustom();
 });
 
 // Close popup when clicking outside
@@ -3157,7 +3328,9 @@ function rebuildPlanet() {
     planetMaterial.map = generateGasGiantTexture(params);
     planetMaterial.needsUpdate = true;
 
-    const geometry = new THREE.SphereGeometry(params.radius, 128, 128);
+    const gasDetailScale = Math.max(0.25, Math.min(2.0, visualSettings?.gasResolution ?? 1.0));
+    const gasSegments = Math.max(24, Math.round(128 * gasDetailScale));
+    const geometry = new THREE.SphereGeometry(params.radius, gasSegments, gasSegments);
     planetMesh.geometry.dispose();
     planetMesh.geometry = geometry;
 
@@ -3632,7 +3805,8 @@ function updateSun() {
   sunCorona.scale.setScalar(haloRadius);
 
   const glowStrength = Math.max(0.05, params.sunGlowStrength);
-  const noiseScale = Math.max(0.2, params.sunNoiseScale || 1.6);
+  const noiseResolutionScale = Math.max(0.25, Math.min(2.0, visualSettings?.noiseResolution ?? 1.0));
+  const noiseScale = Math.max(0.2, (params.sunNoiseScale || 1.6) * noiseResolutionScale);
   starCoreUniforms.uNoiseScale.value = noiseScale;
   starCoreUniforms.uNoiseStrength.value = glowStrength * 0.35;
   starCoronaUniforms.uNoiseScale.value = noiseScale * 0.75;
@@ -3700,7 +3874,8 @@ function updateBlackHole(baseColor) {
   const diskInner = THREE.MathUtils.clamp(diskRadius * (1 - diskThickness), coreSize * 1.05, diskRadius - 0.02);
   const diskIntensity = Math.max(0, params.blackHoleDiskIntensity ?? 1.5);
   const diskFeather = THREE.MathUtils.clamp(diskRadius * 0.18 * diskThickness, 0.04, diskRadius * 0.45);
-  const diskNoiseScale = Math.max(0.01, params.blackHoleDiskNoiseScale ?? 1);
+  const noiseResolutionScale = Math.max(0.25, Math.min(2.0, visualSettings?.noiseResolution ?? 1.0));
+  const diskNoiseScale = Math.max(0.01, (params.blackHoleDiskNoiseScale ?? 1) * noiseResolutionScale);
   const diskNoiseStrength = Math.max(0, params.blackHoleDiskNoiseStrength ?? 0);
 
   if (blackHoleState.lastDiskRadius !== diskRadius) {
@@ -3800,7 +3975,7 @@ function updateBlackHole(baseColor) {
   const haloInner = THREE.MathUtils.clamp(haloRadius * (1 - haloThickness), diskRadius * 0.65, haloRadius - 0.02);
   const haloIntensity = Math.max(0, params.blackHoleHaloIntensity ?? 0.85);
   const haloFeather = THREE.MathUtils.clamp(haloRadius * 0.22 * haloThickness, 0.06, haloRadius * 0.5);
-  const haloNoiseScale = Math.max(0.01, params.blackHoleHaloNoiseScale ?? 1);
+  const haloNoiseScale = Math.max(0.01, (params.blackHoleHaloNoiseScale ?? 1) * noiseResolutionScale);
   const haloNoiseStrength = Math.max(0, params.blackHoleHaloNoiseStrength ?? 0);
 
   blackHoleHalo.scale.setScalar(haloRadius);
@@ -4025,7 +4200,7 @@ function rebuildStarParticles(desiredCount) {
   }
 
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  const texture = createSunTexture({ inner: 0.0, outer: 0.6, innerAlpha: 1, outerAlpha: 0 });
+  const texture = createSunTexture({ inner: 0.0, outer: 0.6, innerAlpha: 1, outerAlpha: 0, resolution: visualSettings?.noiseResolution ?? 1.0 });
   const material = new THREE.PointsMaterial({
     size: Math.max(0.02, params.sunParticleSize || 0.1),
     map: texture,
@@ -4100,7 +4275,11 @@ function generateAnnulusTexture(opts) {
 }
 
 function generateGasGiantTexture(p) {
-  return generateGasGiantTextureExt({ ...p, noiseResolution: visualSettings?.noiseResolution ?? 1.0 });
+  return generateGasGiantTextureExt({
+    ...p,
+    noiseResolution: visualSettings?.noiseResolution ?? 1.0,
+    gasResolution: visualSettings?.gasResolution ?? 1.0
+  });
 }
 
 function updateRings() {
@@ -4125,7 +4304,9 @@ function updateRings() {
 
   // Use multi-ring array only; if empty, show no rings
   const angle = THREE.MathUtils.degToRad(params.ringAngle || 0);
-  const segments = 256;
+  const ringDetailScale = Math.max(0.25, Math.min(1.5, visualSettings?.ringDetail ?? 1.0));
+  const segments = Math.max(32, Math.round(256 * ringDetailScale));
+  const noiseResolutionScale = Math.max(0.25, Math.min(2.0, visualSettings?.noiseResolution ?? 1.0));
   const ringDefs = Array.isArray(params.rings) ? params.rings : [];
   if (ringDefs.length === 0) {
     // Clear any existing meshes/textures and exit
@@ -4224,7 +4405,7 @@ function updateRings() {
       u.uFeather.value = Math.max(0.04, (outer - inner) * 0.22);
       u.uIntensity.value = opacity;
       u.uScale.value = 1;
-      u.uNoiseScale.value = Math.max(0.01, def.noiseScale ?? 1);
+      u.uNoiseScale.value = Math.max(0.01, (def.noiseScale ?? 1) * noiseResolutionScale);
       u.uNoiseStrength.value = Math.max(0, def.noiseStrength ?? 0.35);
     } else {
       // Fallback to basic texture
@@ -5238,7 +5419,12 @@ function regenerateStarfield() {
     starField.material.dispose();
     starField = null;
   }
-  starField = createStarfield({ seed: params.seed, count: params.starCount });
+  const desiredCount = getStarfieldCount(params.starCount);
+  if (desiredCount !== params.starCount) {
+    params.starCount = desiredCount;
+    guiControllers.starCount?.updateDisplay?.();
+  }
+  starField = createStarfield({ seed: params.seed, count: desiredCount });
   scene.add(starField);
   updateStarfieldUniforms();
 }
@@ -5251,8 +5437,23 @@ function updateStarfieldUniforms() {
   uniforms.uPixelRatio.value = Math.min(window.devicePixelRatio, 2);
 }
 
-function createStarfield({ seed, count }) { return createStarfieldExt({ seed, count }); }
-function createSunTexture(opts) { return createSunTextureExt(opts); }
+function getStarfieldCount(count) {
+  let value = Math.max(0, Math.round(count ?? 2000));
+  if (visualSettings?.starMax != null) {
+    value = Math.min(value, Math.max(0, Math.round(visualSettings.starMax)));
+  }
+  return value;
+}
+
+function createStarfield({ seed, count }) {
+  const desired = getStarfieldCount(count);
+  const resolution = visualSettings?.noiseResolution ?? 1.0;
+  return createStarfieldExt({ seed, count: desired, resolution });
+}
+
+function createSunTexture(opts) {
+  return createSunTextureExt({ resolution: visualSettings?.noiseResolution ?? 1.0, ...opts });
+}
 
 // Explosion particles when a moon is destroyed
 function spawnExplosion(position, color = new THREE.Color(0xffaa66), strength = 1) {

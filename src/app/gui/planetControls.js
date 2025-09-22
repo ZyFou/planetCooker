@@ -778,7 +778,7 @@ export function setupPlanetControls({
 
   const spaceFolder = registerFolder(environmentFolder.addFolder("Sky"), { close: true });
 
-  guiControllers.starCount = spaceFolder.add(params, "starCount", 500, 4000, 50)
+  guiControllers.starCount = spaceFolder.add(params, "starCount", 0, 4000, 50)
     .name("Star Count")
     .onFinishChange(() => {
       params.starCount = Math.round(params.starCount);
