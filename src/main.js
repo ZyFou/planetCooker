@@ -49,6 +49,19 @@ const mobileHomeButton = document.getElementById("mobile-home");
 const helpButton = document.getElementById("help");
 const mobileHelpButton = document.getElementById("mobile-help");
 const exitOverlay = document.getElementById("exit-overlay");
+const visualSettingsPopup = document.getElementById("visual-settings-popup");
+const visualSettingsClose = document.getElementById("visual-settings-close");
+const visualSettingsReset = document.getElementById("visual-settings-reset");
+const visualSettingsApply = document.getElementById("visual-settings-apply");
+const frameRateControl = document.getElementById("frame-rate-control");
+const resolutionScale = document.getElementById("resolution-scale");
+const resolutionScaleValue = document.getElementById("resolution-scale-value");
+const lightingScale = document.getElementById("lighting-scale");
+const lightingScaleValue = document.getElementById("lighting-scale-value");
+const particleMaxInput = document.getElementById("particle-max");
+const particleMaxValue = document.getElementById("particle-max-value");
+const noiseResolutionInput = document.getElementById("noise-resolution");
+const noiseResolutionValue = document.getElementById("noise-resolution-value");
 const photoToggleButton = document.getElementById("photo-toggle");
 const photoShutterButton = document.getElementById("photo-shutter");
 const previewMode = new URLSearchParams(window.location.search).get("preview") === "1";
@@ -112,7 +125,7 @@ function relayoutForMode() {
         const container = sceneContainer;
         const width = Math.max(1, usingViewport ? window.innerWidth : (container?.clientWidth || window.innerWidth));
         const height = Math.max(1, usingViewport ? window.innerHeight : (container?.clientHeight || window.innerHeight));
-        const pixelRatio = Math.min(window.devicePixelRatio, 2);
+        const pixelRatio = Math.min(window.devicePixelRatio * visualSettings.resolutionScale, 2);
         renderer.setPixelRatio(pixelRatio);
         renderer.setSize(width, height, true);
         if (canvas) {
@@ -827,14 +840,17 @@ const mobileRandomize = document.getElementById("mobile-randomize");
 const mobileSurprise = document.getElementById("mobile-surprise");
 const mobileCopy = document.getElementById("mobile-copy");
 const mobileReset = document.getElementById("mobile-reset");
+const mobileVisualSettings = document.getElementById("mobile-visual-settings");
 const desktopCopy = document.getElementById("desktop-copy");
 const desktopHelp = document.getElementById("desktop-help");
+const desktopVisualSettings = document.getElementById("desktop-visual-settings");
 const desktopHome = document.getElementById("desktop-home");
 
 // Debug: Check if desktop menu buttons exist
 console.log("Desktop menu buttons:", {
   desktopCopy: !!desktopCopy,
   desktopHelp: !!desktopHelp,
+  desktopVisualSettings: !!desktopVisualSettings,
   desktopHome: !!desktopHome,
   copyShareButton: !!copyShareButton,
   helpButton: !!helpButton,
@@ -843,6 +859,25 @@ console.log("Desktop menu buttons:", {
 const mobileFocusToggle = document.getElementById("mobile-focus-toggle");
 const mobileFocusMenu = document.getElementById("mobile-focus-menu");
 const focusMoonsContainer = document.getElementById("focus-moons-container");
+//#endregion
+
+//#region Visual Settings
+const visualSettings = {
+  frameRate: "unlimited", // "unlimited", "60", "30", "24", "15"
+  resolutionScale: 1.0, // 0.25 to 2.0
+  lightingScale: 1.0, // 0.1 to 2.0
+  particleMax: 1000, // clamps sun and explosion particles
+  noiseResolution: 1.0 // texture/noise resolution multiplier (0.25 - 2.0)
+};
+
+let frameCapTargetMs = 0;
+let frameCapLastTime = 0;
+const TARGET_FRAME_TIMES = {
+  "60": 1000 / 60,
+  "30": 1000 / 30,
+  "24": 1000 / 24,
+  "15": 1000 / 15
+};
 //#endregion
 
 //#region Parameters and presets
@@ -1915,6 +1950,11 @@ desktopHome?.addEventListener("click", () => {
   navigateToLanding();
   closeDesktopMenu();
 });
+desktopVisualSettings?.addEventListener("click", () => {
+  console.log("Desktop visual settings clicked");
+  openVisualSettingsPopup();
+  closeDesktopMenu();
+});
 
 // Mobile menu actions
 function closeMobileMenu() {
@@ -1967,6 +2007,172 @@ mobileCopy?.addEventListener("click", async () => {
 mobileReset?.addEventListener("click", () => {
   resetAllButton?.click();
   closeMobileMenu();
+});
+mobileVisualSettings?.addEventListener("click", () => {
+  openVisualSettingsPopup();
+  closeMobileMenu();
+});
+
+// Visual Settings functions
+function closeVisualSettingsPopup() {
+  visualSettingsPopup?.setAttribute("hidden", "");
+}
+
+function openVisualSettingsPopup() {
+  // Load current settings into UI
+  frameRateControl.value = visualSettings.frameRate;
+  resolutionScale.value = visualSettings.resolutionScale;
+  resolutionScaleValue.textContent = Math.round(visualSettings.resolutionScale * 100) + "%";
+  lightingScale.value = visualSettings.lightingScale;
+  lightingScaleValue.textContent = Math.round(visualSettings.lightingScale * 100) + "%";
+  if (particleMaxInput) {
+    particleMaxInput.value = String(visualSettings.particleMax ?? 1000);
+    particleMaxValue.textContent = String(visualSettings.particleMax ?? 1000);
+  }
+  if (noiseResolutionInput) {
+    noiseResolutionInput.value = String(visualSettings.noiseResolution ?? 1.0);
+    noiseResolutionValue.textContent = Math.round((visualSettings.noiseResolution ?? 1.0) * 100) + "%";
+  }
+
+  visualSettingsPopup?.removeAttribute("hidden");
+}
+
+function resetVisualSettings() {
+  visualSettings.frameRate = "unlimited";
+  visualSettings.resolutionScale = 1.0;
+  visualSettings.lightingScale = 1.0;
+  visualSettings.particleMax = 1000;
+  visualSettings.noiseResolution = 1.0;
+
+  // Update UI
+  frameRateControl.value = visualSettings.frameRate;
+  resolutionScale.value = visualSettings.resolutionScale;
+  resolutionScaleValue.textContent = Math.round(visualSettings.resolutionScale * 100) + "%";
+  lightingScale.value = visualSettings.lightingScale;
+  lightingScaleValue.textContent = Math.round(visualSettings.lightingScale * 100) + "%";
+  if (particleMaxInput) {
+    particleMaxInput.value = String(visualSettings.particleMax);
+    particleMaxValue.textContent = String(visualSettings.particleMax);
+  }
+  if (noiseResolutionInput) {
+    noiseResolutionInput.value = String(visualSettings.noiseResolution);
+    noiseResolutionValue.textContent = Math.round(visualSettings.noiseResolution * 100) + "%";
+  }
+
+  applyVisualSettings();
+}
+
+function applyVisualSettings() {
+  // Apply frame rate settings
+  if (visualSettings.frameRate === "unlimited") {
+    frameCapTargetMs = 0;
+  } else {
+    frameCapTargetMs = TARGET_FRAME_TIMES[visualSettings.frameRate] || 0;
+  }
+
+  // Apply resolution scale immediately
+  try {
+    const width = Math.max(1, sceneContainer?.clientWidth || window.innerWidth);
+    const height = Math.max(1, sceneContainer?.clientHeight || window.innerHeight);
+    const pixelRatio = Math.min(window.devicePixelRatio * visualSettings.resolutionScale, 2);
+    renderer.setPixelRatio(pixelRatio);
+    renderer.setSize(width, height, true);
+    if (starField?.material?.uniforms?.uPixelRatio) {
+      starField.material.uniforms.uPixelRatio.value = pixelRatio;
+    }
+  } catch (e) {
+    console.warn("Failed to apply resolution scale", e);
+  }
+
+  // Apply lighting scale immediately
+  try {
+    ambientLight.intensity = 0.35 * visualSettings.lightingScale;
+    sunLight.intensity = Math.max(0, params.sunIntensity) * visualSettings.lightingScale;
+  } catch (e) {
+    console.warn("Failed to apply lighting scale", e);
+  }
+
+  // Persist
+  try {
+    localStorage.setItem("planet-visual-settings", JSON.stringify(visualSettings));
+  } catch {}
+
+  closeVisualSettingsPopup();
+}
+
+// Apply visual settings on startup
+function applyInitialVisualSettings() {
+  if (typeof visualSettings === 'undefined') return;
+
+  // Load persisted values
+  try {
+    const raw = localStorage.getItem("planet-visual-settings");
+    if (raw) {
+      const saved = JSON.parse(raw);
+      Object.assign(visualSettings, saved);
+    }
+  } catch {}
+  
+  // Apply resolution scale
+  try {
+    const width = Math.max(1, sceneContainer?.clientWidth || window.innerWidth);
+    const height = Math.max(1, sceneContainer?.clientHeight || window.innerHeight);
+    const pixelRatio = Math.min(window.devicePixelRatio * visualSettings.resolutionScale, 2);
+    renderer.setPixelRatio(pixelRatio);
+    renderer.setSize(width, height, true);
+    if (starField?.material?.uniforms?.uPixelRatio) {
+      starField.material.uniforms.uPixelRatio.value = pixelRatio;
+    }
+  } catch (e) {
+    console.warn("Failed to apply initial resolution scale", e);
+  }
+
+  // Apply lighting scale
+  try {
+    ambientLight.intensity = 0.35 * visualSettings.lightingScale;
+    sunLight.intensity = Math.max(0, params.sunIntensity) * visualSettings.lightingScale;
+  } catch (e) {
+    console.warn("Failed to apply initial lighting scale", e);
+  }
+}
+
+// Popup event handlers
+visualSettingsClose?.addEventListener("click", closeVisualSettingsPopup);
+visualSettingsReset?.addEventListener("click", resetVisualSettings);
+visualSettingsApply?.addEventListener("click", applyVisualSettings);
+
+// Real-time UI updates
+frameRateControl?.addEventListener("change", (e) => {
+  visualSettings.frameRate = e.target.value;
+});
+
+resolutionScale?.addEventListener("input", (e) => {
+  visualSettings.resolutionScale = parseFloat(e.target.value);
+  resolutionScaleValue.textContent = Math.round(visualSettings.resolutionScale * 100) + "%";
+});
+
+lightingScale?.addEventListener("input", (e) => {
+  visualSettings.lightingScale = parseFloat(e.target.value);
+  lightingScaleValue.textContent = Math.round(visualSettings.lightingScale * 100) + "%";
+});
+
+particleMaxInput?.addEventListener("input", (e) => {
+  const v = Math.max(100, Math.min(5000, parseInt(e.target.value || "1000", 10)));
+  visualSettings.particleMax = v;
+  particleMaxValue.textContent = String(v);
+});
+
+noiseResolutionInput?.addEventListener("input", (e) => {
+  const v = Math.max(0.25, Math.min(2.0, parseFloat(e.target.value || "1.0")));
+  visualSettings.noiseResolution = v;
+  noiseResolutionValue.textContent = Math.round(v * 100) + "%";
+});
+
+// Close popup when clicking outside
+visualSettingsPopup?.addEventListener("click", (e) => {
+  if (e.target === visualSettingsPopup) {
+    closeVisualSettingsPopup();
+  }
 });
 
 // Mobile surprise button (always visible)
@@ -2638,6 +2844,11 @@ initializeApp().then(() => {
   updateStarfieldUniforms();
   markPlanetDirty();
   markMoonsDirty();
+  applyInitialVisualSettings();
+  // Also apply immediately in preview mode to ensure consistency
+  if (previewMode) {
+    try { applyVisualSettings(); } catch {}
+  }
 });
 initMoonPhysics();
 updateOrbitLinesVisibility();
@@ -2663,6 +2874,16 @@ mobileHelpButton?.addEventListener("click", () => {
 
 //#region Animation loop
 function animate(timestamp) {
+  // FPS cap
+  if (frameCapTargetMs && frameCapLastTime) {
+    const elapsed = timestamp - frameCapLastTime;
+    if (elapsed < frameCapTargetMs) {
+      requestAnimationFrame(animate);
+      return;
+    }
+  }
+  frameCapLastTime = timestamp;
+
   const delta = Math.min(1 / 15, (timestamp - lastFrameTime) / 1000 || 0);
   lastFrameTime = timestamp;
   const simulationDelta = delta * params.simulationSpeed;
@@ -3417,7 +3638,10 @@ function updateSun() {
   starCoronaUniforms.uNoiseScale.value = noiseScale * 0.75;
   starCoronaUniforms.uNoiseStrength.value = glowStrength * 0.45;
 
-  const desiredCount = Math.max(0, Math.round(params.sunParticleCount || 0));
+  let desiredCount = Math.max(0, Math.round(params.sunParticleCount || 0));
+  if (visualSettings?.particleMax != null) {
+    desiredCount = Math.min(desiredCount, Math.max(100, visualSettings.particleMax));
+  }
   if (desiredCount !== params.sunParticleCount) {
     params.sunParticleCount = desiredCount;
   }
@@ -3867,16 +4091,16 @@ function updateStarParticles(dt) {
 }
 
 function generateRingTexture(innerRatio) {
-  return generateRingTextureExt(innerRatio, params);
+  return generateRingTextureExt(innerRatio, { ...params, noiseResolution: visualSettings?.noiseResolution ?? 1.0 });
 }
 
 // Generate an annulus texture with supplied color/noise parameters (for black hole disk/halo Texture style)
 function generateAnnulusTexture(opts) {
-  return generateAnnulusTextureExt({ ...opts, seed: params.seed });
+  return generateAnnulusTextureExt({ ...opts, seed: params.seed, noiseResolution: visualSettings?.noiseResolution ?? 1.0 });
 }
 
 function generateGasGiantTexture(p) {
-  return generateGasGiantTextureExt(p);
+  return generateGasGiantTextureExt({ ...p, noiseResolution: visualSettings?.noiseResolution ?? 1.0 });
 }
 
 function updateRings() {
@@ -4726,7 +4950,7 @@ function formatYears(years) {
 function onWindowResize() {
   const width = sceneContainer.clientWidth;
   const height = sceneContainer.clientHeight;
-  const pixelRatio = Math.min(window.devicePixelRatio, 2);
+  const pixelRatio = Math.min(window.devicePixelRatio * visualSettings.resolutionScale, 2);
   renderer.setPixelRatio(pixelRatio);
   renderer.setSize(width, height);
   camera.aspect = width / height;
@@ -4896,8 +5120,9 @@ function chunkCode(str, size) {
 //#endregion
 //#region Helpers
 function regenerateCloudTexture() {
-  const width = 1024;
-  const height = 512;
+  const resScale = Math.max(0.25, Math.min(2.0, visualSettings?.noiseResolution ?? 1.0));
+  const width = Math.max(64, Math.round(1024 * resScale));
+  const height = Math.max(32, Math.round(512 * resScale));
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -5034,7 +5259,10 @@ function spawnExplosion(position, color = new THREE.Color(0xffaa66), strength = 
   if (!params.explosionEnabled) return;
   const effectiveStrength = Math.max(0.05, params.explosionStrength) * Math.max(0.1, strength);
   const baseCount = Math.max(10, Math.round(params.explosionParticleBase || 80));
-  const count = Math.max(20, Math.floor(baseCount * THREE.MathUtils.clamp(effectiveStrength, 0.2, 4)));
+  let count = Math.max(20, Math.floor(baseCount * THREE.MathUtils.clamp(effectiveStrength, 0.2, 4)));
+  if (visualSettings?.particleMax != null) {
+    count = Math.min(count, Math.max(100, visualSettings.particleMax));
+  }
   const geometry = new THREE.BufferGeometry();
   const positions = new Float32Array(count * 3);
   const velocities = new Float32Array(count * 3);

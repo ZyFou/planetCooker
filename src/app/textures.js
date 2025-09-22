@@ -2,7 +2,8 @@ import * as THREE from "three";
 import { createNoise3D } from "simplex-noise";
 
 export function generateRingTexture(innerRatio, params) {
-  const size = 512;
+  const scale = Math.max(0.25, Math.min(2.0, params?.noiseResolution || 1.0));
+  const size = Math.max(64, Math.round(512 * scale));
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
@@ -102,7 +103,8 @@ export function generateRingTexture(innerRatio, params) {
 }
 
 export function generateGasGiantTexture(params) {
-  const size = 1024; // Use a larger texture for the planet surface
+  const scale = Math.max(0.25, Math.min(2.0, params?.noiseResolution || 1.0));
+  const size = Math.max(128, Math.round(1024 * scale)); // Use a larger texture for the planet surface
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size / 2; // Use a 2:1 aspect ratio for equirectangular projection
@@ -250,8 +252,9 @@ export function generateGasGiantTexture(params) {
   return texture;
 }
 
-export function generateAnnulusTexture({ innerRatio, color, opacity = 1, noiseScale = 3.0, noiseStrength = 0.5, seedKey = "bh", seed }) {
-  const size = 512;
+export function generateAnnulusTexture({ innerRatio, color, opacity = 1, noiseScale = 3.0, noiseStrength = 0.5, seedKey = "bh", seed, noiseResolution = 1.0 }) {
+  const scale = Math.max(0.25, Math.min(2.0, noiseResolution || 1.0));
+  const size = Math.max(64, Math.round(512 * scale));
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
