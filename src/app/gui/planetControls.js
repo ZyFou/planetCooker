@@ -210,6 +210,37 @@ export function setupPlanetControls({
       scheduleShareUpdate();
     });
 
+  const icingFolder = registerFolder(paletteFolder.addFolder("Icing"), { close: true });
+
+  guiControllers.icingEnabled = icingFolder.add(params, "icingEnabled")
+    .name("Enable Icing")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.iceColor = icingFolder.addColor(params, "iceColor")
+    .name("Ice Color")
+    .onChange(() => {
+      updatePalette();
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.freezingPoint = icingFolder.add(params, "freezingPoint", 0, 1, 0.01)
+    .name("Freezing Point")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.iceCoverage = icingFolder.add(params, "iceCoverage", 0, 1, 0.01)
+    .name("Ice Coverage")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
   guiControllers.atmosphereColor = paletteFolder.addColor(params, "atmosphereColor")
     .name("Atmosphere Color")
     .onChange(() => {
