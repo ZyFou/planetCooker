@@ -880,6 +880,8 @@ const params = {
   iceColor: "#ffffff",
   freezingPoint: 0.25,
   iceIntensity: 1.0,
+  iceColorVariation: 0.5,
+  polarIceStrength: 1.0,
   colorOcean: "#1b3c6d",
   colorShallow: "#2f7fb6",
   colorFoam: "#ffffff",
@@ -1604,6 +1606,8 @@ const shareKeys = [
   "iceColor",
   "freezingPoint",
   "iceIntensity",
+  "iceColorVariation",
+  "polarIceStrength",
   "colorOcean",
   "colorShallow",
   "colorFoam",
@@ -3079,18 +3083,39 @@ function rebuildPlanet() {
       const finalRadius = params.radius + displacement;
       vertex.copy(normal).multiplyScalar(finalRadius);
 
-      const latitude = Math.abs(normal.y);
+      // Calculate temperature based on sun direction and position
       const sunlightAngle = Math.max(0, normal.dot(sunDirection));
+      const sunLatitude = 1.0 - sunlightAngle; // 0 = equator (facing sun), 1 = poles (facing away from sun)
 
+      // Enhanced temperature calculation with proper sun alignment
       let temperature = 1.0;
+      
+      // Distance-based temperature (inverse square law)
       temperature /= Math.pow(params.sunDistance / 48, 2);
+      
+      // Sun intensity effect
       temperature *= params.sunIntensity;
-      temperature *= sunlightAngle;
-      temperature *= (1.0 - latitude * 0.4);
-
+      
+      // Sunlight angle effect (more realistic cosine law)
+      temperature *= Math.pow(sunlightAngle, 0.8); // Slightly less harsh than pure cosine
+      
+      // Latitude effect relative to sun - poles are colder
+      const latitudeEffect = 1.0 - sunLatitude * 0.6; // Stronger latitude effect
+      temperature *= latitudeEffect;
+      
+      // Enhanced seasonal effect based on planet tilt
       const tilt = THREE.MathUtils.degToRad(params.axisTilt);
-      const seasonalEffect = Math.sin(tilt) * normal.y;
-      temperature += seasonalEffect * 0.1;
+      const tiltEffect = Math.sin(tilt) * normal.y;
+      
+      // Seasonal temperature variation - more pronounced at higher latitudes
+      const seasonalVariation = tiltEffect * 0.3 * (1.0 - sunLatitude * 0.5);
+      temperature += seasonalVariation;
+      
+      // Add day/night cycle effect (areas facing away from sun are much colder)
+      const dayNightEffect = Math.pow(sunlightAngle, 2.0) * 0.4 + 0.6;
+      temperature *= dayNightEffect;
+      
+      // Clamp temperature to realistic range
       temperature = THREE.MathUtils.clamp(temperature, 0, 1);
 
       positions.setXYZ(i, vertex.x, vertex.y, vertex.z);
@@ -3313,6 +3338,52 @@ function deriveTerrainProfile(seed) {
   };
 }
 
+function createDynamicIceColor(temperature, elevation, radius) {
+  // Create dynamic ice colors based on temperature and conditions
+  const iceColor = new THREE.Color();
+  
+  // Base ice color from palette
+  iceColor.copy(palette.ice);
+  
+  // Temperature-based color variations
+  const tempFactor = THREE.MathUtils.clamp((params.freezingPoint - temperature) / params.freezingPoint, 0, 1);
+  
+  // Colder ice is more blue/white, warmer ice is more transparent/cyan
+  if (tempFactor > 0.7) {
+    // Very cold ice - pure white with slight blue tint
+    iceColor.lerp(new THREE.Color(0.95, 0.98, 1.0), tempFactor * 0.8);
+  } else if (tempFactor > 0.4) {
+    // Cold ice - blue-white
+    iceColor.lerp(new THREE.Color(0.8, 0.9, 1.0), tempFactor * 0.6);
+  } else {
+    // Warmer ice - more transparent, cyan tint
+    iceColor.lerp(new THREE.Color(0.7, 0.9, 0.95), tempFactor * 0.4);
+  }
+  
+  // Elevation-based effects - higher ice is whiter (snow-like)
+  if (elevation > 0.7) {
+    const elevationFactor = (elevation - 0.7) / 0.3;
+    iceColor.lerp(new THREE.Color(0.98, 0.99, 1.0), elevationFactor * 0.5);
+  }
+  
+  // Add color variation based on parameter
+  if (params.iceColorVariation > 0) {
+    const variationFactor = Math.sin(radius * 15 + temperature * 10) * params.iceColorVariation * 0.2;
+    iceColor.multiplyScalar(1 + variationFactor);
+  }
+  
+  // Add subtle noise for realistic variation
+  const noiseFactor = Math.sin(radius * 10) * 0.1 + 0.9;
+  iceColor.multiplyScalar(noiseFactor);
+  
+  // Ensure color values stay within valid range
+  iceColor.r = THREE.MathUtils.clamp(iceColor.r, 0, 1);
+  iceColor.g = THREE.MathUtils.clamp(iceColor.g, 0, 1);
+  iceColor.b = THREE.MathUtils.clamp(iceColor.b, 0, 1);
+  
+  return iceColor;
+}
+
 function sampleColor(elevation, radius, temperature) {
   let baseColor;
   
@@ -3334,8 +3405,35 @@ function sampleColor(elevation, radius, temperature) {
   // No core color blending - using physical core sphere instead
   // Apply the sampled baseColor to the shared scratch color and return it
   if (params.icingEnabled && temperature < params.freezingPoint) {
-    const iceMix = THREE.MathUtils.clamp((params.freezingPoint - temperature) * (1 / params.freezingPoint) * params.iceIntensity, 0, 1);
-    baseColor.lerp(palette.ice, iceMix);
+    // Enhanced ice mixing calculation with polar and seasonal effects
+    let iceMix = (params.freezingPoint - temperature) / params.freezingPoint;
+    
+    // Apply ice intensity
+    iceMix *= params.iceIntensity;
+    
+    // Polar ice enhancement - stronger ice formation at poles relative to sun
+    // Use temperature-based approach since temperature already accounts for sun position
+    const polarBoost = Math.pow(1 - temperature, 2) * (params.polarIceStrength || 1.0);
+    iceMix += polarBoost * 0.3;
+    
+    // Enhanced polar ice caps that respond to temperature patterns
+    // Areas with very low temperature get more ice
+    const coldFactor = Math.pow(1 - temperature, 2);
+    const polarCapEffect = coldFactor * (params.polarIceStrength || 1.0) * 0.4;
+    iceMix += polarCapEffect;
+    
+    // Seasonal ice formation based on planet tilt
+    // This is handled in the temperature calculation, so we'll add a small seasonal boost here
+    const tilt = THREE.MathUtils.degToRad(params.axisTilt);
+    const seasonalBoost = Math.sin(tilt) * 0.1; // Small seasonal variation
+    iceMix += seasonalBoost;
+    
+    // Clamp final ice mix
+    iceMix = THREE.MathUtils.clamp(iceMix, 0, 1);
+    
+    // Enhanced ice color system with dynamic variations
+    const iceColor = createDynamicIceColor(temperature, elevation, radius);
+    baseColor.lerp(iceColor, iceMix);
   }
   return scratchColor.copy(baseColor);
 }

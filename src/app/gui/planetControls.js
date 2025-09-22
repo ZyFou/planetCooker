@@ -425,6 +425,22 @@ export function setupPlanetControls({
     });
   rockyPlanetControllers.push(guiControllers.iceIntensity);
 
+  guiControllers.iceColorVariation = icingFolder.add(params, "iceColorVariation", 0, 1, 0.01)
+    .name("Color Variation")
+    .onFinishChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  rockyPlanetControllers.push(guiControllers.iceColorVariation);
+
+  guiControllers.polarIceStrength = icingFolder.add(params, "polarIceStrength", 0, 2, 0.01)
+    .name("Polar Ice Strength")
+    .onFinishChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  rockyPlanetControllers.push(guiControllers.polarIceStrength);
+
   const motionFolder = registerFolder(gui.addFolder("Motion"), { close: true });
 
   guiControllers.axisTilt = motionFolder.add(params, "axisTilt", 0, 45, 0.5)
