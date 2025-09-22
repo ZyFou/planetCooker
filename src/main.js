@@ -865,6 +865,11 @@ const params = {
   colorMid: "#b49e74",
   colorHigh: "#f2f6f5",
   colorCore: "#8b4513",
+  // Icing
+  icingEnabled: true,
+  iceColor: "#FFFFFF",
+  freezingPoint: 0.3,
+  iceCoverage: 0.5,
   coreEnabled: true,
   coreSize: 0.4,
   coreVisible: true,
@@ -1042,6 +1047,7 @@ const presets = {
   },
   "Jupiter": {
     seed: "JUPITER",
+    isGasGiant: true,
     radius: 3.5,
     subdivisions: 5,
     noiseLayers: 3,
@@ -1086,6 +1092,7 @@ const presets = {
   },
   "Saturn": {
     seed: "SATURN",
+    isGasGiant: true,
     radius: 3.2,
     subdivisions: 5,
     noiseLayers: 3,
@@ -1217,6 +1224,7 @@ const presets = {
   },
   "Uranus": {
     seed: "URANUS",
+    isGasGiant: true,
     radius: 2.7,
     subdivisions: 5,
     noiseLayers: 3,
@@ -1269,6 +1277,7 @@ const presets = {
   },
   "Neptune": {
     seed: "NEPTUNE",
+    isGasGiant: true,
     radius: 2.6,
     subdivisions: 5,
     noiseLayers: 3,
@@ -1362,6 +1371,7 @@ const presets = {
   },
   "Ice Giant": {
     seed: "GLACIER",
+    isGasGiant: true,
     radius: 2.8,
     subdivisions: 5,
     noiseLayers: 3,
@@ -1446,6 +1456,7 @@ const presets = {
   },
   "Gas Giant": {
     seed: "AEROX",
+    isGasGiant: true,
     radius: 3.6,
     subdivisions: 4,
     noiseLayers: 4,
@@ -1585,6 +1596,11 @@ const shareKeys = [
   "colorLow",
   "colorMid",
   "colorHigh",
+  // Icing
+  "icingEnabled",
+  "iceColor",
+  "freezingPoint",
+  "iceCoverage",
   // Palette/core additions
   "colorCore",
   "coreEnabled",
@@ -1680,6 +1696,7 @@ const palette = {
   low: new THREE.Color(params.colorLow),
   mid: new THREE.Color(params.colorMid),
   high: new THREE.Color(params.colorHigh),
+  ice: new THREE.Color(params.iceColor),
   core: new THREE.Color(params.colorCore),
   atmosphere: new THREE.Color(params.atmosphereColor)
 };
@@ -2643,8 +2660,45 @@ mobileHelpButton?.addEventListener("click", () => {
   showOnboarding(true);
 });
 
+//#region Planet generation
+const scratchColor = new THREE.Color();
+const scratchNormal = new THREE.Vector3();
+const sunDirection = new THREE.Vector3();
+
+function calculateTemperature(normal) {
+  if (!params.icingEnabled) return 1.0;
+
+  // 1. Start with a global base temperature. Let's use a constant for now, like 0.5
+  let temperature = 0.5;
+
+  // 2. Modify by sun distance. Closer = hotter.
+  const distFactor = (48 / params.sunDistance);
+  temperature *= distFactor;
+
+  // 3. Modify by sun intensity. More intense = hotter.
+  const intensityFactor = params.sunIntensity / 1.6;
+  temperature *= intensityFactor;
+
+  // 4. Latitude effect. Poles are colder.
+  const latitudeEffect = 1.0 - Math.pow(Math.abs(normal.y), 1.5) * params.iceCoverage;
+  temperature *= latitudeEffect;
+
+  // 5. Day/night cycle.
+  scratchNormal.copy(normal).applyMatrix3(planetMesh.normalMatrix).normalize();
+  const lightDot = Math.max(0, scratchNormal.dot(sunDirection)); // 0 to 1
+
+  const dayNightFactor = 0.3 + lightDot * 0.7;
+  temperature *= dayNightFactor;
+
+  return THREE.MathUtils.clamp(temperature, 0, 1.5);
+}
+
+function rebuildPlanet() {
+//#endregion
 //#region Animation loop
 function animate(timestamp) {
+  sunDirection.subVectors(planetRoot.position, sunGroup.position).normalize();
+
   const delta = Math.min(1 / 15, (timestamp - lastFrameTime) / 1000 || 0);
   lastFrameTime = timestamp;
   const simulationDelta = delta * params.simulationSpeed;
@@ -3034,7 +3088,7 @@ function rebuildPlanet() {
     vertex.copy(normal).multiplyScalar(finalRadius);
     positions.setXYZ(i, vertex.x, vertex.y, vertex.z);
 
-    const color = sampleColor(normalized, finalRadius);
+    const color = sampleColor(normalized, finalRadius, normal);
     colors[i * 3 + 0] = color.r;
     colors[i * 3 + 1] = color.g;
     colors[i * 3 + 2] = color.b;
@@ -3251,7 +3305,7 @@ function deriveTerrainProfile(seed) {
   };
 }
 
-function sampleColor(elevation, radius) {
+function sampleColor(elevation, radius, normal) {
   let baseColor;
   
   if (elevation <= params.oceanLevel) {
@@ -3269,6 +3323,16 @@ function sampleColor(elevation, radius) {
     }
   }
 
+  const isGasGiant = presets[params.preset]?.isGasGiant || false;
+
+  if (params.icingEnabled && !isGasGiant) {
+    const temperature = calculateTemperature(normal);
+    if (temperature < params.freezingPoint) {
+      const iceMix = THREE.MathUtils.smoothstep(temperature, params.freezingPoint, params.freezingPoint - 0.2);
+      baseColor.lerp(palette.ice, iceMix);
+    }
+  }
+
   // No core color blending - using physical core sphere instead
   // Apply the sampled baseColor to the shared scratch color and return it
   return scratchColor.copy(baseColor);
@@ -3281,6 +3345,7 @@ function updatePalette() {
   palette.low.set(params.colorLow);
   palette.mid.set(params.colorMid);
   palette.high.set(params.colorHigh);
+  palette.ice.set(params.iceColor);
   palette.core.set(params.colorCore);
   palette.atmosphere.set(params.atmosphereColor);
   atmosphereMaterial.color.copy(palette.atmosphere);
