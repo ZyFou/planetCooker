@@ -81,6 +81,10 @@ export function setupPlanetControls({
       if (showGasGiant) guiControllers.folders.gasGiantFolder.show();
       else guiControllers.folders.gasGiantFolder.hide();
     }
+    if (guiControllers.folders.icingFolder) {
+      if (showGasGiant) guiControllers.folders.icingFolder.hide();
+      else guiControllers.folders.icingFolder.show();
+    }
     rockyPlanetControllers.forEach((controller) => {
       if (!controller) return;
       if (showGasGiant) controller.hide();
@@ -384,6 +388,42 @@ export function setupPlanetControls({
       updateClouds();
       scheduleShareUpdate();
     });
+
+  const icingFolder = registerFolder(gui.addFolder("Icing"), { close: true });
+  guiControllers.folders.icingFolder = icingFolder;
+
+  guiControllers.icingEnabled = icingFolder.add(params, "icingEnabled")
+    .name("Enable Icing")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  rockyPlanetControllers.push(guiControllers.icingEnabled);
+
+  guiControllers.iceColor = icingFolder.addColor(params, "iceColor")
+    .name("Ice Color")
+    .onChange(() => {
+      updatePalette();
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  rockyPlanetControllers.push(guiControllers.iceColor);
+
+  guiControllers.freezingPoint = icingFolder.add(params, "freezingPoint", 0, 1, 0.01)
+    .name("Freezing Point")
+    .onFinishChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  rockyPlanetControllers.push(guiControllers.freezingPoint);
+
+  guiControllers.iceIntensity = icingFolder.add(params, "iceIntensity", 0, 2, 0.01)
+    .name("Ice Intensity")
+    .onFinishChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  rockyPlanetControllers.push(guiControllers.iceIntensity);
 
   const motionFolder = registerFolder(gui.addFolder("Motion"), { close: true });
 
@@ -926,7 +966,8 @@ export function setupPlanetControls({
     ringsFolder,
     spaceFolder,
     effectsFolder,
-    gasGiantFolder
+    gasGiantFolder,
+    icingFolder
   });
 
   refreshPlanetTypeVisibility();

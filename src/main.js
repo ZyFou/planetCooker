@@ -876,6 +876,10 @@ const params = {
   persistence: 0.48,
   lacunarity: 2.25,
   oceanLevel: 0.46,
+  icingEnabled: true,
+  iceColor: "#ffffff",
+  freezingPoint: 0.25,
+  iceIntensity: 1.0,
   colorOcean: "#1b3c6d",
   colorShallow: "#2f7fb6",
   colorFoam: "#ffffff",
@@ -1596,6 +1600,10 @@ const shareKeys = [
   "persistence",
   "lacunarity",
   "oceanLevel",
+  "icingEnabled",
+  "iceColor",
+  "freezingPoint",
+  "iceIntensity",
   "colorOcean",
   "colorShallow",
   "colorFoam",
@@ -2978,6 +2986,9 @@ function rebuildPlanet() {
     const normal = new THREE.Vector3();
     const sampleDir = new THREE.Vector3();
     const warpVec = new THREE.Vector3();
+    const sunDirection = new THREE.Vector3();
+    sunGroup.getWorldPosition(sunDirection);
+    sunDirection.normalize();
 
     for (let i = 0; i < positions.count; i += 1) {
       vertex.fromBufferAttribute(positions, i);
@@ -3067,9 +3078,24 @@ function rebuildPlanet() {
       const displacement = (normalized - params.oceanLevel) * params.noiseAmplitude;
       const finalRadius = params.radius + displacement;
       vertex.copy(normal).multiplyScalar(finalRadius);
+
+      const latitude = Math.abs(normal.y);
+      const sunlightAngle = Math.max(0, normal.dot(sunDirection));
+
+      let temperature = 1.0;
+      temperature /= Math.pow(params.sunDistance / 48, 2);
+      temperature *= params.sunIntensity;
+      temperature *= sunlightAngle;
+      temperature *= (1.0 - latitude * 0.4);
+
+      const tilt = THREE.MathUtils.degToRad(params.axisTilt);
+      const seasonalEffect = Math.sin(tilt) * normal.y;
+      temperature += seasonalEffect * 0.1;
+      temperature = THREE.MathUtils.clamp(temperature, 0, 1);
+
       positions.setXYZ(i, vertex.x, vertex.y, vertex.z);
 
-      const color = sampleColor(normalized, finalRadius);
+      const color = sampleColor(normalized, finalRadius, temperature);
       colors[i * 3 + 0] = color.r;
       colors[i * 3 + 1] = color.g;
       colors[i * 3 + 2] = color.b;
@@ -3287,7 +3313,7 @@ function deriveTerrainProfile(seed) {
   };
 }
 
-function sampleColor(elevation, radius) {
+function sampleColor(elevation, radius, temperature) {
   let baseColor;
   
   if (elevation <= params.oceanLevel) {
@@ -3307,6 +3333,10 @@ function sampleColor(elevation, radius) {
 
   // No core color blending - using physical core sphere instead
   // Apply the sampled baseColor to the shared scratch color and return it
+  if (params.icingEnabled && temperature < params.freezingPoint) {
+    const iceMix = THREE.MathUtils.clamp((params.freezingPoint - temperature) * (1 / params.freezingPoint) * params.iceIntensity, 0, 1);
+    baseColor.lerp(palette.ice, iceMix);
+  }
   return scratchColor.copy(baseColor);
 }
 
@@ -3319,6 +3349,7 @@ function updatePalette() {
   palette.high.set(params.colorHigh);
   palette.core.set(params.colorCore);
   palette.atmosphere.set(params.atmosphereColor);
+  palette.ice = new THREE.Color(params.iceColor);
   atmosphereMaterial.color.copy(palette.atmosphere);
 }
 
@@ -3363,6 +3394,7 @@ function updateTilt() {
   tiltGroup.rotation.z = radians;
   moonsGroup.rotation.z = radians;
   orbitLinesGroup.rotation.z = radians;
+  markPlanetDirty();
 }
 
 function updateSun() {
@@ -3434,6 +3466,7 @@ function updateSun() {
   starParticleState.color = params.sunParticleColor || params.sunColor || "#ffd27f";
 
   sunPulsePhase = 0;
+  markPlanetDirty();
 }
 
 function resetBlackHoleState() {
