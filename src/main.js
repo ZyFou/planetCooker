@@ -20,7 +20,7 @@ const debounceShare = debounce(() => {
   if (!shareDirty) return;
   updateShareCode();
   shareDirty = false;
-}, 180);
+}, 100); // Reduced from 180ms to 100ms for better responsiveness
 
 //#region Scene and renderer setup
 const sceneContainer = document.getElementById("scene");
@@ -182,6 +182,13 @@ function exitPhotoMode() {
     photoToggleButton.title = "Photo mode";
   }
   if (photoShutterButton) photoShutterButton.hidden = true;
+  
+  // Ensure URL is updated before reloading
+  if (shareDirty) {
+    updateShareCode();
+    shareDirty = false;
+  }
+  
   setTimeout(() => {
     try { window.location.reload(); } catch {}
   }, 0);
@@ -2095,4 +2102,12 @@ function surpriseMe() {
     updateStarfieldUniforms();
     planet.guiControllers.updateStabilityDisplay(moonSettings.length, moonSettings.length);
     scheduleShareUpdate();
+    
+    // Force immediate URL update for surprise me to prevent loss on reload
+    setTimeout(() => {
+      if (shareDirty) {
+        updateShareCode();
+        shareDirty = false;
+      }
+    }, 200); // Slightly longer than debounce to ensure it runs after
 }
