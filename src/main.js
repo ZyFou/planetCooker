@@ -969,9 +969,9 @@ async function initFromHash() {
     const isLikelyApiId = /^[A-Za-z0-9_-]{6,12}$/.test(hash);
     currentHashIsApiId = isLikelyApiId;
     if (isLikelyApiId) {
-      // Preserve short URL immediately and remember id, even if API fails
+      // Preserve hash URL and remember id, even if API fails
       currentShareId = hash;
-      try { history.replaceState(null, "", `/${hash}`); } catch {}
+      // Don't change URL format - keep hash for better reload handling
       const configData = await loadConfigurationFromAPIExt(hash);
       if (configData && configData.data) {
         currentShareId = configData.id || hash;
@@ -1004,9 +1004,9 @@ async function initFromHash() {
         } finally {
           isApplyingPreset = false;
         }
-        // After a successful API load, switch the tab URL to short form (no #)
+        // After a successful API load, keep the hash format for better reload handling
         try {
-          history.replaceState(null, "", `/${currentShareId}`);
+          history.replaceState(null, "", `#${currentShareId}`);
         } catch {}
         return true;
       }
@@ -1057,10 +1057,10 @@ async function initFromHash() {
         } finally {
           isApplyingPreset = false;
         }
-        // Keep short URL if the original hash was a short id, otherwise keep hash
+        // Keep hash format for better reload handling
         try {
           if (currentHashIsApiId && currentShareId) {
-            history.replaceState(null, "", `/${currentShareId}`);
+            history.replaceState(null, "", `#${currentShareId}`);
           } else {
             const encoded = encodeShare({ version: 1, preset: params.preset, data: loadedData, moons: moonSettings.slice(0, params.moonCount) });
             history.replaceState(null, "", `#${encoded}`);
@@ -1556,10 +1556,10 @@ function updateShareCode() {
       shareDisplay.title = `Local code - Click \"Copy Share Code\" to save to API`;
     }
 
-    // Keep tab URL short if we have an API id already; otherwise use hash
+    // Keep hash format for better reload handling
     try {
       if (currentShareId) {
-        history.replaceState(null, "", `/${currentShareId}`);
+        history.replaceState(null, "", `#${currentShareId}`);
       } else {
         history.replaceState(null, "", `#${encoded}`);
       }
@@ -1599,9 +1599,9 @@ async function copyShareCode() {
     try {
       const result = await saveConfigurationToAPIExt(payload.data, payload.metadata || {});
       if (result && result.id) {
-        // Update URL with API ID
+        // Update URL with API ID in hash format
         currentShareId = result.id;
-        try { window.history.replaceState({}, '', `/${result.id}`); } catch {}
+        try { window.history.replaceState({}, '', `#${result.id}`); } catch {}
         if (shareDisplay) {
           shareDisplay.textContent = result.id;
           shareDisplay.title = `API code - Click to copy\n${result.id}`;
