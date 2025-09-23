@@ -1108,6 +1108,13 @@ export class Planet {
         });
     }
 
+    updateOrbitLinesVisibility() {
+        this.orbitLinesGroup.visible = this.params.showOrbitLines;
+        if (this.params.showOrbitLines) {
+            this.syncOrbitLinesWithPivots();
+        }
+    }
+
     updateOrbitMaterial(pivot, isBound) {
         const orbit = pivot.userData.orbit;
         if (orbit && orbit.material) {

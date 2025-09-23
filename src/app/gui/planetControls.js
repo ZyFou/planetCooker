@@ -19,6 +19,10 @@ export function setupPlanetControls({
   regenerateStarfield,
   updateGravityDisplay,
   initMoonPhysics,
+  resetMoonPhysics,
+  syncMoonSettings,
+  rebuildMoonControls,
+  updateOrbitLinesVisibility,
   getIsApplyingPreset,
   getIsApplyingStarPreset,
   onPresetChange,
@@ -485,6 +489,27 @@ export function setupPlanetControls({
     .onChange(() => {
       updateGravityDisplay();
       initMoonPhysics();
+      scheduleShareUpdate();
+    });
+
+  // Create Moons folder under Environment
+  const moonsFolder = registerFolder(environmentFolder.addFolder("Moons"), { close: true });
+  moonsFolder.open();
+
+  guiControllers.moonCount = moonsFolder.add(params, "moonCount", 0, 5, 1)
+    .name("Count")
+    .onChange(() => {
+      if (getIsApplyingPreset()) return;
+      syncMoonSettings();
+      rebuildMoonControls();
+      markMoonsDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.showOrbitLines = moonsFolder.add(params, "showOrbitLines")
+    .name("Show Orbits")
+    .onChange(() => {
+      updateOrbitLinesVisibility();
       scheduleShareUpdate();
     });
 

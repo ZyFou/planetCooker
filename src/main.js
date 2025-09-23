@@ -560,8 +560,12 @@ guiControllers.syncDebugMoonArtifacts = () => {
     const arrow = debugMoonArrows.pop();
     if (arrow) {
       scene.remove(arrow);
-      arrow.geometry.dispose();
-      arrow.material.dispose();
+      if (arrow.geometry) {
+        arrow.geometry.dispose();
+      }
+      if (arrow.material) {
+        arrow.material.dispose();
+      }
     }
   }
   
@@ -582,6 +586,9 @@ guiControllers.syncDebugMoonArtifacts = () => {
     }
   }
 };
+
+// Stability display update function
+guiControllers.updateStabilityDisplay = updateStabilityDisplay;
 
 // Debug vectors update function
 function updateDebugVectors() {
@@ -658,6 +665,12 @@ const {
   getIsApplyingPreset: () => isApplyingPreset
 });
 
+// Add moon settings normalization function to guiControllers
+guiControllers.normalizeMoonSettings = normalizeMoonSettings;
+
+// Add moon controls rebuild function to guiControllers
+guiControllers.rebuildMoonControls = rebuildMoonControls;
+
 const { rebuildRingControls } = setupRingControls({
   gui,
   params,
@@ -691,6 +704,10 @@ setupPlanetControls({
     regenerateStarfield,
     updateGravityDisplay,
     initMoonPhysics: () => planet?.initMoonPhysics(),
+    resetMoonPhysics: () => planet?.resetMoonPhysics(),
+    syncMoonSettings,
+    rebuildMoonControls,
+    updateOrbitLinesVisibility: () => planet?.updateOrbitLinesVisibility(),
     getIsApplyingPreset: () => isApplyingPreset,
     getIsApplyingStarPreset: () => isApplyingStarPreset,
     onPresetChange: (value) => applyPreset(value),
@@ -749,9 +766,269 @@ resetAllButton?.addEventListener("click", () => {
   }
 });
 
+surpriseMeButton?.addEventListener("click", () => {
+  try {
+    surpriseMe();
+    updateSeedDisplay();
+    updateGravityDisplay();
+    scheduleShareUpdate();
+  } catch (e) {
+    console.warn("Surprise Me failed:", e);
+  }
+});
+
 // ... (rest of the UI event listeners remain the same)
 
+//#region Preset Functions
+function applyPreset(presetName, options = {}) {
+  const { skipShareUpdate = false, keepSeed = false } = options;
+  
+  if (!presets[presetName]) {
+    console.warn(`Preset "${presetName}" not found`);
+    return;
+  }
+  
+  isApplyingPreset = true;
+  
+  try {
+    const preset = presets[presetName];
+    
+    // Apply all preset values to params
+    Object.keys(preset).forEach(key => {
+      if (key !== 'moons') { // Handle moons separately
+        params[key] = preset[key];
+      }
+    });
+    
+    // Handle moons separately
+    if (preset.moons) {
+      moonSettings.length = 0; // Clear existing moons
+      preset.moons.forEach(moonData => {
+        moonSettings.push({ ...moonData });
+      });
+    }
+    
+    // Update GUI controllers
+    Object.keys(guiControllers).forEach(key => {
+      if (guiControllers[key] && typeof guiControllers[key].setValue === 'function' && params[key] !== undefined) {
+        guiControllers[key].setValue(params[key]);
+      }
+    });
+    
+    // Update planet type visibility
+    if (guiControllers.refreshPlanetTypeVisibility) {
+      guiControllers.refreshPlanetTypeVisibility(params.planetType);
+    }
+    
+    // Update all planet components
+    planet.updatePalette();
+    planet.updateClouds();
+    planet.updateCore();
+    sun.updateSun();
+    planet.updateRings();
+    planet.updateTilt();
+    updateSeedDisplay();
+    updateGravityDisplay();
+    syncMoonSettings();
+    
+    // Update share if not skipping
+    if (!skipShareUpdate) {
+      scheduleShareUpdate();
+    }
+    
+  } finally {
+    isApplyingPreset = false;
+  }
+}
+
+function applyStarPreset(presetName, options = {}) {
+  const { skipShareUpdate = false } = options;
+  
+  if (!starPresets[presetName]) {
+    console.warn(`Star preset "${presetName}" not found`);
+    return;
+  }
+  
+  isApplyingStarPreset = true;
+  
+  try {
+    const preset = starPresets[presetName];
+    
+    // Apply all star preset values to params
+    Object.keys(preset).forEach(key => {
+      params[key] = preset[key];
+    });
+    
+    // Update GUI controllers
+    Object.keys(guiControllers).forEach(key => {
+      if (guiControllers[key] && typeof guiControllers[key].setValue === 'function' && params[key] !== undefined) {
+        guiControllers[key].setValue(params[key]);
+      }
+    });
+    
+    // Update sun
+    sun.updateSun();
+    
+    // Update share if not skipping
+    if (!skipShareUpdate) {
+      scheduleShareUpdate();
+    }
+    
+  } finally {
+    isApplyingStarPreset = false;
+  }
+}
+
+//#region Utility Functions
+function generateSeed() {
+  const words = [
+    'ALPHA', 'BETA', 'GAMMA', 'DELTA', 'EPSILON', 'ZETA', 'ETA', 'THETA',
+    'IOTA', 'KAPPA', 'LAMBDA', 'MU', 'NU', 'XI', 'OMICRON', 'PI',
+    'RHO', 'SIGMA', 'TAU', 'UPSILON', 'PHI', 'CHI', 'PSI', 'OMEGA',
+    'NOVA', 'STAR', 'MOON', 'SUN', 'EARTH', 'MARS', 'VENUS', 'JUPITER',
+    'SATURN', 'URANUS', 'NEPTUNE', 'PLUTO', 'COMET', 'ASTEROID', 'GALAXY',
+    'COSMOS', 'UNIVERSE', 'SPACE', 'VOID', 'NEBULA', 'QUASAR', 'PULSAR',
+    'BLACKHOLE', 'WORMHOLE', 'DIMENSION', 'REALM', 'WORLD', 'PLANET',
+    'CRYSTAL', 'GEM', 'STONE', 'ROCK', 'ICE', 'FIRE', 'WATER', 'WIND',
+    'STORM', 'LIGHTNING', 'THUNDER', 'RAIN', 'SNOW', 'FOG', 'MIST',
+    'FOREST', 'OCEAN', 'MOUNTAIN', 'VALLEY', 'DESERT', 'JUNGLE', 'TUNDRA',
+    'SAVANNA', 'PRAIRIE', 'MEADOW', 'GARDEN', 'FLOWER', 'TREE', 'LEAF',
+    'WIND', 'BREEZE', 'GALE', 'HURRICANE', 'TORNADO', 'CYCLONE', 'TYPHOON',
+    'AURORA', 'DAWN', 'DUSK', 'TWILIGHT', 'SUNRISE', 'SUNSET', 'MIDNIGHT',
+    'NOON', 'MORNING', 'EVENING', 'NIGHT', 'DAY', 'YEAR', 'MONTH', 'WEEK',
+    'HOUR', 'MINUTE', 'SECOND', 'MOMENT', 'INSTANT', 'ETERNITY', 'INFINITY',
+    'ZERO', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT',
+    'NINE', 'TEN', 'HUNDRED', 'THOUSAND', 'MILLION', 'BILLION', 'TRILLION'
+  ];
+  
+  const rng = Math.random();
+  const word1 = words[Math.floor(rng * words.length)];
+  const word2 = words[Math.floor(rng * 1000) % words.length];
+  
+  // Sometimes return single word, sometimes two words
+  return Math.random() < 0.7 ? word1 : `${word1}${word2}`;
+}
+
+//#region Visual Settings Functions
+function applyInitialVisualSettings() {
+  // Load visual settings from localStorage if available
+  try {
+    const saved = localStorage.getItem("planet-visual-settings");
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      Object.assign(visualSettings, parsed);
+    }
+  } catch (error) {
+    console.warn("Failed to load visual settings from localStorage:", error);
+  }
+  
+  // Apply the settings
+  applyVisualSettings();
+}
+
+function applyVisualSettings() {
+  // Apply frame rate cap
+  if (visualSettings.frameRate === "unlimited") {
+    frameCapTargetMs = 0;
+  } else {
+    frameCapTargetMs = TARGET_FRAME_TIMES[visualSettings.frameRate] || 0;
+  }
+  
+  // Apply resolution scaling
+  const pixelRatio = Math.min(window.devicePixelRatio * visualSettings.resolutionScale, 2);
+  renderer.setPixelRatio(pixelRatio);
+  
+  // Apply lighting scale
+  ambientLight.intensity = 0.35 * visualSettings.lightingScale;
+  if (sun && sun.sunLight) {
+    sun.sunLight.intensity = Math.max(0, params.sunIntensity) * visualSettings.lightingScale;
+  }
+  
+  // Update starfield if it exists
+  if (starField?.material?.uniforms?.uPixelRatio) {
+    starField.material.uniforms.uPixelRatio.value = pixelRatio;
+  }
+  
+  // Save settings to localStorage
+  try {
+    localStorage.setItem("planet-visual-settings", JSON.stringify(visualSettings));
+  } catch (error) {
+    console.warn("Failed to save visual settings to localStorage:", error);
+  }
+}
+
 //#region Initialization
+async function initFromHash() {
+  const hash = window.location.hash.slice(1); // Remove the # symbol
+  if (!hash) return false;
+  
+  try {
+    // Try to load from API first
+    const configData = await loadConfigurationFromAPIExt(hash);
+    if (configData && configData.data) {
+      // Apply the loaded configuration
+      Object.assign(params, configData.data);
+      
+      // Update all the UI elements and regenerate the planet
+      planet.updatePalette();
+      planet.updateClouds();
+      planet.updateCore();
+      sun.updateSun();
+      planet.updateRings();
+      planet.updateTilt();
+      updateSeedDisplay();
+      updateGravityDisplay();
+      syncMoonSettings();
+      
+      // Update GUI controllers
+      Object.keys(guiControllers).forEach(key => {
+        if (guiControllers[key] && typeof guiControllers[key].setValue === 'function' && params[key] !== undefined) {
+          guiControllers[key].setValue(params[key]);
+        }
+      });
+      
+      return true;
+    }
+  } catch (error) {
+    // Only log API errors if they're not "not found" errors
+    if (!error.message.includes('Configuration not found')) {
+      console.warn('Failed to load configuration from API:', error);
+    }
+    
+    // Fallback: try to decode as direct share code
+    try {
+      const configData = decodeShareExt(hash);
+      if (configData) {
+        Object.assign(params, configData);
+        
+        // Update all the UI elements and regenerate the planet
+        planet.updatePalette();
+        planet.updateClouds();
+        planet.updateCore();
+        sun.updateSun();
+        planet.updateRings();
+        planet.updateTilt();
+        updateSeedDisplay();
+        updateGravityDisplay();
+        syncMoonSettings();
+        
+        // Update GUI controllers
+        Object.keys(guiControllers).forEach(key => {
+          if (guiControllers[key] && typeof guiControllers[key].setValue === 'function' && params[key] !== undefined) {
+            guiControllers[key].setValue(params[key]);
+          }
+        });
+        
+        return true;
+      }
+    } catch (decodeError) {
+      console.warn('Failed to decode share code:', decodeError);
+    }
+  }
+  
+  return false;
+}
+
 async function initializeApp() {
   sun = new Sun(scene, null, params, visualSettings);
   planet = new Planet(scene, params, moonSettings, guiControllers, visualSettings, sun);
@@ -860,7 +1137,7 @@ function handleSeedChanged({ skipShareUpdate = false } = {}) {
     regenerateStarfield();
     if (planet) {
         planet.cloudTextureDirty = true;
-        planet.markPlanetDirty();
+        markPlanetDirty();
         planet.updateRings();
     }
     if (!skipShareUpdate) {
@@ -874,6 +1151,14 @@ function updateSeedDisplay() {
   
 function updateGravityDisplay() {
     if (gravityDisplay) gravityDisplay.textContent = `${params.gravity.toFixed(2)} m/s^2`;
+}
+
+function updateStabilityDisplay(boundCount, totalCount) {
+    if (stabilityDisplay) {
+        const stability = totalCount > 0 ? (boundCount / totalCount * 100).toFixed(0) : 100;
+        stabilityDisplay.textContent = `${stability}%`;
+        stabilityDisplay.className = stability >= 80 ? 'stable' : stability >= 50 ? 'unstable' : 'chaotic';
+    }
 }
   
 function updateTimeDisplay(years) {
@@ -930,6 +1215,16 @@ function setupMobilePanelToggle() {
       e.stopPropagation();
       if (infoPanel?.classList.contains("open")) closeMobilePanel();
       else openMobilePanel();
+    });
+
+    mobileMenuToggle?.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (mobileMenu?.classList.contains("open")) {
+        mobileMenu.classList.remove("open");
+      } else {
+        mobileMenu.classList.add("open");
+      }
     });
 
     panelScrim?.addEventListener("click", () => closeMobilePanel());
