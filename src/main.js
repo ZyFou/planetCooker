@@ -529,6 +529,8 @@ let frameCount = 0;
 let isApplyingPreset = false;
 let guiVisible = true;
 let isApplyingStarPreset = false;
+let currentShareId = null;
+let currentHashIsApiId = false;
 
 const { registerFolder, unregisterFolder, applyControlSearch } = initControlSearch({
   controlsContainer,
@@ -965,9 +967,14 @@ async function initFromHash() {
   try {
     // Only try API if hash looks like a short saved ID (nanoid-like)
     const isLikelyApiId = /^[A-Za-z0-9_-]{6,12}$/.test(hash);
+    currentHashIsApiId = isLikelyApiId;
     if (isLikelyApiId) {
+      // Preserve short URL immediately and remember id, even if API fails
+      currentShareId = hash;
+      try { history.replaceState(null, "", `/${hash}`); } catch {}
       const configData = await loadConfigurationFromAPIExt(hash);
       if (configData && configData.data) {
+        currentShareId = configData.id || hash;
         // Apply the loaded configuration
         Object.assign(params, configData.data);
         // Guard against GUI onChange side-effects while syncing controls
@@ -993,6 +1000,10 @@ async function initFromHash() {
         } finally {
           isApplyingPreset = false;
         }
+        // After a successful API load, switch the tab URL to short form (no #)
+        try {
+          history.replaceState(null, "", `/${currentShareId}`);
+        } catch {}
         return true;
       }
     }
@@ -1038,10 +1049,23 @@ async function initFromHash() {
         } finally {
           isApplyingPreset = false;
         }
+        // Keep short URL if the original hash was a short id, otherwise keep hash
+        try {
+          if (currentHashIsApiId && currentShareId) {
+            history.replaceState(null, "", `/${currentShareId}`);
+          } else {
+            const encoded = encodeShare({ version: 1, preset: params.preset, data: loadedData, moons: moonSettings.slice(0, params.moonCount) });
+            history.replaceState(null, "", `#${encoded}`);
+          }
+        } catch {}
         return true;
       }
     } catch (decodeError) {
       console.warn('Failed to decode share code:', decodeError);
+    }
+    // If we got here and hash looked like an API id, keep short URL and skip default preset
+    if (currentHashIsApiId) {
+      return true;
     }
   }
   
@@ -1500,10 +1524,17 @@ function updateShareCode() {
     if (shareDisplay) {
       shareDisplay.textContent = formatted;
       shareDisplay.dataset.code = encoded;
-      shareDisplay.title = `Local code - Click "Copy Share Code" to save to API\nClick to copy`;
+      shareDisplay.title = `Local code - Click \"Copy Share Code\" to save to API`;
     }
 
-    history.replaceState(null, "", `#${encoded}`);
+    // Keep tab URL short if we have an API id already; otherwise use hash
+    try {
+      if (currentShareId) {
+        history.replaceState(null, "", `/${currentShareId}`);
+      } else {
+        history.replaceState(null, "", `#${encoded}`);
+      }
+    } catch {}
 }
 
 function buildSharePayload() {
@@ -1540,7 +1571,8 @@ async function copyShareCode() {
       const result = await saveConfigurationToAPIExt(payload.data, payload.metadata || {});
       if (result && result.id) {
         // Update URL with API ID
-        window.history.replaceState({}, '', `#${result.id}`);
+        currentShareId = result.id;
+        try { window.history.replaceState({}, '', `/${result.id}`); } catch {}
         if (shareDisplay) {
           shareDisplay.textContent = result.id;
           shareDisplay.title = `API code - Click to copy\n${result.id}`;
@@ -1557,6 +1589,7 @@ async function copyShareCode() {
     
     // Fallback to local code
     window.history.replaceState({}, '', `#${shareCode}`);
+    currentShareId = null;
     if (shareDisplay) {
       shareDisplay.textContent = shareCode;
       shareDisplay.title = `Local code - Click to copy\n${shareCode}`;
