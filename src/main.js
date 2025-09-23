@@ -976,6 +976,7 @@ async function initFromHash() {
       if (configData && configData.data) {
         currentShareId = configData.id || hash;
         // Apply the loaded configuration
+        const prevType = params.planetType;
         Object.assign(params, configData.data);
         // Guard against GUI onChange side-effects while syncing controls
         isApplyingPreset = true;
@@ -990,6 +991,9 @@ async function initFromHash() {
           updateSeedDisplay();
           updateGravityDisplay();
           syncMoonSettings();
+          if (prevType !== params.planetType) {
+            markPlanetDirty();
+          }
           
           // Update GUI controllers
           Object.keys(guiControllers).forEach(key => {
@@ -1018,6 +1022,7 @@ async function initFromHash() {
       const decoded = decodeShareExt(hash);
       if (decoded) {
         const loadedData = decoded?.data ?? decoded;
+        const prevType = params.planetType;
         // Apply moons if present
         if (Array.isArray(decoded?.moons)) {
           try {
@@ -1039,6 +1044,9 @@ async function initFromHash() {
           updateSeedDisplay();
           updateGravityDisplay();
           syncMoonSettings();
+          if (prevType !== params.planetType) {
+            markPlanetDirty();
+          }
           
           // Update GUI controllers
           Object.keys(guiControllers).forEach(key => {
@@ -1432,7 +1440,11 @@ function setupMobilePanelToggle() {
         const isLikelyApiId = /^[A-Za-z0-9_-]{6,12}$/.test(code);
         if (isLikelyApiId) {
           const cfg = await loadConfigurationFromAPIExt(code);
-          if (cfg?.data) Object.assign(params, cfg.data);
+          if (cfg?.data) {
+            const prevType = params.planetType;
+            Object.assign(params, cfg.data);
+            if (prevType !== params.planetType) markPlanetDirty();
+          }
         } else {
           const decoded = decodeShareExt(code);
           const loadedData = decoded?.data ?? decoded;
@@ -1440,7 +1452,9 @@ function setupMobilePanelToggle() {
             moonSettings.splice(0, moonSettings.length, ...decoded.moons.map(m => ({ ...m })));
             params.moonCount = decoded.moons.length;
           }
+          const prevType = params.planetType;
           Object.assign(params, loadedData);
+          if (prevType !== params.planetType) markPlanetDirty();
         }
         // Apply
         isApplyingPreset = true;
@@ -1626,7 +1640,9 @@ function showNotification(message, type = "success") {
     container = document.createElement('div');
     container.id = 'toast-container';
     container.style.position = 'fixed';
-    container.style.top = '16px';
+    // Place lower on the screen
+    container.style.top = 'auto';
+    container.style.bottom = '20px';
     container.style.right = '16px';
     container.style.display = 'flex';
     container.style.flexDirection = 'column';

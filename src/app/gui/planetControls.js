@@ -97,6 +97,7 @@ export function setupPlanetControls({
   guiControllers.planetType = planetFolder.add(params, "planetType", ["rocky", "gas_giant"])
     .name("Planet Type")
     .onChange((value) => {
+      if (getIsApplyingPreset && getIsApplyingPreset()) return;
       refreshPlanetTypeVisibility(value);
       updatePresetList(value);
       markPlanetDirty();
@@ -107,7 +108,7 @@ export function setupPlanetControls({
     .add(params, "seed")
     .name("Seed")
     .onFinishChange(() => {
-      if (getIsApplyingPreset()) return;
+      if (getIsApplyingPreset && getIsApplyingPreset()) return;
       handleSeedChanged();
     });
 
@@ -487,6 +488,7 @@ export function setupPlanetControls({
   guiControllers.gravity = environmentFolder.add(params, "gravity", 0.1, 40, 0.1)
     .name("Gravity m/s^2")
     .onChange(() => {
+      if (getIsApplyingPreset && getIsApplyingPreset()) return;
       updateGravityDisplay();
       initMoonPhysics();
       scheduleShareUpdate();
