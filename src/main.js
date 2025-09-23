@@ -1406,23 +1406,38 @@ function setupMobilePanelToggle() {
     visualSettingsReset?.addEventListener("click", () => {
       // Reset visual settings to defaults
       Object.assign(visualSettings, {
-        frameRate: "60",
+        frameRate: "unlimited",
         resolutionScale: 1.0,
         lightingScale: 1.0,
         particleMax: 1000,
         noiseResolution: 1.0,
         gasResolution: 1.0,
-        starMax: 1000,
+        starMax: 4000,
         ringDetail: 1.0
       });
+      updateVisualSettingsUI();
       applyVisualSettings();
       showNotification("Visual settings reset to defaults");
     });
     visualSettingsApply?.addEventListener("click", () => {
       applyVisualSettings();
+      
+      // Force scene rebuild for settings that require it
+      markPlanetDirty();
+      markMoonsDirty();
+      
+      // Regenerate starfield if star count changed
+      regenerateStarfield();
+      
+      // Update starfield uniforms for resolution changes
+      updateStarfieldUniforms();
+      
       hideVisualSettings();
       showNotification("Visual settings applied");
     });
+
+    // Visual settings controls event listeners
+    setupVisualSettingsControls();
 
     // Close visual settings when clicking outside
     visualSettingsPopup?.addEventListener("click", (e) => {
@@ -1621,6 +1636,7 @@ async function copyShareCode() {
 
 function showVisualSettings() {
   if (visualSettingsPopup) {
+    updateVisualSettingsUI();
     visualSettingsPopup.removeAttribute("hidden");
     document.body.style.overflow = "hidden";
   }
@@ -1631,6 +1647,172 @@ function hideVisualSettings() {
     visualSettingsPopup.setAttribute("hidden", "");
     document.body.style.overflow = "";
   }
+}
+
+function updateVisualSettingsUI() {
+  // Update preset selector - detect which preset matches current settings
+  if (visualSettingsPresetSelect) {
+    let matchingPreset = "default";
+    for (const [presetName, presetValues] of Object.entries(VISUAL_SETTING_PRESETS)) {
+      let matches = true;
+      for (const [key, value] of Object.entries(presetValues)) {
+        if (Math.abs(visualSettings[key] - value) > 0.01) { // Allow small floating point differences
+          matches = false;
+          break;
+        }
+      }
+      if (matches) {
+        matchingPreset = presetName;
+        break;
+      }
+    }
+    visualSettingsPresetSelect.value = matchingPreset;
+  }
+  
+  // Update frame rate
+  if (frameRateControl) {
+    frameRateControl.value = visualSettings.frameRate;
+  }
+  
+  // Update resolution scale
+  if (resolutionScale) {
+    resolutionScale.value = visualSettings.resolutionScale;
+    if (resolutionScaleValue) {
+      resolutionScaleValue.textContent = Math.round(visualSettings.resolutionScale * 100) + "%";
+    }
+  }
+  
+  // Update lighting scale
+  if (lightingScale) {
+    lightingScale.value = visualSettings.lightingScale;
+    if (lightingScaleValue) {
+      lightingScaleValue.textContent = Math.round(visualSettings.lightingScale * 100) + "%";
+    }
+  }
+  
+  // Update particle max
+  if (particleMaxInput) {
+    particleMaxInput.value = visualSettings.particleMax;
+    if (particleMaxValue) {
+      particleMaxValue.textContent = visualSettings.particleMax;
+    }
+  }
+  
+  // Update star max
+  if (starMaxInput) {
+    starMaxInput.value = visualSettings.starMax;
+    if (starMaxValue) {
+      starMaxValue.textContent = visualSettings.starMax;
+    }
+  }
+  
+  // Update noise resolution
+  if (noiseResolutionInput) {
+    noiseResolutionInput.value = visualSettings.noiseResolution;
+    if (noiseResolutionValue) {
+      noiseResolutionValue.textContent = Math.round(visualSettings.noiseResolution * 100) + "%";
+    }
+  }
+  
+  // Update gas resolution
+  if (gasResolutionInput) {
+    gasResolutionInput.value = visualSettings.gasResolution;
+    if (gasResolutionValue) {
+      gasResolutionValue.textContent = Math.round(visualSettings.gasResolution * 100) + "%";
+    }
+  }
+  
+  // Update ring detail
+  if (ringDetailInput) {
+    ringDetailInput.value = visualSettings.ringDetail;
+    if (ringDetailValue) {
+      ringDetailValue.textContent = Math.round(visualSettings.ringDetail * 100) + "%";
+    }
+  }
+}
+
+function setupVisualSettingsControls() {
+  // Preset selector
+  visualSettingsPresetSelect?.addEventListener("change", (e) => {
+    const preset = VISUAL_SETTING_PRESETS[e.target.value];
+    if (preset) {
+      Object.assign(visualSettings, preset);
+      updateVisualSettingsUI();
+      // Apply the preset immediately for preview
+      applyVisualSettings();
+    }
+  });
+  
+  // Frame rate control
+  frameRateControl?.addEventListener("change", (e) => {
+    visualSettings.frameRate = e.target.value;
+  });
+  
+  // Resolution scale
+  resolutionScale?.addEventListener("input", (e) => {
+    visualSettings.resolutionScale = parseFloat(e.target.value);
+    if (resolutionScaleValue) {
+      resolutionScaleValue.textContent = Math.round(visualSettings.resolutionScale * 100) + "%";
+    }
+    // Apply resolution changes immediately for preview
+    const pixelRatio = Math.min(window.devicePixelRatio * visualSettings.resolutionScale, 2);
+    renderer.setPixelRatio(pixelRatio);
+  });
+  
+  // Lighting scale
+  lightingScale?.addEventListener("input", (e) => {
+    visualSettings.lightingScale = parseFloat(e.target.value);
+    if (lightingScaleValue) {
+      lightingScaleValue.textContent = Math.round(visualSettings.lightingScale * 100) + "%";
+    }
+    // Apply lighting changes immediately for preview
+    ambientLight.intensity = 0.35 * visualSettings.lightingScale;
+    if (sun && sun.sunLight) {
+      sun.sunLight.intensity = Math.max(0, params.sunIntensity) * visualSettings.lightingScale;
+    }
+  });
+  
+  // Particle max
+  particleMaxInput?.addEventListener("input", (e) => {
+    visualSettings.particleMax = parseInt(e.target.value);
+    if (particleMaxValue) {
+      particleMaxValue.textContent = visualSettings.particleMax;
+    }
+  });
+  
+  // Star max
+  starMaxInput?.addEventListener("input", (e) => {
+    visualSettings.starMax = parseInt(e.target.value);
+    if (starMaxValue) {
+      starMaxValue.textContent = visualSettings.starMax;
+    }
+    // Regenerate starfield immediately for preview
+    regenerateStarfield();
+  });
+  
+  // Noise resolution
+  noiseResolutionInput?.addEventListener("input", (e) => {
+    visualSettings.noiseResolution = parseFloat(e.target.value);
+    if (noiseResolutionValue) {
+      noiseResolutionValue.textContent = Math.round(visualSettings.noiseResolution * 100) + "%";
+    }
+  });
+  
+  // Gas resolution
+  gasResolutionInput?.addEventListener("input", (e) => {
+    visualSettings.gasResolution = parseFloat(e.target.value);
+    if (gasResolutionValue) {
+      gasResolutionValue.textContent = Math.round(visualSettings.gasResolution * 100) + "%";
+    }
+  });
+  
+  // Ring detail
+  ringDetailInput?.addEventListener("input", (e) => {
+    visualSettings.ringDetail = parseFloat(e.target.value);
+    if (ringDetailValue) {
+      ringDetailValue.textContent = Math.round(visualSettings.ringDetail * 100) + "%";
+    }
+  });
 }
 
 function showNotification(message, type = "success") {
