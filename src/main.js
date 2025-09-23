@@ -367,10 +367,59 @@ cloudsMesh.castShadow = false;
 cloudsMesh.receiveShadow = false;
 spinGroup.add(cloudsMesh);
 
-const atmosphereMaterial = new THREE.MeshPhongMaterial({
-  color: 0x88c7ff,
+// Enhanced Atmosphere Shader
+const atmosphereVertexShader = `
+    varying vec3 vNormal;
+    varying vec3 vPosition;
+    
+    void main() {
+        vNormal = normalize(normalMatrix * normal);
+        vPosition = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+`;
+
+const atmosphereFragmentShader = `
+    uniform vec3 lightDirection;
+    uniform float atmosphereIntensity;
+    uniform float sunBrightness;
+    uniform vec3 sunColor;
+    uniform vec3 atmosphereColor;
+    uniform float atmosphereFresnelPower;
+    uniform float atmosphereRimPower;
+    varying vec3 vNormal;
+    varying vec3 vPosition;
+    
+    void main() {
+        float fresnel = 1.0 - abs(dot(normalize(vPosition), vNormal));
+        fresnel = pow(fresnel, atmosphereFresnelPower);
+        
+        vec3 baseAtmosphereColor = atmosphereColor * atmosphereIntensity;
+        
+        float rim = 1.0 - max(dot(vNormal, lightDirection), 0.0);
+        rim = pow(rim, atmosphereRimPower);
+        
+        vec3 finalColor = baseAtmosphereColor * (fresnel + rim * 0.5) * sunColor * sunBrightness;
+        
+        gl_FragColor = vec4(finalColor, fresnel * 0.3 * atmosphereIntensity);
+    }
+`;
+
+const atmosphereUniforms = {
+  lightDirection: { value: new THREE.Vector3(1, 0, 0) },
+  atmosphereIntensity: { value: 1.0 },
+  sunBrightness: { value: 1.0 },
+  sunColor: { value: new THREE.Color(1, 1, 1) },
+  atmosphereColor: { value: new THREE.Color(0.3, 0.6, 1.0) },
+  atmosphereFresnelPower: { value: 2.0 },
+  atmosphereRimPower: { value: 3.0 }
+};
+
+const atmosphereMaterial = new THREE.ShaderMaterial({
+  vertexShader: atmosphereVertexShader,
+  fragmentShader: atmosphereFragmentShader,
+  uniforms: atmosphereUniforms,
   transparent: true,
-  opacity: 0.28,
   side: THREE.BackSide,
   blending: THREE.AdditiveBlending,
   depthWrite: false,
@@ -993,6 +1042,9 @@ const params = {
   icePolesNoiseStrength: 0.3,
   atmosphereColor: "#7baeff",
   atmosphereOpacity: 0.22,
+  atmosphereIntensity: 1.0,
+  atmosphereFresnelPower: 2.0,
+  atmosphereRimPower: 3.0,
   cloudsOpacity: 0.4,
   cloudHeight: 0.03,
   cloudDensity: 0.55,
@@ -1098,6 +1150,9 @@ const presets = {
     colorHigh: "#f2f6f5",
     atmosphereColor: "#7baeff",
     atmosphereOpacity: 0.23,
+    atmosphereIntensity: 1.0,
+    atmosphereFresnelPower: 2.0,
+    atmosphereRimPower: 3.0,
     cloudsOpacity: 0.42,
     axisTilt: 23,
     rotationSpeed: 0.12,
@@ -1149,6 +1204,9 @@ const presets = {
     coreVisible: true,
     atmosphereColor: "#ffb382",
     atmosphereOpacity: 0.0,
+    atmosphereIntensity: 0.8,
+    atmosphereFresnelPower: 1.5,
+    atmosphereRimPower: 2.5,
     cloudsOpacity: 0.0,
     axisTilt: 25,
     rotationSpeed: 0.24,
@@ -3758,7 +3816,10 @@ function updatePalette() {
   palette.core.set(params.colorCore);
   palette.atmosphere.set(params.atmosphereColor);
   palette.icePoles.set(params.icePolesColor);
-  atmosphereMaterial.color.copy(palette.atmosphere);
+  
+  // Update atmosphere shader colors
+  atmosphereUniforms.sunColor.value.set(params.sunColor);
+  atmosphereUniforms.atmosphereColor.value.set(params.atmosphereColor);
 }
 
 function updateCore() {
@@ -3777,7 +3838,20 @@ function updateCore() {
 
 function updateClouds() {
   cloudsMaterial.opacity = params.cloudsOpacity;
-  atmosphereMaterial.opacity = params.atmosphereOpacity;
+  
+  // Update atmosphere shader uniforms
+  atmosphereUniforms.atmosphereIntensity.value = params.atmosphereIntensity;
+  atmosphereUniforms.sunBrightness.value = params.sunIntensity;
+  atmosphereUniforms.sunColor.value.set(params.sunColor);
+  atmosphereUniforms.atmosphereColor.value.set(params.atmosphereColor);
+  atmosphereUniforms.atmosphereFresnelPower.value = params.atmosphereFresnelPower;
+  atmosphereUniforms.atmosphereRimPower.value = params.atmosphereRimPower;
+  
+  // Calculate light direction from sun position
+  const sunDirection = new THREE.Vector3();
+  sunDirection.subVectors(sunGroup.position, planetRoot.position).normalize();
+  atmosphereUniforms.lightDirection.value.copy(sunDirection);
+  
   // Toggle visibility based on opacity for reliability
   cloudsMesh.visible = params.cloudsOpacity > 0.001;
   atmosphereMesh.visible = params.atmosphereOpacity > 0.001;

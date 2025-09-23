@@ -399,6 +399,30 @@ export function setupPlanetControls({
       scheduleShareUpdate();
     });
 
+  guiControllers.atmosphereIntensity = paletteFolder.add(params, "atmosphereIntensity", 0, 3, 0.1)
+    .name("Atmosphere Intensity")
+    .onChange(() => {
+      updateClouds();
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.atmosphereFresnelPower = paletteFolder.add(params, "atmosphereFresnelPower", 0.5, 5, 0.1)
+    .name("Fresnel Power")
+    .onChange(() => {
+      updateClouds();
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.atmosphereRimPower = paletteFolder.add(params, "atmosphereRimPower", 0.5, 5, 0.1)
+    .name("Rim Power")
+    .onChange(() => {
+      updateClouds();
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
   guiControllers.cloudsOpacity = paletteFolder.add(params, "cloudsOpacity", 0, 1, 0.01)
     .name("Cloud Opacity")
     .onChange(() => {
