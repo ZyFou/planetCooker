@@ -985,6 +985,12 @@ const params = {
   coreEnabled: true,
   coreSize: 0.4,
   coreVisible: true,
+  // Ice Poles settings
+  icePolesEnabled: true,
+  icePolesCoverage: 0.15,
+  icePolesColor: "#e8f4f8",
+  icePolesNoiseScale: 2.5,
+  icePolesNoiseStrength: 0.3,
   atmosphereColor: "#7baeff",
   atmosphereOpacity: 0.22,
   cloudsOpacity: 0.4,
@@ -1114,7 +1120,12 @@ const presets = {
     impactDeformation: true,
     impactStrengthMul: 2.5,
     impactSpeedMul: 1.2,
-    impactMassMul: 2.0
+    impactMassMul: 2.0,
+    icePolesEnabled: true,
+    icePolesCoverage: 0.12,
+    icePolesColor: "#e8f4f8",
+    icePolesNoiseScale: 2.5,
+    icePolesNoiseStrength: 0.3
   },
   "Mars": {
     planetType: "rocky",
@@ -1157,7 +1168,12 @@ const presets = {
     moons: [
       { size: 0.08, distance: 2.6, orbitSpeed: 0.8, inclination: 1, color: "#9e7a5c", phase: 0.3, eccentricity: 0.015 },
       { size: 0.06, distance: 3.8, orbitSpeed: 0.66, inclination: 1.8, color: "#7a5d48", phase: 2.1, eccentricity: 0.025 }
-    ]
+    ],
+    icePolesEnabled: true,
+    icePolesCoverage: 0.18,
+    icePolesColor: "#f0f8ff",
+    icePolesNoiseScale: 3.0,
+    icePolesNoiseStrength: 0.4
   },
   "Jupiter": {
     planetType: "gas_giant",
@@ -1797,7 +1813,8 @@ const palette = {
   mid: new THREE.Color(params.colorMid),
   high: new THREE.Color(params.colorHigh),
   core: new THREE.Color(params.colorCore),
-  atmosphere: new THREE.Color(params.atmosphereColor)
+  atmosphere: new THREE.Color(params.atmosphereColor),
+  icePoles: new THREE.Color(params.icePolesColor)
 };
 
 let cloudTexture = null;
@@ -3463,7 +3480,7 @@ function rebuildPlanet() {
       vertex.copy(normal).multiplyScalar(finalRadius);
       positions.setXYZ(i, vertex.x, vertex.y, vertex.z);
 
-      const color = sampleColor(normalized, finalRadius);
+      const color = sampleColor(normalized, finalRadius, vertex.clone().normalize());
       colors[i * 3 + 0] = color.r;
       colors[i * 3 + 1] = color.g;
       colors[i * 3 + 2] = color.b;
@@ -3681,7 +3698,7 @@ function deriveTerrainProfile(seed) {
   };
 }
 
-function sampleColor(elevation, radius) {
+function sampleColor(elevation, radius, vertexPosition) {
   let baseColor;
   
   if (elevation <= params.oceanLevel) {
@@ -3699,6 +3716,33 @@ function sampleColor(elevation, radius) {
     }
   }
 
+  // Apply ice poles if enabled
+  if (params.icePolesEnabled && vertexPosition) {
+    const latitude = Math.abs(vertexPosition.y);
+    const poleThreshold = params.icePolesCoverage;
+    
+    if (latitude > (1 - poleThreshold)) {
+      // Calculate ice pole strength based on latitude
+      const iceStrength = (latitude - (1 - poleThreshold)) / poleThreshold;
+      
+      // Add noise variation to ice coverage
+      const iceNoise = createNoise3D(() => new SeededRNG(params.seed).next());
+      const noiseValue = iceNoise(
+        vertexPosition.x * params.icePolesNoiseScale,
+        vertexPosition.y * params.icePolesNoiseScale,
+        vertexPosition.z * params.icePolesNoiseScale
+      );
+      
+      // Apply noise to ice strength
+      const noiseInfluence = (noiseValue + 1) * 0.5; // Normalize noise to 0-1
+      const finalIceStrength = iceStrength * (1 - params.icePolesNoiseStrength) + 
+                              iceStrength * noiseInfluence * params.icePolesNoiseStrength;
+      
+      // Blend with ice color
+      baseColor.lerp(palette.icePoles, finalIceStrength);
+    }
+  }
+
   // No core color blending - using physical core sphere instead
   // Apply the sampled baseColor to the shared scratch color and return it
   return scratchColor.copy(baseColor);
@@ -3713,6 +3757,7 @@ function updatePalette() {
   palette.high.set(params.colorHigh);
   palette.core.set(params.colorCore);
   palette.atmosphere.set(params.atmosphereColor);
+  palette.icePoles.set(params.icePolesColor);
   atmosphereMaterial.color.copy(palette.atmosphere);
 }
 
@@ -6006,6 +6051,12 @@ function surpriseMe() {
     params.coreEnabled = true; // Always enable core
     params.coreSize = THREE.MathUtils.lerp(0.2, 0.6, rng.next());
     params.coreVisible = true; // Always show core
+    // Randomize ice poles
+    params.icePolesEnabled = rng.next() < 0.7; // 70% chance of having ice poles
+    params.icePolesCoverage = THREE.MathUtils.lerp(0.05, 0.3, rng.next());
+    params.icePolesColor = `#${new THREE.Color().setHSL(0.6, rng.next() * 0.2 + 0.1, rng.next() * 0.3 + 0.7).getHexString()}`;
+    params.icePolesNoiseScale = THREE.MathUtils.lerp(1.0, 4.0, rng.next());
+    params.icePolesNoiseStrength = THREE.MathUtils.lerp(0.1, 0.5, rng.next());
   }
 
   // Common randomizations

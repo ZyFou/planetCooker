@@ -340,6 +340,48 @@ export function setupPlanetControls({
     });
   rockyPlanetControllers.push(guiControllers.coreVisible);
 
+  // Ice Poles section
+  guiControllers.icePolesEnabled = paletteFolder.add(params, "icePolesEnabled")
+    .name("Ice Poles")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  rockyPlanetControllers.push(guiControllers.icePolesEnabled);
+
+  guiControllers.icePolesCoverage = paletteFolder.add(params, "icePolesCoverage", 0.01, 0.5, 0.01)
+    .name("Ice Coverage")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  rockyPlanetControllers.push(guiControllers.icePolesCoverage);
+
+  guiControllers.icePolesColor = paletteFolder.addColor(params, "icePolesColor")
+    .name("Ice Color")
+    .onChange(() => {
+      updatePalette();
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  rockyPlanetControllers.push(guiControllers.icePolesColor);
+
+  guiControllers.icePolesNoiseScale = paletteFolder.add(params, "icePolesNoiseScale", 0.5, 8.0, 0.1)
+    .name("Ice Noise Scale")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  rockyPlanetControllers.push(guiControllers.icePolesNoiseScale);
+
+  guiControllers.icePolesNoiseStrength = paletteFolder.add(params, "icePolesNoiseStrength", 0.0, 1.0, 0.01)
+    .name("Ice Noise Strength")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  rockyPlanetControllers.push(guiControllers.icePolesNoiseStrength);
+
   guiControllers.atmosphereColor = paletteFolder.addColor(params, "atmosphereColor")
     .name("Atmosphere Color")
     .onChange(() => {
