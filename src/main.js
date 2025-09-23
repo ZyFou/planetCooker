@@ -963,31 +963,38 @@ async function initFromHash() {
   if (!hash) return false;
   
   try {
-    // Try to load from API first
-    const configData = await loadConfigurationFromAPIExt(hash);
-    if (configData && configData.data) {
-      // Apply the loaded configuration
-      Object.assign(params, configData.data);
-      
-      // Update all the UI elements and regenerate the planet
-      planet.updatePalette();
-      planet.updateClouds();
-      planet.updateCore();
-      sun.updateSun();
-      planet.updateRings();
-      planet.updateTilt();
-      updateSeedDisplay();
-      updateGravityDisplay();
-      syncMoonSettings();
-      
-      // Update GUI controllers
-      Object.keys(guiControllers).forEach(key => {
-        if (guiControllers[key] && typeof guiControllers[key].setValue === 'function' && params[key] !== undefined) {
-          guiControllers[key].setValue(params[key]);
+    // Only try API if hash looks like a short saved ID (nanoid-like)
+    const isLikelyApiId = /^[A-Za-z0-9_-]{6,12}$/.test(hash);
+    if (isLikelyApiId) {
+      const configData = await loadConfigurationFromAPIExt(hash);
+      if (configData && configData.data) {
+        // Apply the loaded configuration
+        Object.assign(params, configData.data);
+        // Guard against GUI onChange side-effects while syncing controls
+        isApplyingPreset = true;
+        try {
+          // Update all the UI elements and regenerate the planet
+          planet.updatePalette();
+          planet.updateClouds();
+          planet.updateCore();
+          sun.updateSun();
+          planet.updateRings();
+          planet.updateTilt();
+          updateSeedDisplay();
+          updateGravityDisplay();
+          syncMoonSettings();
+          
+          // Update GUI controllers
+          Object.keys(guiControllers).forEach(key => {
+            if (guiControllers[key] && typeof guiControllers[key].setValue === 'function' && params[key] !== undefined) {
+              guiControllers[key].setValue(params[key]);
+            }
+          });
+        } finally {
+          isApplyingPreset = false;
         }
-      });
-      
-      return true;
+        return true;
+      }
     }
   } catch (error) {
     // Only log API errors if they're not "not found" errors
@@ -997,28 +1004,40 @@ async function initFromHash() {
     
     // Fallback: try to decode as direct share code
     try {
-      const configData = decodeShareExt(hash);
-      if (configData) {
-        Object.assign(params, configData);
+      const decoded = decodeShareExt(hash);
+      if (decoded) {
+        const loadedData = decoded?.data ?? decoded;
+        // Apply moons if present
+        if (Array.isArray(decoded?.moons)) {
+          try {
+            moonSettings.splice(0, moonSettings.length, ...decoded.moons.map(m => ({ ...m })));
+            params.moonCount = decoded.moons.length;
+          } catch {}
+        }
+        Object.assign(params, loadedData);
         
-        // Update all the UI elements and regenerate the planet
-        planet.updatePalette();
-        planet.updateClouds();
-        planet.updateCore();
-        sun.updateSun();
-        planet.updateRings();
-        planet.updateTilt();
-        updateSeedDisplay();
-        updateGravityDisplay();
-        syncMoonSettings();
-        
-        // Update GUI controllers
-        Object.keys(guiControllers).forEach(key => {
-          if (guiControllers[key] && typeof guiControllers[key].setValue === 'function' && params[key] !== undefined) {
-            guiControllers[key].setValue(params[key]);
-          }
-        });
-        
+        isApplyingPreset = true;
+        try {
+          // Update all the UI elements and regenerate the planet
+          planet.updatePalette();
+          planet.updateClouds();
+          planet.updateCore();
+          sun.updateSun();
+          planet.updateRings();
+          planet.updateTilt();
+          updateSeedDisplay();
+          updateGravityDisplay();
+          syncMoonSettings();
+          
+          // Update GUI controllers
+          Object.keys(guiControllers).forEach(key => {
+            if (guiControllers[key] && typeof guiControllers[key].setValue === 'function' && params[key] !== undefined) {
+              guiControllers[key].setValue(params[key]);
+            }
+          });
+        } finally {
+          isApplyingPreset = false;
+        }
         return true;
       }
     } catch (decodeError) {
@@ -1220,10 +1239,223 @@ function setupMobilePanelToggle() {
     mobileMenuToggle?.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      if (mobileMenu?.classList.contains("open")) {
-        mobileMenu.classList.remove("open");
+      if (mobileMenu?.hasAttribute("hidden")) {
+        mobileMenu.removeAttribute("hidden");
+        mobileMenuToggle.setAttribute("aria-expanded", "true");
       } else {
-        mobileMenu.classList.add("open");
+        mobileMenu.setAttribute("hidden", "");
+        mobileMenuToggle.setAttribute("aria-expanded", "false");
+      }
+    });
+
+    desktopMenuToggle?.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (desktopMenu?.hasAttribute("hidden")) {
+        desktopMenu.removeAttribute("hidden");
+        desktopMenuToggle.setAttribute("aria-expanded", "true");
+      } else {
+        desktopMenu.setAttribute("hidden", "");
+        desktopMenuToggle.setAttribute("aria-expanded", "false");
+      }
+    });
+
+    // Close menus when clicking outside
+    document.addEventListener("click", (e) => {
+      if (mobileMenu && !mobileMenu.contains(e.target) && !mobileMenuToggle?.contains(e.target)) {
+        mobileMenu.setAttribute("hidden", "");
+        mobileMenuToggle?.setAttribute("aria-expanded", "false");
+      }
+      if (desktopMenu && !desktopMenu.contains(e.target) && !desktopMenuToggle?.contains(e.target)) {
+        desktopMenu.setAttribute("hidden", "");
+        desktopMenuToggle?.setAttribute("aria-expanded", "false");
+      }
+    });
+
+    // Menu item event listeners
+    mobileRandomize?.addEventListener("click", () => {
+      mobileMenu?.setAttribute("hidden", "");
+      mobileMenuToggle?.setAttribute("aria-expanded", "false");
+      try {
+        surpriseMe();
+        updateSeedDisplay();
+        updateGravityDisplay();
+        scheduleShareUpdate();
+      } catch (e) {
+        console.warn("Surprise Me failed:", e);
+      }
+    });
+
+    mobileCopy?.addEventListener("click", () => {
+      mobileMenu?.setAttribute("hidden", "");
+      mobileMenuToggle?.setAttribute("aria-expanded", "false");
+      try {
+        copyShareCode();
+      } catch (e) {
+        console.warn("Copy failed:", e);
+      }
+    });
+
+    mobileReset?.addEventListener("click", () => {
+      mobileMenu?.setAttribute("hidden", "");
+      mobileMenuToggle?.setAttribute("aria-expanded", "false");
+      try {
+        resetAll();
+      } catch (e) {
+        console.warn("Reset failed:", e);
+      }
+    });
+
+    mobileVisualSettings?.addEventListener("click", () => {
+      mobileMenu?.setAttribute("hidden", "");
+      mobileMenuToggle?.setAttribute("aria-expanded", "false");
+      try {
+        showVisualSettings();
+      } catch (e) {
+        console.warn("Visual settings failed:", e);
+      }
+    });
+
+    mobileHelpButton?.addEventListener("click", () => {
+      mobileMenu?.setAttribute("hidden", "");
+      mobileMenuToggle?.setAttribute("aria-expanded", "false");
+      try {
+        closeMobileMenu?.();
+        showOnboarding(true);
+      } catch (e) {
+        console.warn("Help failed:", e);
+      }
+    });
+
+    mobileHomeButton?.addEventListener("click", () => {
+      mobileMenu?.setAttribute("hidden", "");
+      mobileMenuToggle?.setAttribute("aria-expanded", "false");
+      window.location.href = "/";
+    });
+
+    desktopCopy?.addEventListener("click", () => {
+      desktopMenu?.setAttribute("hidden", "");
+      desktopMenuToggle?.setAttribute("aria-expanded", "false");
+      try {
+        copyShareCode();
+      } catch (e) {
+        console.warn("Copy failed:", e);
+      }
+    });
+
+    desktopHelp?.addEventListener("click", () => {
+      desktopMenu?.setAttribute("hidden", "");
+      desktopMenuToggle?.setAttribute("aria-expanded", "false");
+      try {
+        showOnboarding(true);
+      } catch (e) {
+        console.warn("Help failed:", e);
+      }
+    });
+
+    desktopVisualSettings?.addEventListener("click", () => {
+      desktopMenu?.setAttribute("hidden", "");
+      desktopMenuToggle?.setAttribute("aria-expanded", "false");
+      try {
+        showVisualSettings();
+      } catch (e) {
+        console.warn("Visual settings failed:", e);
+      }
+    });
+
+    desktopHome?.addEventListener("click", () => {
+      desktopMenu?.setAttribute("hidden", "");
+      desktopMenuToggle?.setAttribute("aria-expanded", "false");
+      window.location.href = "/";
+    });
+
+    // Visual settings popup event listeners
+    visualSettingsClose?.addEventListener("click", hideVisualSettings);
+    visualSettingsReset?.addEventListener("click", () => {
+      // Reset visual settings to defaults
+      Object.assign(visualSettings, {
+        frameRate: "60",
+        resolutionScale: 1.0,
+        lightingScale: 1.0,
+        particleMax: 1000,
+        noiseResolution: 1.0,
+        gasResolution: 1.0,
+        starMax: 1000,
+        ringDetail: 1.0
+      });
+      applyVisualSettings();
+      showNotification("Visual settings reset to defaults");
+    });
+    visualSettingsApply?.addEventListener("click", () => {
+      applyVisualSettings();
+      hideVisualSettings();
+      showNotification("Visual settings applied");
+    });
+
+    // Close visual settings when clicking outside
+    visualSettingsPopup?.addEventListener("click", (e) => {
+      if (e.target === visualSettingsPopup) {
+        hideVisualSettings();
+      }
+    });
+
+    // Import share handlers
+    importShareLoad?.addEventListener("click", async () => {
+      const code = (importShareInput?.value || '').trim();
+      if (!code) return;
+      try {
+        // Try API if code looks like an ID, else decode locally
+        const isLikelyApiId = /^[A-Za-z0-9_-]{6,12}$/.test(code);
+        if (isLikelyApiId) {
+          const cfg = await loadConfigurationFromAPIExt(code);
+          if (cfg?.data) Object.assign(params, cfg.data);
+        } else {
+          const decoded = decodeShareExt(code);
+          const loadedData = decoded?.data ?? decoded;
+          if (Array.isArray(decoded?.moons)) {
+            moonSettings.splice(0, moonSettings.length, ...decoded.moons.map(m => ({ ...m })));
+            params.moonCount = decoded.moons.length;
+          }
+          Object.assign(params, loadedData);
+        }
+        // Apply
+        isApplyingPreset = true;
+        try {
+          planet.updatePalette();
+          planet.updateClouds();
+          planet.updateCore();
+          sun.updateSun();
+          planet.updateRings();
+          planet.updateTilt();
+          updateSeedDisplay();
+          updateGravityDisplay();
+          syncMoonSettings();
+          Object.keys(guiControllers).forEach(key => {
+            if (guiControllers[key] && typeof guiControllers[key].setValue === 'function' && params[key] !== undefined) {
+              guiControllers[key].setValue(params[key]);
+            }
+          });
+        } finally {
+          isApplyingPreset = false;
+        }
+        scheduleShareUpdate();
+        showNotification('Configuration loaded');
+      } catch (e) {
+        console.warn('Import failed:', e);
+        showNotification('Failed to load configuration', 'error');
+      }
+    });
+
+    importShareCancel?.addEventListener("click", () => {
+      if (importShareInput) importShareInput.value = '';
+    });
+
+    // Inline copy share button
+    copyShareInlineButton?.addEventListener("click", async () => {
+      try {
+        await copyShareCode();
+      } catch (e) {
+        console.warn("Copy share failed:", e);
       }
     });
 
@@ -1297,6 +1529,110 @@ function buildSharePayload() {
 
 function encodeShare(payload) { return encodeShareExt(payload); }
 function decodeShare(code) { return decodeShareExt(code); }
+
+async function copyShareCode() {
+  try {
+    const payload = buildSharePayload();
+    const shareCode = encodeShare(payload);
+    
+    // Try to save to API first
+    try {
+      const result = await saveConfigurationToAPIExt(payload.data, payload.metadata || {});
+      if (result && result.id) {
+        // Update URL with API ID
+        window.history.replaceState({}, '', `#${result.id}`);
+        if (shareDisplay) {
+          shareDisplay.textContent = result.id;
+          shareDisplay.title = `API code - Click to copy\n${result.id}`;
+        }
+        
+        // Copy to clipboard
+        await navigator.clipboard.writeText(result.id);
+        showNotification("Planet saved to API and copied to clipboard!");
+        return;
+      }
+    } catch (apiError) {
+      console.warn("Failed to save to API, using local code:", apiError);
+    }
+    
+    // Fallback to local code
+    window.history.replaceState({}, '', `#${shareCode}`);
+    if (shareDisplay) {
+      shareDisplay.textContent = shareCode;
+      shareDisplay.title = `Local code - Click to copy\n${shareCode}`;
+    }
+    
+    // Copy to clipboard
+    await navigator.clipboard.writeText(shareCode);
+    showNotification("Share code copied to clipboard!");
+    
+  } catch (error) {
+    console.error("Failed to copy share code:", error);
+    showNotification("Failed to copy share code", "error");
+  }
+}
+
+function showVisualSettings() {
+  if (visualSettingsPopup) {
+    visualSettingsPopup.removeAttribute("hidden");
+    document.body.style.overflow = "hidden";
+  }
+}
+
+function hideVisualSettings() {
+  if (visualSettingsPopup) {
+    visualSettingsPopup.setAttribute("hidden", "");
+    document.body.style.overflow = "";
+  }
+}
+
+function showNotification(message, type = "success") {
+  // Create container once
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    container.style.position = 'fixed';
+    container.style.top = '16px';
+    container.style.right = '16px';
+    container.style.display = 'flex';
+    container.style.flexDirection = 'column';
+    container.style.gap = '8px';
+    container.style.zIndex = '10000';
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement('div');
+  toast.textContent = message;
+  // Match app style (dark translucent cards)
+  toast.style.background = 'var(--widget-color, rgba(30, 46, 79, 0.72))';
+  toast.style.color = 'var(--text-color, rgba(217, 230, 255, 0.94))';
+  toast.style.border = '1px solid rgba(53, 80, 131, 0.35)';
+  toast.style.backdropFilter = 'blur(6px)';
+  toast.style.padding = '10px 14px';
+  toast.style.borderRadius = '10px';
+  toast.style.font = '12px var(--font-family, \'Segoe UI\', Roboto, sans-serif)';
+  toast.style.boxShadow = '0 6px 20px rgba(0,0,0,0.28)';
+  toast.style.opacity = '0';
+  toast.style.transform = 'translateY(-6px)';
+  toast.style.transition = 'opacity 140ms ease, transform 140ms ease';
+
+  if (type === 'error') {
+    toast.style.border = '1px solid rgba(255, 97, 97, 0.45)';
+  }
+
+  container.appendChild(toast);
+  requestAnimationFrame(() => {
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateY(0)';
+  });
+
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(-6px)';
+    setTimeout(() => toast.remove(), 160);
+  }, 2800);
+}
 
 function chunkCode(str, size) {
     const chunks = [];
