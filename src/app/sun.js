@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { createNoise3D } from "simplex-noise";
 import { SeededRNG } from "./utils.js";
-import { createSunTexture as createSunTextureExt, generateAnnulusTexture as generateAnnulusTextureExt } from "./stars.js";
+import { createSunTexture as createSunTextureExt } from "./stars.js";
+import { generateAnnulusTexture as generateAnnulusTextureExt } from "./textures.js";
 
 // Shaders
 const starCoreVertexShader = `
@@ -211,6 +212,21 @@ const blackHoleHaloFragmentShader = `
 `;
 
 
+// Black hole uniforms (moved outside class for export)
+const blackHoleDiskUniforms = {
+    uColor: { value: new THREE.Color(0xffb378) },
+    uInnerRadius: { value: 0.6 },
+    uOuterRadius: { value: 2.4 },
+    uFeather: { value: 0.25 },
+    uIntensity: { value: 1.5 },
+    uScale: { value: 1 },
+    uNoiseScale: { value: 1.0 },
+    uNoiseStrength: { value: 0.25 }
+};
+
+// Export shader constants and uniforms for use in other modules
+export { blackHoleDiskUniforms, blackHoleDiskVertexShader, blackHoleDiskFragmentShader };
+
 export class Sun {
     constructor(scene, planetRoot, params, visualSettings) {
         this.scene = scene;
@@ -297,16 +313,7 @@ export class Sun {
     }
 
     _createBlackHoleObjects() {
-        this.blackHoleDiskUniforms = {
-            uColor: { value: new THREE.Color(0xffb378) },
-            uInnerRadius: { value: 0.6 },
-            uOuterRadius: { value: 2.4 },
-            uFeather: { value: 0.25 },
-            uIntensity: { value: 1.5 },
-            uScale: { value: 1 },
-            uNoiseScale: { value: 1.0 },
-            uNoiseStrength: { value: 0.25 }
-        };
+        this.blackHoleDiskUniforms = THREE.UniformsUtils.clone(blackHoleDiskUniforms);
 
         this.blackHoleHaloUniforms = {
             uColor: { value: new THREE.Color(0xffd6a6) },

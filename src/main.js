@@ -543,6 +543,100 @@ const gui = registerFolder(new GUI({ title: "Planet Controls", width: 320, conta
 
 const guiControllers = {};
 
+// Debug moon artifacts sync function
+guiControllers.syncDebugMoonArtifacts = () => {
+  const moonCount = params.moonCount || 0;
+  
+  // Ensure we have enough debug arrows
+  while (debugMoonArrows.length < moonCount) {
+    const arrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 1, 0x7dff7d);
+    arrow.visible = false;
+    scene.add(arrow);
+    debugMoonArrows.push(arrow);
+  }
+  
+  // Remove excess arrows
+  while (debugMoonArrows.length > moonCount) {
+    const arrow = debugMoonArrows.pop();
+    if (arrow) {
+      scene.remove(arrow);
+      arrow.geometry.dispose();
+      arrow.material.dispose();
+    }
+  }
+  
+  // Ensure we have enough speed display rows
+  while (debugMoonSpeedRows.length < moonCount) {
+    const row = document.createElement("div");
+    row.className = "debug-moon-speed-row";
+    row.textContent = `Moon ${debugMoonSpeedRows.length + 1}: 0.00 m/s`;
+    debugMoonSpeedList?.appendChild(row);
+    debugMoonSpeedRows.push(row);
+  }
+  
+  // Remove excess speed display rows
+  while (debugMoonSpeedRows.length > moonCount) {
+    const row = debugMoonSpeedRows.pop();
+    if (row && row.parentNode) {
+      row.parentNode.removeChild(row);
+    }
+  }
+};
+
+// Debug vectors update function
+function updateDebugVectors() {
+  // Update planet velocity arrow
+  if (debugState.showPlanetVelocity && planetRoot) {
+    debugPlanetArrow.visible = true;
+    debugPlanetArrow.position.copy(planetRoot.position);
+    
+    // Calculate planet velocity (simplified - you might want to get actual velocity from physics)
+    const planetVelocity = new THREE.Vector3(0, 0, 0); // Placeholder - would need actual velocity
+    if (planetVelocity.length() > 0.001) {
+      debugPlanetArrow.setDirection(planetVelocity.clone().normalize());
+      debugPlanetArrow.setLength(Math.min(planetVelocity.length() * 0.1, 2));
+    } else {
+      debugPlanetArrow.visible = false;
+    }
+  } else {
+    debugPlanetArrow.visible = false;
+  }
+  
+  // Update moon velocity arrows
+  if (debugState.showMoonVelocity && moonsGroup) {
+    debugMoonArrows.forEach((arrow, index) => {
+      if (index < moonsGroup.children.length) {
+        const moonPivot = moonsGroup.children[index];
+        arrow.visible = true;
+        arrow.position.copy(moonPivot.position);
+        
+        // Calculate moon velocity (simplified - you might want to get actual velocity from physics)
+        const moonVelocity = new THREE.Vector3(0, 0, 0); // Placeholder - would need actual velocity
+        if (moonVelocity.length() > 0.001) {
+          arrow.setDirection(moonVelocity.clone().normalize());
+          arrow.setLength(Math.min(moonVelocity.length() * 0.1, 2));
+          
+          // Update speed display
+          if (debugMoonSpeedRows[index]) {
+            debugMoonSpeedRows[index].textContent = `Moon ${index + 1}: ${moonVelocity.length().toFixed(2)} m/s`;
+          }
+        } else {
+          arrow.visible = false;
+          if (debugMoonSpeedRows[index]) {
+            debugMoonSpeedRows[index].textContent = `Moon ${index + 1}: 0.00 m/s`;
+          }
+        }
+      } else {
+        arrow.visible = false;
+      }
+    });
+  } else {
+    debugMoonArrows.forEach((arrow) => {
+      arrow.visible = false;
+    });
+  }
+}
+
 const {
   moonSettings,
   createDefaultMoon,
@@ -634,7 +728,7 @@ if (debugMoonToggle) {
 }
 
 if (debugPanel) {
-  syncDebugMoonArtifacts();
+  guiControllers.syncDebugMoonArtifacts();
   updateDebugVectors();
 }
 //#endregion
