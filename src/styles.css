@@ -1184,3 +1184,218 @@ body.photo-mode #scene {
   transform: translateX(-50%) translateY(0);
 }
 
+/* Visual Settings Popup */
+.visual-settings-popup {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(8px);
+}
+
+.visual-settings-content {
+  background: rgba(10, 14, 25, 0.95);
+  border: 1px solid rgba(91, 126, 179, 0.3);
+  border-radius: 12px;
+  width: 90%;
+  max-width: 500px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
+.visual-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.5rem 2rem 1rem;
+  border-bottom: 1px solid rgba(91, 126, 179, 0.2);
+}
+
+.visual-settings-header h2 {
+  margin: 0;
+  font-size: 1.3rem;
+  color: #d9e6ff;
+}
+
+.visual-settings-close {
+  background: none;
+  border: none;
+  color: rgba(217, 230, 255, 0.7);
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 4px;
+  transition: color 0.2s ease;
+}
+
+.visual-settings-close:hover {
+  color: #d9e6ff;
+  background: rgba(217, 230, 255, 0.1);
+}
+
+.visual-settings-body {
+  padding: 1.5rem 2rem;
+}
+
+.visual-setting {
+  margin-bottom: 1.5rem;
+}
+
+.visual-setting:last-child {
+  margin-bottom: 0;
+}
+
+.visual-setting label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  color: #d9e6ff;
+}
+
+.visual-setting-select {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid rgba(135, 169, 218, 0.4);
+  border-radius: 6px;
+  background: rgba(44, 63, 111, 0.6);
+  color: #d9e6ff;
+  font-size: 0.9rem;
+}
+
+.visual-setting-select:focus {
+  outline: none;
+  border-color: rgba(135, 189, 255, 0.6);
+  box-shadow: 0 0 0 2px rgba(135, 189, 255, 0.2);
+}
+
+.resolution-scale-container,
+.lighting-scale-container {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.visual-setting-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(135, 169, 218, 0.3);
+  outline: none;
+}
+
+.visual-setting-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(135, 189, 255, 0.9);
+  cursor: pointer;
+  border: 2px solid rgba(91, 126, 179, 0.8);
+}
+
+.visual-setting-slider::-webkit-slider-thumb:hover {
+  background: rgba(135, 189, 255, 1);
+  border-color: #5b7eb3;
+}
+
+.visual-setting-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(135, 189, 255, 0.9);
+  cursor: pointer;
+  border: 2px solid rgba(91, 126, 179, 0.8);
+}
+
+.resolution-scale-value,
+.lighting-scale-value {
+  min-width: 3.5rem;
+  text-align: right;
+  font-weight: 600;
+  color: #d9e6ff;
+}
+
+.visual-settings-footer {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+  padding: 1rem 2rem 1.5rem;
+  border-top: 1px solid rgba(91, 126, 179, 0.2);
+}
+
+.visual-settings-reset,
+.visual-settings-apply {
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.visual-settings-reset {
+  background: rgba(44, 63, 111, 0.6);
+  border: 1px solid rgba(135, 169, 218, 0.4);
+  color: #d9e6ff;
+}
+
+.visual-settings-reset:hover {
+  background: rgba(89, 120, 188, 0.85);
+}
+
+.visual-settings-apply {
+  background: linear-gradient(135deg, rgba(78, 146, 235, 0.95), rgba(56, 108, 214, 0.88));
+  border: 1px solid rgba(135, 189, 255, 0.55);
+  color: white;
+}
+
+.visual-settings-apply:hover {
+  background: linear-gradient(135deg, rgba(89, 162, 255, 0.95), rgba(67, 124, 230, 0.88));
+  transform: translateY(-1px);
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+  .visual-settings-content {
+    width: 95%;
+    max-width: none;
+  }
+
+  .visual-settings-header,
+  .visual-settings-body,
+  .visual-settings-footer {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .visual-settings-header {
+    padding-top: 1rem;
+    padding-bottom: 0.75rem;
+  }
+
+  .visual-settings-body {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+  }
+
+  .visual-settings-footer {
+    padding-top: 0.75rem;
+    padding-bottom: 1rem;
+    flex-direction: column;
+  }
+
+  .visual-settings-reset,
+  .visual-settings-apply {
+    width: 100%;
+  }
+}
+
