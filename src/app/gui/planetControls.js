@@ -19,6 +19,8 @@ export function setupPlanetControls({
   regenerateStarfield,
   updateGravityDisplay,
   initMoonPhysics,
+  onPlanetMotionToggle,
+  onPlanetMotionParamChange,
   getIsApplyingPreset,
   getIsApplyingStarPreset,
   onPresetChange,
@@ -412,6 +414,46 @@ export function setupPlanetControls({
       scheduleShareUpdate();
     });
 
+  const planetPhysicFolder = registerFolder(gui.addFolder("Planet Physic"), { close: true });
+
+  const updatePlanetMotionControllerState = (enabled = params.planetMotionEnabled) => {
+    const method = enabled ? "enable" : "disable";
+    guiControllers.starGravity?.[method]?.();
+    guiControllers.planetForwardSpeed?.[method]?.();
+    guiControllers.planetForwardAngle?.[method]?.();
+  };
+
+  guiControllers.planetMotionEnabled = planetPhysicFolder.add(params, "planetMotionEnabled")
+    .name("Enable Planet Motion")
+    .onChange((value) => {
+      updatePlanetMotionControllerState(value);
+      onPlanetMotionToggle?.(value);
+      scheduleShareUpdate();
+    });
+
+  guiControllers.starGravity = planetPhysicFolder.add(params, "starGravity", 0, 2000, 1)
+    .name("Star Gravity")
+    .onFinishChange(() => {
+      onPlanetMotionParamChange?.({ resetPosition: true });
+      scheduleShareUpdate();
+    });
+
+  guiControllers.planetForwardSpeed = planetPhysicFolder.add(params, "planetForwardSpeed", 0, 10, 0.01)
+    .name("Forward Speed")
+    .onFinishChange(() => {
+      onPlanetMotionParamChange?.({ resetPosition: true });
+      scheduleShareUpdate();
+    });
+
+  guiControllers.planetForwardAngle = planetPhysicFolder.add(params, "planetForwardAngle", -180, 180, 1)
+    .name("Forward Angle")
+    .onFinishChange(() => {
+      onPlanetMotionParamChange?.({ resetPosition: true });
+      scheduleShareUpdate();
+    });
+
+  updatePlanetMotionControllerState();
+
   const environmentFolder = registerFolder(gui.addFolder("Environment"), { close: true });
 
   guiControllers.gravity = environmentFolder.add(params, "gravity", 0.1, 40, 0.1)
@@ -448,6 +490,7 @@ export function setupPlanetControls({
       refreshStarVariantVisibility(value);
       if (shouldSkipStarUpdate()) return;
       updateSun();
+      onPlanetMotionParamChange?.({ resetPosition: true });
       scheduleShareUpdate();
     });
 
@@ -483,6 +526,7 @@ export function setupPlanetControls({
     .onChange(() => {
       if (shouldSkipStarUpdate()) return;
       updateSun();
+      onPlanetMotionParamChange?.({ resetPosition: true });
       scheduleShareUpdate();
     });
 
