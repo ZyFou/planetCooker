@@ -19,17 +19,34 @@ export function setupPlanetControls({
   regenerateStarfield,
   updateGravityDisplay,
   initMoonPhysics,
+  resetMoonPhysics,
+  syncMoonSettings,
+  rebuildMoonControls,
+  updateOrbitLinesVisibility,
   getIsApplyingPreset,
   getIsApplyingStarPreset,
   onPresetChange,
   onStarPresetChange
 }) {
+  // Initialize folders object early so it can be used throughout the function
+  guiControllers.folders = guiControllers.folders || {};
+  
   // Build grouped preset UI: base presets + Real Worlds
   const presetNames = Object.keys(presets);
   const shouldSkipStarUpdate = () => (getIsApplyingPreset?.() || getIsApplyingStarPreset?.());
   const presetFolder = registerFolder(gui.addFolder("Presets"), { close: true });
   const presetController = presetFolder.add(params, "preset", presetNames).name("Preset");
   guiControllers.preset = presetController;
+
+  function updatePresetList(planetType) {
+    const filteredPresets = Object.keys(presets).filter(p => (presets[p].planetType || 'rocky') === planetType);
+    presetController.options(filteredPresets);
+    if (!filteredPresets.includes(params.preset)) {
+      params.preset = filteredPresets[0];
+      onPresetChange?.(params.preset);
+    }
+    presetController.setValue(params.preset);
+  }
 
   presetController.onChange((value) => {
     if (getIsApplyingPreset()) return;
@@ -59,11 +76,39 @@ export function setupPlanetControls({
 
   const planetFolder = registerFolder(gui.addFolder("Planet"), { close: true });
 
+  const rockyPlanetControllers = [];
+  const gasGiantControllers = [];
+
+  const refreshPlanetTypeVisibility = (nextPlanetType = params.planetType) => {
+    const showGasGiant = nextPlanetType === "gas_giant";
+    if (guiControllers.folders.gasGiantFolder) {
+      if (showGasGiant) guiControllers.folders.gasGiantFolder.show();
+      else guiControllers.folders.gasGiantFolder.hide();
+    }
+    rockyPlanetControllers.forEach((controller) => {
+      if (!controller) return;
+      if (showGasGiant) controller.hide();
+      else controller.show();
+    });
+  };
+
+  guiControllers.refreshPlanetTypeVisibility = refreshPlanetTypeVisibility;
+
+  guiControllers.planetType = planetFolder.add(params, "planetType", ["rocky", "gas_giant"])
+    .name("Planet Type")
+    .onChange((value) => {
+      if (getIsApplyingPreset && getIsApplyingPreset()) return;
+      refreshPlanetTypeVisibility(value);
+      updatePresetList(value);
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
   guiControllers.seed = planetFolder
     .add(params, "seed")
     .name("Seed")
     .onFinishChange(() => {
-      if (getIsApplyingPreset()) return;
+      if (getIsApplyingPreset && getIsApplyingPreset()) return;
       handleSeedChanged();
     });
 
@@ -81,6 +126,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPlanetControllers.push(guiControllers.subdivisions);
 
   guiControllers.noiseLayers = planetFolder.add(params, "noiseLayers", 1, 8, 1)
     .name("Noise Layers")
@@ -88,6 +134,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPlanetControllers.push(guiControllers.noiseLayers);
 
   guiControllers.noiseFrequency = planetFolder.add(params, "noiseFrequency", 0.3, 8, 0.05)
     .name("Noise Frequency")
@@ -95,6 +142,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPlanetControllers.push(guiControllers.noiseFrequency);
 
   guiControllers.noiseAmplitude = planetFolder.add(params, "noiseAmplitude", 0, 1.4, 0.01)
     .name("Terrain Height")
@@ -102,6 +150,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPlanetControllers.push(guiControllers.noiseAmplitude);
 
   guiControllers.persistence = planetFolder.add(params, "persistence", 0.2, 0.9, 0.01)
     .name("Persistence")
@@ -109,6 +158,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPlanetControllers.push(guiControllers.persistence);
 
   guiControllers.lacunarity = planetFolder.add(params, "lacunarity", 1.2, 3.8, 0.01)
     .name("Lacunarity")
@@ -116,6 +166,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPlanetControllers.push(guiControllers.lacunarity);
 
   guiControllers.oceanLevel = planetFolder.add(params, "oceanLevel", 0, 0.95, 0.01)
     .name("Ocean Level")
@@ -123,6 +174,79 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPlanetControllers.push(guiControllers.oceanLevel);
+
+  const gasGiantFolder = registerFolder(planetFolder.addFolder("Gas Giant"), { close: true });
+  guiControllers.folders.gasGiantFolder = gasGiantFolder;
+
+  guiControllers.gasGiantStrataCount = gasGiantFolder.add(params, "gasGiantStrataCount", 1, 6, 1)
+    .name("Strata Count")
+    .onFinishChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+      // Re-build strata controls when count changes
+      rebuildStrataControls();
+    });
+  gasGiantControllers.push(guiControllers.gasGiantStrataCount);
+
+  const strataControllers = [];
+  function rebuildStrataControls() {
+    // Clear existing strata controls
+    strataControllers.forEach(c => c.destroy());
+    strataControllers.length = 0;
+
+    for (let i = 1; i <= params.gasGiantStrataCount; i++) {
+      const colorCtrl = gasGiantFolder.addColor(params, `gasGiantStrataColor${i}`).name(`Color ${i}`);
+      const sizeCtrl = gasGiantFolder.add(params, `gasGiantStrataSize${i}`, 0, 1, 0.01).name(`Size ${i}`);
+
+      colorCtrl.onChange(() => {
+        markPlanetDirty();
+        scheduleShareUpdate();
+      });
+
+      sizeCtrl.onFinishChange(() => {
+        markPlanetDirty();
+        scheduleShareUpdate();
+      });
+
+      strataControllers.push(colorCtrl);
+      strataControllers.push(sizeCtrl);
+    }
+  }
+
+  rebuildStrataControls(); // Initial build
+
+  guiControllers.gasGiantNoiseScale = gasGiantFolder.add(params, "gasGiantNoiseScale", 0.1, 10, 0.1)
+    .name("Noise Scale")
+    .onFinishChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  gasGiantControllers.push(guiControllers.gasGiantNoiseScale);
+
+  guiControllers.gasGiantNoiseStrength = gasGiantFolder.add(params, "gasGiantNoiseStrength", 0, 1, 0.01)
+    .name("Noise Strength")
+    .onFinishChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  gasGiantControllers.push(guiControllers.gasGiantNoiseStrength);
+
+  guiControllers.gasGiantStrataWarp = gasGiantFolder.add(params, "gasGiantStrataWarp", 0, 0.2, 0.001)
+    .name("Strata Warp")
+    .onFinishChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  gasGiantControllers.push(guiControllers.gasGiantStrataWarp);
+
+  guiControllers.gasGiantStrataWarpScale = gasGiantFolder.add(params, "gasGiantStrataWarpScale", 0.5, 20, 0.1)
+    .name("Warp Scale")
+    .onFinishChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  gasGiantControllers.push(guiControllers.gasGiantStrataWarpScale);
 
   const paletteFolder = registerFolder(gui.addFolder("Palette"), { close: true });
 
@@ -133,6 +257,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPlanetControllers.push(guiControllers.colorOcean);
 
   guiControllers.colorShallow = paletteFolder.addColor(params, "colorShallow")
     .name("Shallow Water")
@@ -141,6 +266,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPlanetControllers.push(guiControllers.colorShallow);
 
   guiControllers.colorFoam = paletteFolder.addColor(params, "colorFoam")
     .name("Shore Foam")
@@ -149,6 +275,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPlanetControllers.push(guiControllers.colorFoam);
 
   guiControllers.foamEnabled = paletteFolder.add(params, "foamEnabled")
     .name("Show Foam")
@@ -156,6 +283,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPlanetControllers.push(guiControllers.foamEnabled);
 
   guiControllers.colorLow = paletteFolder.addColor(params, "colorLow")
     .name("Lowlands")
@@ -164,6 +292,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPlanetControllers.push(guiControllers.colorLow);
 
   guiControllers.colorMid = paletteFolder.addColor(params, "colorMid")
     .name("Highlands")
@@ -172,6 +301,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPlanetControllers.push(guiControllers.colorMid);
 
   guiControllers.colorHigh = paletteFolder.addColor(params, "colorHigh")
     .name("Peaks")
@@ -180,6 +310,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPlanetControllers.push(guiControllers.colorHigh);
 
   guiControllers.colorCore = paletteFolder.addColor(params, "colorCore")
     .name("Core")
@@ -188,6 +319,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPlanetControllers.push(guiControllers.colorCore);
 
   guiControllers.coreEnabled = paletteFolder.add(params, "coreEnabled")
     .name("Enable Core")
@@ -195,6 +327,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPlanetControllers.push(guiControllers.coreEnabled);
 
   guiControllers.coreSize = paletteFolder.add(params, "coreSize", 0.05, 1.0, 0.01)
     .name("Core Size")
@@ -202,6 +335,7 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPlanetControllers.push(guiControllers.coreSize);
 
   guiControllers.coreVisible = paletteFolder.add(params, "coreVisible")
     .name("Show Core")
@@ -209,6 +343,49 @@ export function setupPlanetControls({
       markPlanetDirty();
       scheduleShareUpdate();
     });
+  rockyPlanetControllers.push(guiControllers.coreVisible);
+
+  // Ice Poles section
+  guiControllers.icePolesEnabled = paletteFolder.add(params, "icePolesEnabled")
+    .name("Ice Poles")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  rockyPlanetControllers.push(guiControllers.icePolesEnabled);
+
+  guiControllers.icePolesCoverage = paletteFolder.add(params, "icePolesCoverage", 0.01, 0.5, 0.01)
+    .name("Ice Coverage")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  rockyPlanetControllers.push(guiControllers.icePolesCoverage);
+
+  guiControllers.icePolesColor = paletteFolder.addColor(params, "icePolesColor")
+    .name("Ice Color")
+    .onChange(() => {
+      updatePalette();
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  rockyPlanetControllers.push(guiControllers.icePolesColor);
+
+  guiControllers.icePolesNoiseScale = paletteFolder.add(params, "icePolesNoiseScale", 0.5, 8.0, 0.1)
+    .name("Ice Noise Scale")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  rockyPlanetControllers.push(guiControllers.icePolesNoiseScale);
+
+  guiControllers.icePolesNoiseStrength = paletteFolder.add(params, "icePolesNoiseStrength", 0.0, 1.0, 0.01)
+    .name("Ice Noise Strength")
+    .onChange(() => {
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+  rockyPlanetControllers.push(guiControllers.icePolesNoiseStrength);
 
   guiControllers.atmosphereColor = paletteFolder.addColor(params, "atmosphereColor")
     .name("Atmosphere Color")
@@ -221,6 +398,30 @@ export function setupPlanetControls({
 
   guiControllers.atmosphereOpacity = paletteFolder.add(params, "atmosphereOpacity", 0, 1, 0.01)
     .name("Atmosphere Opacity")
+    .onChange(() => {
+      updateClouds();
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.atmosphereIntensity = paletteFolder.add(params, "atmosphereIntensity", 0, 3, 0.1)
+    .name("Atmosphere Intensity")
+    .onChange(() => {
+      updateClouds();
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.atmosphereFresnelPower = paletteFolder.add(params, "atmosphereFresnelPower", 0.5, 5, 0.1)
+    .name("Fresnel Power")
+    .onChange(() => {
+      updateClouds();
+      markPlanetDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.atmosphereRimPower = paletteFolder.add(params, "atmosphereRimPower", 0.5, 5, 0.1)
+    .name("Rim Power")
     .onChange(() => {
       updateClouds();
       markPlanetDirty();
@@ -287,8 +488,30 @@ export function setupPlanetControls({
   guiControllers.gravity = environmentFolder.add(params, "gravity", 0.1, 40, 0.1)
     .name("Gravity m/s^2")
     .onChange(() => {
+      if (getIsApplyingPreset && getIsApplyingPreset()) return;
       updateGravityDisplay();
       initMoonPhysics();
+      scheduleShareUpdate();
+    });
+
+  // Create Moons folder under Environment
+  const moonsFolder = registerFolder(environmentFolder.addFolder("Moons"), { close: true });
+  moonsFolder.open();
+
+  guiControllers.moonCount = moonsFolder.add(params, "moonCount", 0, 5, 1)
+    .name("Count")
+    .onChange(() => {
+      if (getIsApplyingPreset()) return;
+      syncMoonSettings();
+      rebuildMoonControls();
+      markMoonsDirty();
+      scheduleShareUpdate();
+    });
+
+  guiControllers.showOrbitLines = moonsFolder.add(params, "showOrbitLines")
+    .name("Show Orbits")
+    .onChange(() => {
+      updateOrbitLinesVisibility();
       scheduleShareUpdate();
     });
 
@@ -648,7 +871,7 @@ export function setupPlanetControls({
 
   const spaceFolder = registerFolder(environmentFolder.addFolder("Sky"), { close: true });
 
-  guiControllers.starCount = spaceFolder.add(params, "starCount", 500, 4000, 50)
+  guiControllers.starCount = spaceFolder.add(params, "starCount", 0, 4000, 50)
     .name("Star Count")
     .onFinishChange(() => {
       params.starCount = Math.round(params.starCount);
@@ -787,7 +1010,7 @@ export function setupPlanetControls({
     });
 
   // Attach folders on guiControllers so other modules (rings) can find them
-  guiControllers.folders = {
+  Object.assign(guiControllers.folders, {
     planetFolder,
     paletteFolder,
     motionFolder,
@@ -795,12 +1018,14 @@ export function setupPlanetControls({
     sunFolder,
     ringsFolder,
     spaceFolder,
-    effectsFolder
-  };
+    effectsFolder,
+    gasGiantFolder
+  });
+
+  refreshPlanetTypeVisibility();
 
   return {
     presetController,
     folders: guiControllers.folders
   };
 }
-

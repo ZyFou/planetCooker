@@ -26,6 +26,7 @@
         <div id="desktop-menu" class="desktop-menu" hidden>
           <button id="desktop-copy">Save Planet</button>
           <button id="desktop-help" title="Show tutorial">Help</button>
+          <button id="desktop-visual-settings" title="Visual Settings">Visual Settings</button>
           <button id="desktop-home">Back to Landing</button>
         </div>
         
@@ -34,6 +35,7 @@
           <button id="mobile-randomize">New Planet Shape</button>
           <button id="mobile-copy">Save Planet</button>
           <button id="mobile-reset">Reset All</button>
+          <button id="mobile-visual-settings" title="Visual Settings">Visual Settings</button>
           <button id="mobile-help">How to Play</button>
           <button id="mobile-home">Back to Landing</button>
         </div>
@@ -57,11 +59,7 @@
             <span id="orbit-stability" class="value">-</span>
           </div>
           <div class="stat">
-            <span class="label">Share Code</span>
-            <div class="share-row">
-              <!-- <span id="share-display" class="value"></span> -->
-              <!-- <button id="copy-share-inline" class="copy-inline" title="Save Planet">Copy</button> -->
-            </div>
+
             <div id="import-share-container" class="share-row">
               <input id="import-share-input" type="text" inputmode="text" spellcheck="false" autocomplete="off" placeholder="Paste share code..." aria-label="Paste share code" style="flex:1; min-width: 0;" />
               <button id="import-share-load" class="copy-inline">Load</button>
@@ -134,6 +132,92 @@
           <div class="exit-spinner" aria-hidden="true"></div>
           <p class="exit-message">Saving your system…</p>
           <p class="exit-sub">Preparing the landing preview</p>
+        </div>
+      </div>
+
+      <!-- Visual Settings Popup -->
+      <div id="visual-settings-popup" class="visual-settings-popup" hidden>
+        <div class="visual-settings-content">
+          <div class="visual-settings-header">
+            <h2>Visual Settings</h2>
+            <button id="visual-settings-close" class="visual-settings-close" aria-label="Close visual settings">&times;</button>
+          </div>
+          <div class="visual-settings-body">
+            <div class="visual-setting">
+              <label for="visual-settings-preset">Preset:</label>
+              <select id="visual-settings-preset" class="visual-setting-select">
+                <option value="custom">Custom</option>
+                <option value="ultra">Ultra</option>
+                <option value="high">High</option>
+                <option value="default">Default</option>
+                <option value="low">Low</option>
+                <option value="potato">Potato</option>
+              </select>
+            </div>
+            <div class="visual-setting">
+              <label for="frame-rate-control">Target Frame Rate:</label>
+              <select id="frame-rate-control" class="visual-setting-select">
+                <option value="unlimited">Unlimited</option>
+                <option value="60">60 FPS</option>
+                <option value="30">30 FPS</option>
+                <option value="24">24 FPS</option>
+                <option value="15">15 FPS</option>
+              </select>
+            </div>
+            <div class="visual-setting">
+              <label for="resolution-scale">Resolution Scale:</label>
+              <div class="resolution-scale-container">
+                <input type="range" id="resolution-scale" min="0.25" max="2.0" step="0.25" value="1.0" class="visual-setting-slider">
+                <span id="resolution-scale-value" class="resolution-scale-value">100%</span>
+              </div>
+            </div>
+            <div class="visual-setting">
+              <label for="lighting-scale">Lighting Quality:</label>
+              <div class="lighting-scale-container">
+                <input type="range" id="lighting-scale" min="0.1" max="2.0" step="0.1" value="1.0" class="visual-setting-slider">
+                <span id="lighting-scale-value" class="lighting-scale-value">100%</span>
+              </div>
+            </div>
+            <div class="visual-setting">
+              <label for="particle-max">Particle Max Count:</label>
+              <div class="lighting-scale-container">
+                <input type="range" id="particle-max" min="100" max="2000" step="50" value="1000" class="visual-setting-slider">
+                <span id="particle-max-value" class="lighting-scale-value">1000</span>
+              </div>
+            </div>
+            <div class="visual-setting">
+              <label for="star-max">Starfield Max Count:</label>
+              <div class="lighting-scale-container">
+                <input type="range" id="star-max" min="0" max="4000" step="100" value="4000" class="visual-setting-slider">
+                <span id="star-max-value" class="lighting-scale-value">4000</span>
+              </div>
+            </div>
+            <div class="visual-setting">
+              <label for="noise-resolution">Noise Resolution:</label>
+              <div class="lighting-scale-container">
+                <input type="range" id="noise-resolution" min="0.25" max="2.0" step="0.25" value="1.0" class="visual-setting-slider">
+                <span id="noise-resolution-value" class="lighting-scale-value">100%</span>
+              </div>
+            </div>
+            <div class="visual-setting">
+              <label for="gas-resolution">Gas Giant Resolution:</label>
+              <div class="lighting-scale-container">
+                <input type="range" id="gas-resolution" min="0.25" max="2.0" step="0.25" value="1.0" class="visual-setting-slider">
+                <span id="gas-resolution-value" class="lighting-scale-value">100%</span>
+              </div>
+            </div>
+            <div class="visual-setting">
+              <label for="ring-detail">Ring Detail:</label>
+              <div class="lighting-scale-container">
+                <input type="range" id="ring-detail" min="0.25" max="1.5" step="0.25" value="1.0" class="visual-setting-slider">
+                <span id="ring-detail-value" class="lighting-scale-value">100%</span>
+              </div>
+            </div>
+          </div>
+          <div class="visual-settings-footer">
+            <button id="visual-settings-reset" class="visual-settings-reset">Reset to Defaults</button>
+            <button id="visual-settings-apply" class="visual-settings-apply">Apply Settings</button>
+          </div>
         </div>
       </div>
     </div>
