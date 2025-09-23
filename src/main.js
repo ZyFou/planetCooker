@@ -434,6 +434,22 @@ const sunGroup = new THREE.Group();
 sunGroup.name = "SunGroup";
 scene.add(sunGroup);
 
+const planetOrbitState = {
+  initialPosition: planetSystem.position.clone(),
+  velocity: new THREE.Vector3(),
+  lastEnabled: false
+};
+planetSystem.userData.orbitVel = planetOrbitState.velocity;
+
+const planetMotionScratch = {
+  toSun: new THREE.Vector3(),
+  radial: new THREE.Vector3(),
+  reference: new THREE.Vector3(),
+  right: new THREE.Vector3(),
+  forward: new THREE.Vector3(),
+  tangent: new THREE.Vector3()
+};
+
 const sunLight = new THREE.DirectionalLight(0xfff0ce, 1.65);
 sunLight.castShadow = true;
 sunLight.shadow.mapSize.set(2048, 2048);
@@ -995,6 +1011,10 @@ const params = {
   axisTilt: 23,
   rotationSpeed: 0.12,
   simulationSpeed: 0.12,
+  planetMotionEnabled: false,
+  starGravity: 0,
+  planetForwardSpeed: 0,
+  planetForwardAngle: 0,
   gravity: 9.81,
   sunPreset: "Sol",
   sunVariant: "Star",
@@ -1716,6 +1736,10 @@ const shareKeys = [
   "axisTilt",
   "rotationSpeed",
   "simulationSpeed",
+  "planetMotionEnabled",
+  "starGravity",
+  "planetForwardSpeed",
+  "planetForwardAngle",
   "gravity",
   "sunColor",
   "sunIntensity",
@@ -1819,6 +1843,105 @@ let sunPulsePhase = 0;
 let cloudTexOffsetX = 0;
 let isApplyingStarPreset = false;
 
+function ensurePlanetVelocityVector() {
+  let planetVel = planetRoot.userData.planetVel;
+  if (!planetVel) {
+    planetVel = new THREE.Vector3();
+    planetRoot.userData.planetVel = planetVel;
+  }
+  return planetVel;
+}
+
+function computeInitialPlanetVelocity(target = planetOrbitState.velocity) {
+  sunGroup.getWorldPosition(planetMotionScratch.toSun);
+  planetMotionScratch.toSun.sub(planetSystem.position);
+  if (planetMotionScratch.toSun.lengthSq() <= 1e-8) {
+    target.set(0, 0, 0);
+    return target;
+  }
+
+  planetMotionScratch.radial.copy(planetMotionScratch.toSun).normalize();
+  planetMotionScratch.reference.set(0, 1, 0);
+  planetMotionScratch.right.copy(planetMotionScratch.reference).cross(planetMotionScratch.radial);
+  if (planetMotionScratch.right.lengthSq() < 1e-8) {
+    planetMotionScratch.reference.set(1, 0, 0);
+    planetMotionScratch.right.copy(planetMotionScratch.reference).cross(planetMotionScratch.radial);
+  }
+  planetMotionScratch.right.normalize();
+  planetMotionScratch.forward.copy(planetMotionScratch.radial).cross(planetMotionScratch.right).normalize();
+
+  const angleRad = THREE.MathUtils.degToRad(params.planetForwardAngle || 0);
+  const cosA = Math.cos(angleRad);
+  const sinA = Math.sin(angleRad);
+  planetMotionScratch.tangent.copy(planetMotionScratch.forward).multiplyScalar(cosA);
+  planetMotionScratch.toSun.copy(planetMotionScratch.right).multiplyScalar(sinA);
+  planetMotionScratch.tangent.add(planetMotionScratch.toSun);
+  if (planetMotionScratch.tangent.lengthSq() < 1e-8) {
+    planetMotionScratch.tangent.copy(planetMotionScratch.forward);
+  } else {
+    planetMotionScratch.tangent.normalize();
+  }
+
+  const speed = Math.max(0, params.planetForwardSpeed || 0);
+  target.copy(planetMotionScratch.tangent).multiplyScalar(speed);
+  return target;
+}
+
+function resetPlanetMotion({ resetPosition = true } = {}) {
+  if (resetPosition) {
+    planetSystem.position.copy(planetOrbitState.initialPosition);
+    planetSystem.updateMatrixWorld(true);
+  }
+
+  if (params.planetMotionEnabled) {
+    computeInitialPlanetVelocity(planetOrbitState.velocity);
+  } else {
+    planetOrbitState.velocity.set(0, 0, 0);
+  }
+
+  planetSystem.userData.orbitVel = planetOrbitState.velocity;
+  ensurePlanetVelocityVector().copy(planetOrbitState.velocity);
+  planetOrbitState.lastEnabled = params.planetMotionEnabled;
+}
+
+function handlePlanetMotionToggle(enabled) {
+  params.planetMotionEnabled = enabled;
+  resetPlanetMotion({ resetPosition: true });
+}
+
+function handlePlanetMotionParamChange({ resetPosition = true } = {}) {
+  resetPlanetMotion({ resetPosition });
+}
+
+function stepPlanetOrbit(dt) {
+  if (planetOrbitState.lastEnabled !== params.planetMotionEnabled) {
+    resetPlanetMotion({ resetPosition: true });
+  }
+
+  if (!params.planetMotionEnabled) {
+    ensurePlanetVelocityVector().set(0, 0, 0);
+    planetOrbitState.lastEnabled = false;
+    return;
+  }
+
+  const velocity = planetOrbitState.velocity;
+  const mu = Math.max(0, params.starGravity || 0);
+  if (mu > 0) {
+    sunGroup.getWorldPosition(planetMotionScratch.toSun);
+    planetMotionScratch.toSun.sub(planetSystem.position);
+    const distSq = Math.max(1e-6, planetMotionScratch.toSun.lengthSq());
+    const dist = Math.sqrt(distSq);
+    planetMotionScratch.toSun.multiplyScalar(mu / (distSq * dist));
+    velocity.addScaledVector(planetMotionScratch.toSun, dt);
+  }
+
+  planetSystem.position.addScaledVector(velocity, dt);
+  planetSystem.updateMatrixWorld(true);
+  planetSystem.userData.orbitVel = velocity;
+  ensurePlanetVelocityVector().copy(velocity);
+  planetOrbitState.lastEnabled = true;
+}
+
 const { registerFolder, unregisterFolder, applyControlSearch } = initControlSearch({
   controlsContainer,
   searchInput: controlSearchInput,
@@ -1850,6 +1973,8 @@ setupPlanetControls({
   regenerateStarfield,
   updateGravityDisplay,
   initMoonPhysics,
+  onPlanetMotionToggle: handlePlanetMotionToggle,
+  onPlanetMotionParamChange: handlePlanetMotionParamChange,
   getIsApplyingPreset: () => isApplyingPreset,
   getIsApplyingStarPreset: () => isApplyingStarPreset,
   onPresetChange: (value) => applyPreset(value),
@@ -3060,6 +3185,8 @@ function animate(timestamp) {
   const simulationDelta = delta * params.simulationSpeed;
   simulationYears += simulationDelta * 0.08;
 
+  stepPlanetOrbit(simulationDelta);
+
   // Calculate FPS
   frameCount++;
   if (timestamp - fpsUpdateTime >= 1000) {
@@ -3076,6 +3203,10 @@ function animate(timestamp) {
   // Update camera by mode
   if (cameraMode === CameraMode.ORBIT) {
     controls.enabled = true;
+    if (params.planetMotionEnabled) {
+      const target = planetRoot.getWorldPosition(tmpVecA);
+      controls.target.lerp(target, 0.12);
+    }
     controls.update();
   } else if (cameraMode === CameraMode.SURFACE) {
     controls.enabled = false;
@@ -4725,7 +4856,7 @@ function syncDebugMoonArtifacts() {
 }
 
 function updateDebugVectors() {
-  const planetVel = params.physicsEnabled ? planetRoot.userData.planetVel : null;
+  const planetVel = planetRoot.userData.planetVel || planetOrbitState.velocity;
   const planetSpeed = planetVel ? planetVel.length() : 0;
   if (debugPlanetSpeedDisplay) {
     debugPlanetSpeedDisplay.textContent = planetSpeed.toFixed(3);
@@ -4873,6 +5004,7 @@ function applyPreset(name, { skipShareUpdate = false, keepSeed = false } = {}) {
   updatePalette();
   updateClouds();
   updateSun();
+  handlePlanetMotionParamChange({ resetPosition: true });
   // Rings: default to disabled unless preset explicitly enables
   {
     let nextRingEnabled = false;
@@ -4919,6 +5051,7 @@ function applyStarPreset(name, { skipShareUpdate = false } = {}) {
 
   isApplyingStarPreset = false;
   updateSun();
+  handlePlanetMotionParamChange({ resetPosition: true });
   if (!skipShareUpdate) {
     scheduleShareUpdate();
   }
@@ -5061,6 +5194,7 @@ function applySharePayload(payload) {
   updateStarfieldUniforms();
   markPlanetDirty();
   markMoonsDirty();
+  handlePlanetMotionParamChange({ resetPosition: true });
   initMoonPhysics();
   updateStabilityDisplay(moonSettings.length, moonSettings.length);
   scheduleShareUpdate();
@@ -5635,9 +5769,8 @@ function hideLoadingSoon() {
 function initMoonPhysics() {
   if (!params.physicsEnabled) {
     planetRoot.position.set(0, 0, 0);
-    const planetVel = planetRoot.userData.planetVel || new THREE.Vector3();
-    planetVel.set(0, 0, 0);
-    planetRoot.userData.planetVel = planetVel;
+    const planetVel = ensurePlanetVelocityVector();
+    planetVel.copy(planetOrbitState.velocity);
     moonsGroup.children.forEach((pivot, index) => {
       const moon = moonSettings[index];
       const mesh = pivot.userData.mesh;
@@ -5656,9 +5789,8 @@ function initMoonPhysics() {
   }
 
   const planetMass = getPlanetMass();
-  const planetVel = planetRoot.userData.planetVel || new THREE.Vector3();
-  planetVel.set(0, 0, 0);
-  planetRoot.userData.planetVel = planetVel;
+  const planetVel = ensurePlanetVelocityVector();
+  planetVel.copy(planetOrbitState.velocity);
   planetRoot.position.set(0, 0, 0);
 
   const totalMomentum = tmpVecD.set(0, 0, 0);
@@ -5726,9 +5858,8 @@ function stepMoonPhysics(dt) {
   const substeps = Math.max(1, Math.round(params.physicsSubsteps || 1));
   const h = dt / substeps;
   const planetMass = getPlanetMass();
-  const planetVel = planetRoot.userData.planetVel || new THREE.Vector3();
-  planetVel.set(0, 0, 0);
-  planetRoot.userData.planetVel = planetVel;
+  const planetVel = ensurePlanetVelocityVector();
+  planetVel.copy(planetOrbitState.velocity);
   const damping = Math.max(0, 1 - params.physicsDamping);
   const collidedIndices = new Set();
 
