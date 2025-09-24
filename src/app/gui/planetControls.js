@@ -17,6 +17,7 @@ export function setupPlanetControls({
   updateTilt,
   updateSun,
   updateRings,
+  updateAurora,
   updateStarfieldUniforms,
   regenerateStarfield,
   updateGravityDisplay,
@@ -962,6 +963,7 @@ export function setupPlanetControls({
 
   const updateAuroraAndShare = () => {
     if (getIsApplyingPreset()) return;
+    updateAurora();
     markPlanetDirty();
     scheduleShareUpdate();
   };
@@ -986,9 +988,7 @@ export function setupPlanetControls({
     .name("Width")
     .onFinishChange(updateAuroraAndShare);
 
-  guiControllers.auroraHeight = auroraFolder.add(params.aurora, "height", 0.01, 0.2, 0.001)
-    .name("Height")
-    .onChange(updateAuroraAndShare);
+  // Aurora height is fixed at atmosphere level (0.06) - no GUI control needed
 
   guiControllers.auroraIntensity = auroraFolder.add(params.aurora, "intensity", 0.1, 5, 0.05)
     .name("Intensity")
