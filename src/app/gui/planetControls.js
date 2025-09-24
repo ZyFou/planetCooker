@@ -199,7 +199,7 @@ export function setupPlanetControls({
       const colorCtrl = gasGiantFolder.addColor(params, `gasGiantStrataColor${i}`).name(`Color ${i}`);
       const sizeCtrl = gasGiantFolder.add(params, `gasGiantStrataSize${i}`, 0, 1, 0.01).name(`Size ${i}`);
 
-      colorCtrl.onChange(() => {
+      colorCtrl.onFinishChange(() => {
         markPlanetDirty();
         scheduleShareUpdate();
       });

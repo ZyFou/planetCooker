@@ -206,7 +206,7 @@ export function generateGasGiantTexture(params) {
   const noiseScale = Math.max(0.25, Math.min(2.0, params?.noiseResolution || 1.0));
   const gasScale = Math.max(0.25, Math.min(2.0, params?.gasResolution || 1.0));
   const combinedScale = noiseScale * gasScale;
-  const size = Math.max(64, Math.round(1024 * combinedScale)); // Use a larger texture for the planet surface
+  const size = Math.max(64, Math.round(256 * combinedScale));
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size / 2; // Use a 2:1 aspect ratio for equirectangular projection
@@ -326,7 +326,7 @@ export function generateGasGiantTexture(params) {
       let noiseVal = 0;
       let amp = 1.0;
       let f = freq;
-      const octaveCount = detailFactor >= 1.5 ? 4 : detailFactor <= 0.6 ? 2 : 3;
+      const octaveCount = detailFactor >= 1.5 ? 2 : 1;
       for (let i = 0; i < octaveCount; i++) {
         noiseVal += noise(sx * f, sy * f * 2.0, sz * f) * amp;
         amp *= 0.5;

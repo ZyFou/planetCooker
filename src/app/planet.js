@@ -6,11 +6,15 @@ import { generateRingTexture as generateRingTextureExt, generateAnnulusTexture a
 import { blackHoleDiskUniforms, blackHoleDiskVertexShader, blackHoleDiskFragmentShader } from "./sun.js";
 
 const surfaceVertexShader = `
+    attribute vec3 color;
+
+    varying vec3 vColor;
     varying vec3 vNormal;
     varying vec2 vUv;
     varying vec3 vPosition;
 
     void main() {
+        vColor = color;
         vNormal = normalize(normalMatrix * normal);
         vUv = uv;
         vPosition = position;
@@ -19,6 +23,7 @@ const surfaceVertexShader = `
 `;
 
 const surfaceFragmentShader = `
+    varying vec3 vColor;
     varying vec3 vNormal;
     varying vec2 vUv;
     varying vec3 vPosition;
@@ -26,13 +31,19 @@ const surfaceFragmentShader = `
     uniform sampler2D tRock;
     uniform sampler2D tSand;
     uniform sampler2D tSplat;
+    uniform float detailStrength;
 
     void main() {
         vec4 splat = texture2D(tSplat, vUv);
         vec4 rock = texture2D(tRock, vUv * 10.0);
         vec4 sand = texture2D(tSand, vUv * 10.0);
 
-        vec3 finalColor = mix(rock.rgb, sand.rgb, splat.r);
+        vec3 detailSample = mix(rock.rgb, sand.rgb, splat.r);
+        float detail = dot(detailSample, vec3(0.299, 0.587, 0.114));
+        detail = detail * 0.6 + 0.4;
+        float detailFactor = mix(1.0, detail, clamp(detailStrength, 0.0, 1.0));
+
+        vec3 finalColor = vColor * detailFactor;
         gl_FragColor = vec4(finalColor, 1.0);
     }
 `;
@@ -138,6 +149,8 @@ export class Planet {
         this.surfaceLODLevels = {};
         this.gasLODMaterials = [];
         this.gasLODTextures = [];
+        this.gasTextureCache = new Map();
+        this.lastGasParams = null;
 
         this._createPlanetObjects();
         this.rebuildPlanet();
@@ -281,18 +294,26 @@ export class Planet {
     _syncActiveSurfaceMesh() {
         if (!this.surfaceLOD?.levels?.length) return;
         let activeMesh = null;
+        let activeLODKey = null;
         for (let i = 0; i < this.surfaceLOD.levels.length; i += 1) {
             const candidate = this.surfaceLOD.levels[i]?.object;
             if (candidate?.visible) {
                 activeMesh = candidate;
+                activeLODKey = candidate.userData?.lodKey;
                 break;
             }
         }
         if (!activeMesh) {
             activeMesh = this.surfaceLODLevels?.medium || this.planetMesh;
+            activeLODKey = 'medium';
         }
         if (activeMesh && this.planetMesh !== activeMesh) {
             this.planetMesh = activeMesh;
+            
+            // Generate texture for new LOD level if needed (gas giants only)
+            if (this.params.planetType === 'gas_giant' && activeLODKey) {
+                this._ensureGasTextureForLOD(activeLODKey);
+            }
         }
     }
 
@@ -321,6 +342,37 @@ export class Planet {
         mesh.material = material;
     }
 
+    _ensureGasTextureForLOD(levelKey) {
+        if (this.params.planetType !== 'gas_giant') return;
+        
+        const config = PLANET_SURFACE_LOD_CONFIG[levelKey] || PLANET_SURFACE_LOD_CONFIG.medium;
+        const textureScale = Math.max(0.25, config.textureScale ?? 1);
+        const baseNoiseRes = this.visualSettings?.noiseResolution ?? 1.0;
+        const baseGasRes = this.visualSettings?.gasResolution ?? 1.0;
+        
+        const cacheKey = `${this.params.seed}-${this.params.gasGiantStrataCount}-${this.params.gasGiantNoiseScale}-${this.params.gasGiantNoiseStrength}-${this.params.gasGiantStrataWarp}-${this.params.gasGiantStrataWarpScale}-${textureScale}-${baseNoiseRes}-${baseGasRes}`;
+        
+        let texture = this.gasTextureCache.get(cacheKey);
+        if (!texture) {
+            // Generate texture asynchronously to prevent blocking
+            setTimeout(() => {
+                texture = this.generateGasGiantTexture(this.params, { resolutionScale: textureScale });
+                texture.wrapS = THREE.RepeatWrapping;
+                texture.wrapT = THREE.ClampToEdgeWrapping;
+                texture.anisotropy = Math.max(2, Math.round(8 * textureScale));
+                texture.needsUpdate = true;
+                this.gasTextureCache.set(cacheKey, texture);
+                
+                // Update the material with the new texture
+                const mesh = this.surfaceLODLevels?.[levelKey];
+                if (mesh?.material) {
+                    mesh.material.map = texture;
+                    mesh.material.needsUpdate = true;
+                }
+            }, 0);
+        }
+    }
+
     _disposeGasLODResources() {
         if (this.gasLODTextures?.length) {
             this.gasLODTextures.forEach((texture) => texture?.dispose?.());
@@ -339,6 +391,10 @@ export class Planet {
         }
         this.gasLODMaterials = [];
         this.gasLODTextures = [];
+        
+        // Clear texture cache when disposing
+        this.gasTextureCache.forEach((texture) => texture?.dispose?.());
+        this.gasTextureCache.clear();
     }
 
     _buildRockyGeometry(detail, generators, profile, offsets) {
@@ -537,9 +593,33 @@ export class Planet {
         this.updatePalette();
 
         if (this.params.planetType === 'gas_giant') {
+          // Check if gas giant parameters changed and clear cache if needed
+          const currentGasParams = {
+            seed: this.params.seed,
+            gasGiantStrataCount: this.params.gasGiantStrataCount,
+            gasGiantNoiseScale: this.params.gasGiantNoiseScale,
+            gasGiantNoiseStrength: this.params.gasGiantNoiseStrength,
+            gasGiantStrataWarp: this.params.gasGiantStrataWarp,
+            gasGiantStrataWarpScale: this.params.gasGiantStrataWarpScale,
+            noiseResolution: this.visualSettings?.noiseResolution ?? 1.0,
+            gasResolution: this.visualSettings?.gasResolution ?? 1.0
+          };
+          
+          if (this.lastGasParams && JSON.stringify(currentGasParams) !== JSON.stringify(this.lastGasParams)) {
+            this.gasTextureCache.forEach((texture) => texture?.dispose?.());
+            this.gasTextureCache.clear();
+          }
+          this.lastGasParams = currentGasParams;
+          
           this._disposeGasLODResources();
 
           const baseSegments = Math.max(24, Math.round(128 * Math.max(0.25, this.visualSettings?.gasResolution ?? 1.0)));
+          const baseNoiseRes = this.visualSettings?.noiseResolution ?? 1.0;
+          const baseGasRes = this.visualSettings?.gasResolution ?? 1.0;
+          
+          // Only generate textures for medium LOD initially to prevent crashes
+          const initialLODs = ['medium', 'high', 'low'];
+          
           PLANET_SURFACE_LOD_ORDER.forEach((levelKey) => {
             const config = PLANET_SURFACE_LOD_CONFIG[levelKey] || PLANET_SURFACE_LOD_CONFIG.medium;
             const segmentScale = Math.max(0.4, config.gasSegmentScale ?? 1);
@@ -548,7 +628,20 @@ export class Planet {
             this._replaceSurfaceGeometry(levelKey, geometry);
 
             const textureScale = Math.max(0.25, config.textureScale ?? 1);
-            const texture = this.generateGasGiantTexture(this.params, { resolutionScale: textureScale });
+            
+            // Create cache key based on parameters that affect texture generation
+            const cacheKey = `${this.params.seed}-${this.params.gasGiantStrataCount}-${this.params.gasGiantNoiseScale}-${this.params.gasGiantNoiseStrength}-${this.params.gasGiantStrataWarp}-${this.params.gasGiantStrataWarpScale}-${textureScale}-${baseNoiseRes}-${baseGasRes}`;
+            
+            let texture = this.gasTextureCache.get(cacheKey);
+            if (!texture && initialLODs.includes(levelKey)) {
+              texture = this.generateGasGiantTexture(this.params, { resolutionScale: textureScale });
+              texture.wrapS = THREE.RepeatWrapping;
+              texture.wrapT = THREE.ClampToEdgeWrapping;
+              texture.anisotropy = Math.max(2, Math.round(8 * textureScale));
+              texture.needsUpdate = true;
+              this.gasTextureCache.set(cacheKey, texture);
+            }
+            
             const material = new THREE.MeshStandardMaterial({
               map: texture,
               roughness: 0.35,
@@ -557,10 +650,6 @@ export class Planet {
               vertexColors: false
             });
             material.needsUpdate = true;
-            texture.wrapS = THREE.RepeatWrapping;
-            texture.wrapT = THREE.ClampToEdgeWrapping;
-            texture.anisotropy = Math.max(2, Math.round(8 * textureScale));
-            texture.needsUpdate = true;
 
             this._assignSurfaceMaterial(levelKey, material);
             this.gasLODMaterials.push(material);
@@ -650,6 +739,7 @@ export class Planet {
                         tRock: { value: rockTexture },
                         tSand: { value: sandTexture },
                         tSplat: { value: splatTexture },
+                        detailStrength: { value: 0.35 },
                     },
                     vertexShader: surfaceVertexShader,
                     fragmentShader: surfaceFragmentShader,
