@@ -4,6 +4,7 @@ import { SeededRNG } from "./utils.js";
 import * as PHYSICS from "./planet/physics.js";
 import { generateRingTexture as generateRingTextureExt, generateAnnulusTexture as generateAnnulusTextureExt, generateGasGiantTexture as generateGasGiantTextureExt } from "./textures.js";
 import { blackHoleDiskUniforms, blackHoleDiskVertexShader, blackHoleDiskFragmentShader } from "./sun.js";
+import { AuroraNode } from "../nodes/AuroraNode.js";
 
 const atmosphereVertexShader = `
     varying vec3 vNormal;
@@ -162,6 +163,9 @@ export class Planet {
         this.atmosphereMesh.receiveShadow = false;
         this.spinGroup.add(this.atmosphereMesh);
 
+        this.auroraNode = new AuroraNode(this);
+        this.spinGroup.add(this.auroraNode.mesh);
+
         const oceanMaterial = new THREE.MeshPhysicalMaterial({
             color: new THREE.Color(0x1b3c6d),
             transparent: true,
@@ -192,7 +196,7 @@ export class Planet {
         this.spinGroup.add(this.foamMesh);
     }
 
-    update(delta, simulationDelta) {
+    update(delta, simulationDelta, camera) {
         const rotationDelta = this.params.rotationSpeed * simulationDelta * Math.PI * 2;
         this.spinGroup.rotation.y += rotationDelta;
         this.cloudsMesh.rotation.y += rotationDelta * 1.12;
@@ -253,6 +257,10 @@ export class Planet {
 
         this.updateExplosions(simulationDelta);
         this.syncOrbitLinesWithPivots();
+
+        if (this.auroraNode) {
+            this.auroraNode.update(delta, camera);
+        }
     }
 
     rebuildPlanet() {
@@ -570,6 +578,7 @@ export class Planet {
 
         this.updateCore();
         this.updateRings();
+        this.updateAurora();
     }
 
     deriveTerrainProfile(seed) {
@@ -1352,5 +1361,28 @@ export class Planet {
         geometry.computeVertexNormals();
         if (geometry.attributes.normal) geometry.attributes.normal.needsUpdate = true;
         geometry.computeBoundingSphere();
+    }
+
+    updateAurora() {
+        if (!this.auroraNode) return;
+
+        const auroraParams = this.params.aurora || {};
+        const material = this.auroraNode.material;
+
+        this.auroraNode.mesh.visible = auroraParams.enabled || false;
+        if (!this.auroraNode.mesh.visible) return;
+
+        material.uniforms.uAuroraColor1.value.set(auroraParams.colors ? auroraParams.colors[0] : "#38ff7a");
+        material.uniforms.uAuroraColor2.value.set(auroraParams.colors ? auroraParams.colors[1] : "#3fb4ff");
+        material.uniforms.uLatitudeCenter.value = (auroraParams.latitudeCenterDeg || 65) * (Math.PI / 180);
+        material.uniforms.uLatitudeWidth.value = (auroraParams.latitudeWidthDeg || 12) * (Math.PI / 180);
+        material.uniforms.uHeight.value = auroraParams.height || 0.06;
+        material.uniforms.uIntensity.value = auroraParams.intensity || 1.0;
+        material.uniforms.uNoiseScale.value = auroraParams.noiseScale || 2.0;
+        material.uniforms.uBanding.value = auroraParams.banding || 0.8;
+        material.uniforms.uNightBoost.value = auroraParams.nightBoost || 1.5;
+
+        const auroraScale = this.params.radius * (1.01 + (auroraParams.height || 0.06) * 0.5);
+        this.auroraNode.mesh.scale.setScalar(auroraScale);
     }
 }

@@ -1225,7 +1225,7 @@ function animate(timestamp) {
   }
 
   sun.update(delta, simulationDelta);
-  planet.update(delta, simulationDelta);
+  planet.update(delta, simulationDelta, camera);
 
   if (starField && starField.material && starField.material.uniforms) {
     starField.rotation.y += delta * 0.002;
