@@ -222,7 +222,19 @@ export class Planet {
             }
             this.previousPlanetMesh = this.planetMesh;
 
-            const geometry = this._createPlanetGeometry(lodParams);
+            const rng = new SeededRNG(lodParams.seed);
+            const noiseRng = rng.fork();
+            const noiseFunctions = {
+                base: createNoise3D(() => noiseRng.next()),
+                ridge: createNoise3D(() => noiseRng.next()),
+                warpX: createNoise3D(() => noiseRng.next()),
+                warpY: createNoise3D(() => noiseRng.next()),
+                warpZ: createNoise3D(() => noiseRng.next()),
+                crater: createNoise3D(() => noiseRng.next()),
+            };
+            const profile = this.deriveTerrainProfile(lodParams.seed);
+
+            const geometry = this._createPlanetGeometry(lodParams, noiseFunctions, profile);
             const newMaterial = this.planetMaterial.clone();
             newMaterial.onBeforeCompile = this.planetMaterial.onBeforeCompile;
 
@@ -399,7 +411,6 @@ export class Planet {
             this._createFoamTexture(lodParams, noiseFunctions, profile, offsets);
           }
         }
-        const lodParams = this.lodManager.lodParams;
         const cloudScale = lodParams.radius * (1 + Math.max(0.0, lodParams.cloudHeight || 0.03));
         const atmosphereScale = lodParams.radius * (1.06 + Math.max(0.0, (lodParams.cloudHeight || 0.03)) * 0.8);
         this.cloudsMesh.scale.setScalar(cloudScale);
@@ -660,7 +671,6 @@ export class Planet {
                 normalized -= Math.pow(craterT, profile.craterSharpness) * profile.craterDepth;
             }
 
-            const lodParams = this.lodManager.lodParams;
             normalized = THREE.MathUtils.clamp(normalized, 0, 1);
 
             const displacement = (normalized - lodParams.oceanLevel) * lodParams.noiseAmplitude;
@@ -732,7 +742,6 @@ export class Planet {
             baseColor = this.palette.mid.clone().lerp(this.palette.high, highT);
           }
         }
-        const lodParams = this.lodManager.lodParams;
         if (lodParams.icePolesEnabled && vertexPosition) {
           const latitude = Math.abs(vertexPosition.y);
           const poleThreshold = lodParams.icePolesCoverage;
