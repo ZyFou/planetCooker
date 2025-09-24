@@ -102,6 +102,106 @@ export function generateRingTexture(innerRatio, params) {
   return texture;
 }
 
+export function generateRockTexture({ seed = "rock", resolution = 512, color = 0x808080, noiseScale = 8.0, noiseStrength = 0.5 } = {}) {
+    const canvas = document.createElement("canvas");
+    canvas.width = resolution;
+    canvas.height = resolution;
+    const ctx = canvas.getContext("2d");
+    const image = ctx.createImageData(resolution, resolution);
+    const data = image.data;
+
+    const rng = () => {
+        let t = (seed += 0x6D2B79F5);
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const noise = createNoise3D(rng);
+    const baseColor = new THREE.Color(color);
+
+    for (let y = 0; y < resolution; y++) {
+        for (let x = 0; x < resolution; x++) {
+            const u = x / resolution;
+            const v = y / resolution;
+
+            let n = 0;
+            let amp = 1;
+            let freq = noiseScale;
+            for (let i = 0; i < 4; i++) {
+                n += noise(u * freq, v * freq, 0) * amp;
+                amp *= 0.5;
+                freq *= 2;
+            }
+            n = n * 0.5 + 0.5;
+
+            const c = baseColor.clone().multiplyScalar(0.8 + n * 0.4);
+            const idx = (y * resolution + x) * 4;
+            data[idx] = c.r * 255;
+            data[idx + 1] = c.g * 255;
+            data[idx + 2] = c.b * 255;
+            data[idx + 3] = 255;
+        }
+    }
+
+    ctx.putImageData(image, 0, 0);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
+    return texture;
+}
+
+export function generateSandTexture({ seed = "sand", resolution = 512, color = 0xd2b48c, noiseScale = 16.0, noiseStrength = 0.2 } = {}) {
+    const canvas = document.createElement("canvas");
+    canvas.width = resolution;
+    canvas.height = resolution;
+    const ctx = canvas.getContext("2d");
+    const image = ctx.createImageData(resolution, resolution);
+    const data = image.data;
+
+    const rng = () => {
+        let t = (seed += 0x6D2B79F5);
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const noise = createNoise3D(rng);
+    const baseColor = new THREE.Color(color);
+
+    for (let y = 0; y < resolution; y++) {
+        for (let x = 0; x < resolution; x++) {
+            const u = x / resolution;
+            const v = y / resolution;
+
+            let n = 0;
+            let amp = 1;
+            let freq = noiseScale;
+            for (let i = 0; i < 3; i++) {
+                n += noise(u * freq, v * freq, 0) * amp;
+                amp *= 0.5;
+                freq *= 2;
+            }
+            n = n * 0.5 + 0.5;
+
+            const c = baseColor.clone().multiplyScalar(0.9 + n * 0.2);
+            const idx = (y * resolution + x) * 4;
+            data[idx] = c.r * 255;
+            data[idx + 1] = c.g * 255;
+            data[idx + 2] = c.b * 255;
+            data[idx + 3] = 255;
+        }
+    }
+
+    ctx.putImageData(image, 0, 0);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
+    return texture;
+}
+
 export function generateGasGiantTexture(params) {
   const noiseScale = Math.max(0.25, Math.min(2.0, params?.noiseResolution || 1.0));
   const gasScale = Math.max(0.25, Math.min(2.0, params?.gasResolution || 1.0));

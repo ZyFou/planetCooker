@@ -2,8 +2,40 @@ import * as THREE from "three";
 import { createNoise3D } from "simplex-noise";
 import { SeededRNG } from "./utils.js";
 import * as PHYSICS from "./planet/physics.js";
-import { generateRingTexture as generateRingTextureExt, generateAnnulusTexture as generateAnnulusTextureExt, generateGasGiantTexture as generateGasGiantTextureExt } from "./textures.js";
+import { generateRingTexture as generateRingTextureExt, generateAnnulusTexture as generateAnnulusTextureExt, generateGasGiantTexture as generateGasGiantTextureExt, generateRockTexture, generateSandTexture } from "./textures.js";
 import { blackHoleDiskUniforms, blackHoleDiskVertexShader, blackHoleDiskFragmentShader } from "./sun.js";
+
+const surfaceVertexShader = `
+    varying vec3 vNormal;
+    varying vec2 vUv;
+    varying vec3 vPosition;
+
+    void main() {
+        vNormal = normalize(normalMatrix * normal);
+        vUv = uv;
+        vPosition = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+`;
+
+const surfaceFragmentShader = `
+    varying vec3 vNormal;
+    varying vec2 vUv;
+    varying vec3 vPosition;
+
+    uniform sampler2D tRock;
+    uniform sampler2D tSand;
+    uniform sampler2D tSplat;
+
+    void main() {
+        vec4 splat = texture2D(tSplat, vUv);
+        vec4 rock = texture2D(tRock, vUv * 10.0);
+        vec4 sand = texture2D(tSand, vUv * 10.0);
+
+        vec3 finalColor = mix(rock.rgb, sand.rgb, splat.r);
+        gl_FragColor = vec4(finalColor, 1.0);
+    }
+`;
 
 const atmosphereVertexShader = `
     varying vec3 vNormal;
@@ -312,6 +344,7 @@ export class Planet {
     _buildRockyGeometry(detail, generators, profile, offsets) {
         const geometry = new THREE.IcosahedronGeometry(1, Math.max(0, detail));
         const positions = geometry.getAttribute("position");
+        const uvs = new Float32Array(positions.count * 2);
         const colors = new Float32Array(positions.count * 3);
         const vertex = new THREE.Vector3();
         const normal = new THREE.Vector3();
@@ -416,9 +449,15 @@ export class Planet {
             colors[offsetIndex + 0] = color.r;
             colors[offsetIndex + 1] = color.g;
             colors[offsetIndex + 2] = color.b;
+
+            const u = Math.atan2(unitVertex.x, unitVertex.z) / (2 * Math.PI) + 0.5;
+            const v = Math.asin(unitVertex.y) / Math.PI + 0.5;
+            uvs[i * 2] = u;
+            uvs[i * 2 + 1] = v;
         }
 
         geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+        geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
         geometry.computeVertexNormals();
         geometry.computeBoundingSphere();
         return geometry;
@@ -534,12 +573,6 @@ export class Planet {
 
         } else {
           this._disposeGasLODResources();
-          PLANET_SURFACE_LOD_ORDER.forEach((levelKey) => {
-            this._assignSurfaceMaterial(levelKey, this.planetMaterial);
-          });
-          this.planetMaterial.vertexColors = true;
-          this.planetMaterial.map = null;
-          this.planetMaterial.needsUpdate = true;
 
           const rng = new SeededRNG(this.params.seed);
           const noiseRng = rng.fork();
@@ -571,6 +604,61 @@ export class Planet {
             this._replaceSurfaceGeometry(levelKey, geometryByLevel[levelKey]);
           });
 
+          const texWidth = 256;
+          const texHeight = 128;
+          const splatData = new Uint8Array(texWidth * texHeight);
+          const dir = new THREE.Vector3();
+          for (let y = 0; y < texHeight; y++) {
+              const v = y / (texHeight - 1);
+              const lat = (v - 0.5) * Math.PI;
+              for (let x = 0; x < texWidth; x++) {
+                  const u = x / (texWidth - 1);
+                  const lon = (u - 0.5) * Math.PI * 2;
+                  dir.set(Math.cos(lon) * Math.cos(lat), Math.sin(lat), Math.sin(lon) * Math.cos(lat)).normalize();
+
+                  let elevation = 0;
+                  let amplitude = 1;
+                  let frequency = this.params.noiseFrequency;
+                  let totalAmplitude = 0;
+                  for (let l = 0; l < this.params.noiseLayers; l++) {
+                      const offset = offsets[l];
+                      const sx = dir.x * frequency + offset.x;
+                      const sy = dir.y * frequency + offset.y;
+                      const sz = dir.z * frequency + offset.z;
+                      elevation += baseNoise(sx, sy, sz) * amplitude;
+                      totalAmplitude += amplitude;
+                      amplitude *= this.params.persistence;
+                      frequency *= this.params.lacunarity;
+                  }
+                  if (totalAmplitude > 0) {
+                      elevation /= totalAmplitude;
+                  }
+                  const normalized = elevation * 0.5 + 0.5;
+                  splatData[y * texWidth + x] = Math.floor(THREE.MathUtils.smoothstep(normalized, 0.4, 0.6) * 255);
+              }
+          }
+          const splatTexture = new THREE.DataTexture(splatData, texWidth, texHeight, THREE.RedFormat, THREE.UnsignedByteType);
+          splatTexture.needsUpdate = true;
+
+          PLANET_SURFACE_LOD_ORDER.forEach((levelKey) => {
+            if (levelKey === 'mega') {
+                const rockTexture = generateRockTexture({ seed: this.params.seed });
+                const sandTexture = generateSandTexture({ seed: this.params.seed });
+
+                const material = new THREE.ShaderMaterial({
+                    uniforms: {
+                        tRock: { value: rockTexture },
+                        tSand: { value: sandTexture },
+                        tSplat: { value: splatTexture },
+                    },
+                    vertexShader: surfaceVertexShader,
+                    fragmentShader: surfaceFragmentShader,
+                });
+                this._assignSurfaceMaterial(levelKey, material);
+            } else {
+                this._assignSurfaceMaterial(levelKey, this.planetMaterial);
+            }
+          });
           this.planetMesh = this.surfaceLODLevels.medium;
 
 
