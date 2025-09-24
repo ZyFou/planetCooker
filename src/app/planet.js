@@ -348,7 +348,29 @@ export class Planet {
           this.planetMaterial.map = null;
           this.planetMaterial.needsUpdate = true;
 
-          const geometry = this._createPlanetGeometry(lodParams);
+          const rng = new SeededRNG(lodParams.seed);
+          const noiseRng = rng.fork();
+          const noiseFunctions = {
+                base: createNoise3D(() => noiseRng.next()),
+                ridge: createNoise3D(() => noiseRng.next()),
+                warpX: createNoise3D(() => noiseRng.next()),
+                warpY: createNoise3D(() => noiseRng.next()),
+                warpZ: createNoise3D(() => noiseRng.next()),
+                crater: createNoise3D(() => noiseRng.next()),
+          };
+          const profile = this.deriveTerrainProfile(lodParams.seed);
+
+          const offsets = [];
+            for (let i = 0; i < lodParams.noiseLayers; i += 1) {
+                const fork = new SeededRNG(`${lodParams.seed}-${i}`).fork();
+                offsets.push(new THREE.Vector3(
+                    fork.nextFloat(-128, 128),
+                    fork.nextFloat(-128, 128),
+                    fork.nextFloat(-128, 128)
+                ));
+            }
+
+          const geometry = this._createPlanetGeometry(lodParams, noiseFunctions, profile, offsets);
 
           if (this.lodManager.isTransitioning) {
               this.previousPlanetMesh = this.planetMesh;
@@ -374,39 +396,55 @@ export class Planet {
             this.oceanMesh.material.color.set(this.palette.ocean);
             this.foamMesh.material.color.set(this.palette.foam);
 
-            const texWidth = 512;
-            const texHeight = 256;
-            const data = new Uint8Array(texWidth * texHeight * 4);
-            const dir = new THREE.Vector3();
-            const warpVecTex = new THREE.Vector3();
+            this._createFoamTexture(lodParams, noiseFunctions, profile, offsets);
+          }
+        }
+        const lodParams = this.lodManager.lodParams;
+        const cloudScale = lodParams.radius * (1 + Math.max(0.0, lodParams.cloudHeight || 0.03));
+        const atmosphereScale = lodParams.radius * (1.06 + Math.max(0.0, (lodParams.cloudHeight || 0.03)) * 0.8);
+        this.cloudsMesh.scale.setScalar(cloudScale);
+        this.atmosphereMesh.scale.setScalar(atmosphereScale);
 
-            const ridgeFreq = profile.ridgeFrequency;
-            const ruggedPower = profile.ruggedPower;
-            const ridgeWeight = profile.ridgeWeight;
-            const billowWeight = profile.billowWeight;
-            const plateauPower = profile.plateauPower;
-            const sharpness = profile.sharpness;
-            const strStrength = profile.striationStrength;
-            const strFreq = profile.striationFrequency;
-            const strPhase = profile.striationPhase;
-            const equatorLift = profile.equatorLift;
-            const poleDrop = profile.poleDrop;
-            const craterFreq = profile.craterFrequency;
-            const craterThresh = profile.craterThreshold;
-            const craterDepth = profile.craterDepth;
-            const craterSharp = profile.craterSharpness;
-            const warpStrength = profile.warpStrength * 0.35;
-            const warpOffset = profile.warpOffset;
-            const craterOffset = profile.craterOffset;
+        this.updateCore();
+        this.updateRings();
+    }
 
-            const shorelineHalfWidth = Math.max(0.002, lodParams.noiseAmplitude * 0.06);
+    _createFoamTexture(lodParams, noiseFunctions, profile, offsets) {
+        const texWidth = 512;
+        const texHeight = 256;
+        const data = new Uint8Array(texWidth * texHeight * 4);
+        const dir = new THREE.Vector3();
+        const warpVecTex = new THREE.Vector3();
 
-            for (let y = 0; y < texHeight; y += 1) {
-              const v = y / (texHeight - 1);
-              const lat = (v - 0.5) * Math.PI;
-              const cosLat = Math.cos(lat);
-              const sinLat = Math.sin(lat);
-              for (let x = 0; x < texWidth; x += 1) {
+        const { base: baseNoise, ridge: ridgeNoise, warpX: warpNoiseX, warpY: warpNoiseY, warpZ: warpNoiseZ, crater: craterNoise } = noiseFunctions;
+
+        const ridgeFreq = profile.ridgeFrequency;
+        const ruggedPower = profile.ruggedPower;
+        const ridgeWeight = profile.ridgeWeight;
+        const billowWeight = profile.billowWeight;
+        const plateauPower = profile.plateauPower;
+        const sharpness = profile.sharpness;
+        const strStrength = profile.striationStrength;
+        const strFreq = profile.striationFrequency;
+        const strPhase = profile.striationPhase;
+        const equatorLift = profile.equatorLift;
+        const poleDrop = profile.poleDrop;
+        const craterFreq = profile.craterFrequency;
+        const craterThresh = profile.craterThreshold;
+        const craterDepth = profile.craterDepth;
+        const craterSharp = profile.craterSharpness;
+        const warpStrength = profile.warpStrength * 0.35;
+        const warpOffset = profile.warpOffset;
+        const craterOffset = profile.craterOffset;
+
+        const shorelineHalfWidth = Math.max(0.002, lodParams.noiseAmplitude * 0.06);
+
+        for (let y = 0; y < texHeight; y += 1) {
+            const v = y / (texHeight - 1);
+            const lat = (v - 0.5) * Math.PI;
+            const cosLat = Math.cos(lat);
+            const sinLat = Math.sin(lat);
+            for (let x = 0; x < texWidth; x += 1) {
                 const u = x / (texWidth - 1);
                 const lon = (u - 0.5) * Math.PI * 2;
                 const cosLon = Math.cos(lon);
@@ -417,17 +455,17 @@ export class Planet {
                 let sampleDirY = dir.y;
                 let sampleDirZ = dir.z;
                 if (warpStrength > 0) {
-                  const fx = profile.warpFrequency;
-                  warpVecTex.set(
-                    warpNoiseX(sampleDirX * fx + warpOffset.x, sampleDirY * fx + warpOffset.y, sampleDirZ * fx + warpOffset.z),
-                    warpNoiseY(sampleDirX * fx + warpOffset.y, sampleDirY * fx + warpOffset.z, sampleDirZ * fx + warpOffset.x),
-                    warpNoiseZ(sampleDirX * fx + warpOffset.z, sampleDirY * fx + warpOffset.x, sampleDirZ * fx + warpOffset.y)
-                  );
-                  sampleDirX = (sampleDirX + warpVecTex.x * warpStrength);
-                  sampleDirY = (sampleDirY + warpVecTex.y * warpStrength);
-                  sampleDirZ = (sampleDirZ + warpVecTex.z * warpStrength);
-                  const invLen = 1 / Math.sqrt(sampleDirX * sampleDirX + sampleDirY * sampleDirY + sampleDirZ * sampleDirZ);
-                  sampleDirX *= invLen; sampleDirY *= invLen; sampleDirZ *= invLen;
+                    const fx = profile.warpFrequency;
+                    warpVecTex.set(
+                        warpNoiseX(sampleDirX * fx + warpOffset.x, sampleDirY * fx + warpOffset.y, sampleDirZ * fx + warpOffset.z),
+                        warpNoiseY(sampleDirX * fx + warpOffset.y, sampleDirY * fx + warpOffset.z, sampleDirZ * fx + warpOffset.x),
+                        warpNoiseZ(sampleDirX * fx + warpOffset.z, sampleDirY * fx + warpOffset.x, sampleDirZ * fx + warpOffset.y)
+                    );
+                    sampleDirX = (sampleDirX + warpVecTex.x * warpStrength);
+                    sampleDirY = (sampleDirY + warpVecTex.y * warpStrength);
+                    sampleDirZ = (sampleDirZ + warpVecTex.z * warpStrength);
+                    const invLen = 1 / Math.sqrt(sampleDirX * sampleDirX + sampleDirY * sampleDirY + sampleDirZ * sampleDirZ);
+                    sampleDirX *= invLen; sampleDirY *= invLen; sampleDirZ *= invLen;
                 }
 
                 const lodParams = this.lodManager.lodParams;
@@ -438,26 +476,26 @@ export class Planet {
                 let ridgeSum = 0;
                 let billowSum = 0;
                 for (let layer = 0; layer < lodParams.noiseLayers; layer += 1) {
-                  const o = offsets[layer];
-                  const sx = sampleDirX * frequency + o.x;
-                  const sy = sampleDirY * frequency + o.y;
-                  const sz = sampleDirZ * frequency + o.z;
-                  const s = baseNoise(sx, sy, sz);
-                  sum += s * amplitude;
+                    const o = offsets[layer];
+                    const sx = sampleDirX * frequency + o.x;
+                    const sy = sampleDirY * frequency + o.y;
+                    const sz = sampleDirZ * frequency + o.z;
+                    const s = baseNoise(sx, sy, sz);
+                    sum += s * amplitude;
 
-                  const r = ridgeNoise(sx * ridgeFreq, sy * ridgeFreq, sz * ridgeFreq);
-                  ridgeSum += (1 - Math.abs(r)) * amplitude;
+                    const r = ridgeNoise(sx * ridgeFreq, sy * ridgeFreq, sz * ridgeFreq);
+                    ridgeSum += (1 - Math.abs(r)) * amplitude;
 
-                  billowSum += Math.pow(Math.abs(s), ruggedPower) * amplitude;
+                    billowSum += Math.pow(Math.abs(s), ruggedPower) * amplitude;
 
-                  totalAmplitude += amplitude;
-                  amplitude *= lodParams.persistence;
-                  frequency *= lodParams.lacunarity;
+                    totalAmplitude += amplitude;
+                    amplitude *= lodParams.persistence;
+                    frequency *= lodParams.lacunarity;
                 }
                 if (totalAmplitude > 0) {
-                  sum /= totalAmplitude;
-                  ridgeSum /= totalAmplitude;
-                  billowSum /= totalAmplitude;
+                    sum /= totalAmplitude;
+                    ridgeSum /= totalAmplitude;
+                    billowSum /= totalAmplitude;
                 }
 
                 let elev = sum;
@@ -467,19 +505,19 @@ export class Planet {
                 let normalized = elev * 0.5 + 0.5;
                 normalized = Math.pow(THREE.MathUtils.clamp(normalized, 0, 1), plateauPower);
                 if (strStrength > 0) {
-                  const str = Math.sin((sampleDirX + sampleDirZ) * strFreq + strPhase);
-                  normalized += str * strStrength;
+                    const str = Math.sin((sampleDirX + sampleDirZ) * strFreq + strPhase);
+                    normalized += str * strStrength;
                 }
                 if (equatorLift || poleDrop) {
-                  const latitude = Math.abs(sampleDirY);
-                  normalized += (1 - latitude) * equatorLift;
-                  normalized -= latitude * poleDrop;
+                    const latitude = Math.abs(sampleDirY);
+                    normalized += (1 - latitude) * equatorLift;
+                    normalized -= latitude * poleDrop;
                 }
                 const cSamp = craterNoise(sampleDirX * craterFreq + craterOffset.x, sampleDirY * craterFreq + craterOffset.y, sampleDirZ * craterFreq + craterOffset.z);
                 const cVal = (cSamp + 1) * 0.5;
                 if (cVal > craterThresh) {
-                  const cT = (cVal - craterThresh) / Math.max(1e-6, 1 - craterThresh);
-                  normalized -= Math.pow(cT, craterSharp) * craterDepth;
+                    const cT = (cVal - craterThresh) / Math.max(1e-6, 1 - craterThresh);
+                    normalized -= Math.pow(cT, craterSharp) * craterDepth;
                 }
                 normalized = THREE.MathUtils.clamp(normalized, 0, 1);
 
@@ -497,57 +535,37 @@ export class Planet {
                 data[idx + 1] = 255;
                 data[idx + 2] = 255;
                 data[idx + 3] = Math.round(alpha * 255);
-              }
             }
-
-            if (this.foamTexture && this.foamTexture.dispose) {
-                this.foamTexture.dispose();
-            }
-            this.foamTexture = new THREE.DataTexture(data, texWidth, texHeight, THREE.RGBAFormat);
-            this.foamTexture.colorSpace = THREE.SRGBColorSpace;
-            this.foamTexture.needsUpdate = true;
-            this.foamTexture.wrapS = THREE.RepeatWrapping;
-            this.foamTexture.wrapT = THREE.ClampToEdgeWrapping;
-            this.foamTexture.magFilter = THREE.LinearFilter;
-            this.foamTexture.minFilter = THREE.LinearMipMapLinearFilter;
-
-            this.foamMesh.material.map = this.foamTexture;
-            this.foamMesh.material.alphaMap = this.foamTexture;
-            this.foamMesh.material.needsUpdate = true;
-          }
         }
-        const lodParams = this.lodManager.lodParams;
-        const cloudScale = lodParams.radius * (1 + Math.max(0.0, lodParams.cloudHeight || 0.03));
-        const atmosphereScale = lodParams.radius * (1.06 + Math.max(0.0, (lodParams.cloudHeight || 0.03)) * 0.8);
-        this.cloudsMesh.scale.setScalar(cloudScale);
-        this.atmosphereMesh.scale.setScalar(atmosphereScale);
 
-        this.updateCore();
-        this.updateRings();
+        if (this.foamTexture && this.foamTexture.dispose) {
+            this.foamTexture.dispose();
+        }
+        this.foamTexture = new THREE.DataTexture(data, texWidth, texHeight, THREE.RGBAFormat);
+        this.foamTexture.colorSpace = THREE.SRGBColorSpace;
+        this.foamTexture.needsUpdate = true;
+        this.foamTexture.wrapS = THREE.RepeatWrapping;
+        this.foamTexture.wrapT = THREE.ClampToEdgeWrapping;
+        this.foamTexture.magFilter = THREE.LinearFilter;
+        this.foamTexture.minFilter = THREE.LinearMipMapLinearFilter;
+
+        this.foamMesh.material.map = this.foamTexture;
+        this.foamMesh.material.alphaMap = this.foamTexture;
+        this.foamMesh.material.needsUpdate = true;
     }
 
-    _createPlanetGeometry(lodParams) {
-        const rng = new SeededRNG(lodParams.seed);
-        const noiseRng = rng.fork();
-
-        const baseNoise = createNoise3D(() => noiseRng.next());
-        const ridgeNoise = createNoise3D(() => noiseRng.next());
-        const warpNoiseX = createNoise3D(() => noiseRng.next());
-        const warpNoiseY = createNoise3D(() => noiseRng.next());
-        const warpNoiseZ = createNoise3D(() => noiseRng.next());
-        const craterNoise = createNoise3D(() => noiseRng.next());
+    _createPlanetGeometry(lodParams, noiseFunctions, profile) {
+        const { base: baseNoise, ridge: ridgeNoise, warpX: warpNoiseX, warpY: warpNoiseY, warpZ: warpNoiseZ, crater: craterNoise } = noiseFunctions;
 
         const offsets = [];
         for (let i = 0; i < lodParams.noiseLayers; i += 1) {
-            const fork = noiseRng.fork();
+            const fork = new SeededRNG(`${lodParams.seed}-${i}`).fork();
             offsets.push(new THREE.Vector3(
                 fork.nextFloat(-128, 128),
                 fork.nextFloat(-128, 128),
                 fork.nextFloat(-128, 128)
             ));
         }
-
-        const profile = this.deriveTerrainProfile(lodParams.seed);
 
         const detail = Math.round(lodParams.subdivisions);
         const geometry = new THREE.IcosahedronGeometry(1, detail);
