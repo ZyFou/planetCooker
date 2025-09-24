@@ -1125,6 +1125,25 @@ initializeApp().then(() => {
   planet.updateOrbitLinesVisibility();
   applyControlSearch({ scrollToFirst: false });
   updateShareCode();
+
+  renderer.domElement.addEventListener('dblclick', (event) => {
+    const mouse = new THREE.Vector2();
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(mouse, camera);
+
+    const moonMeshes = planet.moonsGroup.children.map(p => p.userData.mesh).filter(m => m);
+    const focusableObjects = [planet.planetMesh, sun.sunSphere, ...moonMeshes];
+    const intersects = raycaster.intersectObjects(focusableObjects, true);
+
+    if (intersects.length > 0) {
+        focusOnObject(intersects[0].object);
+    }
+  }, false);
+
   requestAnimationFrame(animate);
 });
 
@@ -1133,8 +1152,41 @@ helpButton?.addEventListener("click", () => { try { closeMobileMenu?.(); } catch
 mobileHelpButton?.addEventListener("click", () => { try { closeMobileMenu?.(); } catch {} showOnboarding(true); });
 //#endregion
 
+let activeFocus = null;
+
+function focusOnObject(targetObject) {
+  if (!targetObject) {
+    // Reset focus to the planet
+    activeFocus = {
+      object: planet.planetMesh,
+      isPlanet: true,
+    };
+  } else {
+    activeFocus = {
+      object: targetObject,
+      isPlanet: targetObject === planet.planetMesh,
+    };
+  }
+}
+
 //#region Animation loop
 function animate(timestamp) {
+  if (activeFocus) {
+    const targetPosition = new THREE.Vector3();
+    activeFocus.object.getWorldPosition(targetPosition);
+
+    const radius = activeFocus.object.geometry.boundingSphere.radius;
+    const offset = activeFocus.isPlanet ? params.radius * 2.5 : radius * 4;
+    const desiredCameraPosition = targetPosition.clone().add(new THREE.Vector3(offset, offset * 0.5, offset));
+
+    camera.position.lerp(desiredCameraPosition, 0.05);
+    controls.target.lerp(targetPosition, 0.05);
+
+    if (camera.position.distanceTo(desiredCameraPosition) < 0.1 && controls.target.distanceTo(targetPosition) < 0.1) {
+      activeFocus = null;
+    }
+  }
+
   if (frameCapTargetMs && frameCapLastTime) {
     const elapsed = timestamp - frameCapLastTime;
     if (elapsed < frameCapTargetMs) {
@@ -1267,7 +1319,62 @@ function closeMobilePanel(force = false) {
     if (mobileToggleButton) mobileToggleButton.setAttribute("aria-expanded", "false");
 }
 
+function populateFocusMenu() {
+    if (!focusMoonsContainer) return;
+    focusMoonsContainer.innerHTML = ''; // Clear existing moons
+
+    // Add moons
+    moonSettings.forEach((moon, index) => {
+        const moonButton = document.createElement('button');
+        moonButton.className = 'focus-option';
+        moonButton.dataset.target = `moon-${index}`;
+        moonButton.innerHTML = `🌖 Moon ${index + 1}`;
+        focusMoonsContainer.appendChild(moonButton);
+    });
+}
+
 function setupMobilePanelToggle() {
+    mobileFocusToggle?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const isHidden = mobileFocusMenu.hasAttribute('hidden');
+      if (isHidden) {
+          mobileFocusMenu.removeAttribute('hidden');
+          mobileFocusToggle.setAttribute('aria-expanded', 'true');
+          populateFocusMenu();
+      } else {
+          mobileFocusMenu.setAttribute('hidden', '');
+          mobileFocusToggle.setAttribute('aria-expanded', 'false');
+      }
+    });
+
+    mobileFocusMenu?.addEventListener('click', (e) => {
+      const target = e.target.closest('.focus-option');
+      if (!target) return;
+
+      const targetId = target.dataset.target;
+      if (!targetId) return;
+
+      if (targetId === 'planet') {
+          focusOnObject(planet.planetMesh);
+      } else if (targetId === 'sun') {
+          focusOnObject(sun.sunSphere);
+      } else if (targetId.startsWith('moon-')) {
+          const moonIndex = parseInt(targetId.split('-')[1], 10);
+          if (!isNaN(moonIndex) && moonIndex < planet.moonsGroup.children.length) {
+              const moonMesh = planet.moonsGroup.children[moonIndex].userData.mesh;
+              if (moonMesh) {
+                  focusOnObject(moonMesh);
+              }
+          }
+      }
+
+      // Close the menu
+      mobileFocusMenu.setAttribute('hidden', '');
+      mobileFocusToggle.setAttribute('aria-expanded', 'false');
+    });
+
     mobileToggleButton?.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
