@@ -227,6 +227,18 @@ const blackHoleDiskUniforms = {
 // Export shader constants and uniforms for use in other modules
 export { blackHoleDiskUniforms, blackHoleDiskVertexShader, blackHoleDiskFragmentShader };
 
+const SUN_LOD_LEVELS = ["high", "medium", "low"];
+const SUN_CORE_LOD_CONFIG = {
+  high: { detail: 5, distance: 6 },
+  medium: { detail: 3, distance: 18 },
+  low: { detail: 1, distance: 42 }
+};
+const SUN_CORONA_LOD_CONFIG = {
+  high: { detail: 4, distance: 8 },
+  medium: { detail: 2, distance: 24 },
+  low: { detail: 1, distance: 58 }
+};
+
 export class Sun {
     constructor(scene, planetRoot, params, visualSettings) {
         this.scene = scene;
@@ -283,7 +295,6 @@ export class Sun {
             uPulse: { value: 0 }
         };
 
-        const sunCoreGeometry = new THREE.IcosahedronGeometry(1, 4);
         const sunCoreMaterial = new THREE.ShaderMaterial({
             uniforms: this.starCoreUniforms,
             vertexShader: starCoreVertexShader,
@@ -293,11 +304,25 @@ export class Sun {
             blending: THREE.AdditiveBlending,
             toneMapped: false
         });
-        this.sunVisual = new THREE.Mesh(sunCoreGeometry, sunCoreMaterial);
-        this.sunVisual.frustumCulled = false;
-        this.sunGroup.add(this.sunVisual);
+        this.sunCoreMaterial = sunCoreMaterial;
 
-        const sunCoronaGeometry = new THREE.IcosahedronGeometry(1.2, 3);
+        this.sunCoreLOD = new THREE.LOD();
+        this.sunCoreLOD.name = "SunCoreLOD";
+        this.sunCoreLOD.frustumCulled = false;
+        this.sunGroup.add(this.sunCoreLOD);
+        this.sunCoreLevels = {};
+        SUN_LOD_LEVELS.forEach((levelKey) => {
+            const config = SUN_CORE_LOD_CONFIG[levelKey] || SUN_CORE_LOD_CONFIG.medium;
+            const detail = Math.max(0, config.detail ?? 3);
+            const geometry = new THREE.IcosahedronGeometry(1, detail);
+            const mesh = new THREE.Mesh(geometry, sunCoreMaterial);
+            mesh.frustumCulled = false;
+            mesh.name = `SunCore_${levelKey}`;
+            this.sunCoreLOD.addLevel(mesh, 0);
+            this.sunCoreLevels[levelKey] = mesh;
+        });
+        this.sunVisual = this.sunCoreLevels.medium;
+
         const sunCoronaMaterial = new THREE.ShaderMaterial({
             uniforms: this.starCoronaUniforms,
             vertexShader: starCoronaVertexShader,
@@ -307,9 +332,64 @@ export class Sun {
             blending: THREE.AdditiveBlending,
             toneMapped: false
         });
-        this.sunCorona = new THREE.Mesh(sunCoronaGeometry, sunCoronaMaterial);
-        this.sunCorona.frustumCulled = false;
-        this.sunGroup.add(this.sunCorona);
+        this.sunCoronaMaterial = sunCoronaMaterial;
+
+        this.sunCoronaLOD = new THREE.LOD();
+        this.sunCoronaLOD.name = "SunCoronaLOD";
+        this.sunCoronaLOD.frustumCulled = false;
+        this.sunGroup.add(this.sunCoronaLOD);
+        this.sunCoronaLevels = {};
+        SUN_LOD_LEVELS.forEach((levelKey) => {
+            const config = SUN_CORONA_LOD_CONFIG[levelKey] || SUN_CORONA_LOD_CONFIG.medium;
+            const detail = Math.max(0, config.detail ?? 2);
+            const geometry = new THREE.IcosahedronGeometry(1.2, detail);
+            const mesh = new THREE.Mesh(geometry, sunCoronaMaterial);
+            mesh.frustumCulled = false;
+            mesh.renderOrder = 1;
+            mesh.name = `SunCorona_${levelKey}`;
+            this.sunCoronaLOD.addLevel(mesh, 0);
+            this.sunCoronaLevels[levelKey] = mesh;
+        });
+        this.sunCorona = this.sunCoronaLevels.medium;
+
+        this._updateSunLodDistances();
+    }
+
+    _updateSunLodDistances() {
+        const resolutionScale = Math.max(0.5, Math.min(1.6, this.visualSettings?.noiseResolution ?? 1.0));
+        if (this.sunCoreLOD?.levels?.length) {
+            const coreScale = Math.max(0.1, this.params.sunSize || 1);
+            SUN_LOD_LEVELS.forEach((levelKey, index) => {
+                const level = this.sunCoreLOD.levels[index];
+                if (!level) return;
+                const config = SUN_CORE_LOD_CONFIG[levelKey] || SUN_CORE_LOD_CONFIG.medium;
+                level.distance = coreScale * resolutionScale * (config.distance ?? 10);
+            });
+        }
+        if (this.sunCoronaLOD?.levels?.length) {
+            const haloScale = Math.max(Math.max(0.1, this.params.sunSize || 1) * 1.2, this.params.sunHaloSize || 1);
+            SUN_LOD_LEVELS.forEach((levelKey, index) => {
+                const level = this.sunCoronaLOD.levels[index];
+                if (!level) return;
+                const config = SUN_CORONA_LOD_CONFIG[levelKey] || SUN_CORONA_LOD_CONFIG.medium;
+                level.distance = haloScale * resolutionScale * (config.distance ?? 14);
+            });
+        }
+    }
+
+    _syncActiveSunMeshes() {
+        if (this.sunCoreLOD?.levels?.length) {
+            const activeCore = this.sunCoreLOD.levels.find((level) => level?.object?.visible)?.object;
+            if (activeCore) {
+                this.sunVisual = activeCore;
+            }
+        }
+        if (this.sunCoronaLOD?.levels?.length) {
+            const activeCorona = this.sunCoronaLOD.levels.find((level) => level?.object?.visible)?.object;
+            if (activeCorona) {
+                this.sunCorona = activeCorona;
+            }
+        }
     }
 
     _createBlackHoleObjects() {
@@ -428,7 +508,18 @@ export class Sun {
         };
     }
 
-    update(delta, simulationDelta) {
+    update(delta, simulationDelta, camera = null) {
+        if (camera) {
+            if (this.sunCoreLOD) {
+                this.sunCoreLOD.updateMatrixWorld(true);
+                this.sunCoreLOD.update(camera);
+            }
+            if (this.sunCoronaLOD) {
+                this.sunCoronaLOD.updateMatrixWorld(true);
+                this.sunCoronaLOD.update(camera);
+            }
+        }
+        this._syncActiveSunMeshes();
         if (this.params.sunVariant !== "Black Hole") {
             this.starCoreUniforms.uTime.value += delta;
             this.starCoronaUniforms.uTime.value += delta * 0.6;
@@ -444,15 +535,15 @@ export class Sun {
               const glowStrength = Math.max(0.05, this.params.sunGlowStrength || 1);
               const coreScaleMultiplier = 1 + (pulse - 0.5) * glowStrength * 0.08;
               const haloScaleMultiplier = 1 + (pulse - 0.4) * glowStrength * 0.12;
-              this.sunVisual.scale.setScalar(baseCoreScale * THREE.MathUtils.clamp(coreScaleMultiplier, 0.85, 1.4));
-              this.sunCorona.scale.setScalar(baseHaloScale * THREE.MathUtils.clamp(haloScaleMultiplier, 0.8, 1.6));
+              this.sunCoreLOD?.scale?.setScalar(baseCoreScale * THREE.MathUtils.clamp(coreScaleMultiplier, 0.85, 1.4));
+              this.sunCoronaLOD?.scale?.setScalar(baseHaloScale * THREE.MathUtils.clamp(haloScaleMultiplier, 0.8, 1.6));
             } else {
                 this.starCoreUniforms.uPulse.value = 0;
                 this.starCoronaUniforms.uPulse.value = 0;
               const baseCoreScale = Math.max(0.1, this.params.sunSize);
               const baseHaloScale = Math.max(baseCoreScale * 1.15, this.params.sunHaloSize);
-              this.sunVisual.scale.setScalar(baseCoreScale);
-              this.sunCorona.scale.setScalar(baseHaloScale);
+              this.sunCoreLOD?.scale?.setScalar(baseCoreScale);
+              this.sunCoronaLOD?.scale?.setScalar(baseHaloScale);
             }
 
             this._updateStarParticles(simulationDelta);
@@ -504,11 +595,14 @@ export class Sun {
         this.sunLight.target = this.planetRoot;
         this.sunLight.target.updateMatrixWorld();
 
-        this.sunVisual.visible = !isBlackHole;
-        this.sunCorona.visible = !isBlackHole;
+        const lodVisible = !isBlackHole;
+        this.sunVisual.visible = lodVisible;
+        this.sunCorona.visible = lodVisible;
+        if (this.sunCoreLOD) this.sunCoreLOD.visible = lodVisible;
+        if (this.sunCoronaLOD) this.sunCoronaLOD.visible = lodVisible;
         this.blackHoleGroup.visible = isBlackHole;
         if (this.starParticleState.points) {
-            this.starParticleState.points.visible = !isBlackHole;
+            this.starParticleState.points.visible = lodVisible;
         }
 
         if (isBlackHole) {
@@ -524,10 +618,13 @@ export class Sun {
         this.starCoronaUniforms.uColor.value.copy(edgeColor);
 
         const coreScale = Math.max(0.1, this.params.sunSize);
-        this.sunVisual.scale.setScalar(coreScale);
+        this.sunCoreLOD?.scale?.setScalar(coreScale);
 
         const haloRadius = Math.max(coreScale * 1.15, this.params.sunHaloSize);
-        this.sunCorona.scale.setScalar(haloRadius);
+        this.sunCoronaLOD?.scale?.setScalar(haloRadius);
+
+        this._updateSunLodDistances();
+        this._syncActiveSunMeshes();
 
         const glowStrength = Math.max(0.05, this.params.sunGlowStrength);
         const noiseResolutionScale = Math.max(0.25, Math.min(2.0, this.visualSettings?.noiseResolution ?? 1.0));
@@ -971,3 +1068,4 @@ export class Sun {
         }
     }
 }
+

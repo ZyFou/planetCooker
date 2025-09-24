@@ -42,6 +42,13 @@ const atmosphereFragmentShader = `
     }
 `;
 
+const PLANET_SURFACE_LOD_ORDER = ["high", "medium", "low"];
+const PLANET_SURFACE_LOD_CONFIG = {
+    high: { detailOffset: 1, distanceMultiplier: 4, gasSegmentScale: 1.6, textureScale: 1.45 },
+    medium: { detailOffset: 0, distanceMultiplier: 12, gasSegmentScale: 0.95, textureScale: 0.9 },
+    low: { detailOffset: -2, distanceMultiplier: 28, gasSegmentScale: 0.35, textureScale: 0.35 }
+};
+
 export class Planet {
     constructor(scene, params, moonSettings, guiControllers, visualSettings, sun) {
         this.scene = scene;
@@ -92,6 +99,11 @@ export class Planet {
 
         this.activeExplosions = [];
 
+        this.surfaceLOD = null;
+        this.surfaceLODLevels = {};
+        this.gasLODMaterials = [];
+        this.gasLODTextures = [];
+
         this._createPlanetObjects();
         this.rebuildPlanet();
     }
@@ -104,11 +116,17 @@ export class Planet {
             flatShading: false
         });
 
-        const initialGeometry = new THREE.IcosahedronGeometry(1, 5);
-        this.planetMesh = new THREE.Mesh(initialGeometry, this.planetMaterial);
-        this.planetMesh.castShadow = true;
-        this.planetMesh.receiveShadow = true;
-        this.spinGroup.add(this.planetMesh);
+        this.surfaceLOD = new THREE.LOD();
+        this.surfaceLOD.name = "PlanetSurfaceLOD";
+        this.surfaceLOD.matrixAutoUpdate = true;
+        this.spinGroup.add(this.surfaceLOD);
+
+        this.surfaceLODLevels = {};
+        PLANET_SURFACE_LOD_ORDER.forEach((levelKey, index) => {
+            const mesh = this._createSurfaceMeshPlaceholder(levelKey, index);
+            this.surfaceLODLevels[levelKey] = mesh;
+        });
+        this.planetMesh = this.surfaceLODLevels.medium;
 
         const coreGeometry = new THREE.SphereGeometry(1, 16, 16);
         const coreMaterial = new THREE.MeshStandardMaterial({
@@ -190,9 +208,223 @@ export class Planet {
         this.foamMesh.receiveShadow = false;
         this.foamMesh.renderOrder = 2;
         this.spinGroup.add(this.foamMesh);
+
+        this._updateSurfaceLodDistances();
     }
 
-    update(delta, simulationDelta) {
+    _createSurfaceMeshPlaceholder(levelKey, orderIndex = 0) {
+        const baseDetail = levelKey === "high" ? 4 : levelKey === "medium" ? 3 : 2;
+        const geometry = new THREE.IcosahedronGeometry(1, Math.max(0, baseDetail));
+        const mesh = new THREE.Mesh(geometry, this.planetMaterial);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.name = `PlanetSurface_${levelKey}`;
+        mesh.userData.lodKey = levelKey;
+        if (this.surfaceLOD) {
+            this.surfaceLOD.addLevel(mesh, 0);
+        }
+        return mesh;
+    }
+
+    _updateSurfaceLodDistances() {
+        if (!this.surfaceLOD || !this.surfaceLOD.levels || !this.surfaceLOD.levels.length) return;
+        const radius = Math.max(0.1, this.params.radius || 1);
+        const resolutionScale = Math.max(0.5, Math.min(1.6, this.visualSettings?.noiseResolution ?? 1.0));
+        PLANET_SURFACE_LOD_ORDER.forEach((levelKey, index) => {
+            const level = this.surfaceLOD.levels[index];
+            if (!level) return;
+            if (index === 0) {
+                level.distance = 0;
+                return;
+            }
+            const config = PLANET_SURFACE_LOD_CONFIG[levelKey] || PLANET_SURFACE_LOD_CONFIG.medium;
+            const multiplier = config.distanceMultiplier ?? (index * 8);
+            level.distance = radius * multiplier * resolutionScale;
+        });
+    }
+
+    _syncActiveSurfaceMesh() {
+        if (!this.surfaceLOD?.levels?.length) return;
+        let activeMesh = null;
+        for (let i = 0; i < this.surfaceLOD.levels.length; i += 1) {
+            const candidate = this.surfaceLOD.levels[i]?.object;
+            if (candidate?.visible) {
+                activeMesh = candidate;
+                break;
+            }
+        }
+        if (!activeMesh) {
+            activeMesh = this.surfaceLODLevels?.medium || this.planetMesh;
+        }
+        if (activeMesh && this.planetMesh !== activeMesh) {
+            this.planetMesh = activeMesh;
+        }
+    }
+
+    _getSurfaceDetailForLevel(levelKey) {
+        const baseDetail = Math.max(0, Math.round(this.params.subdivisions ?? 0));
+        const offset = PLANET_SURFACE_LOD_CONFIG[levelKey]?.detailOffset ?? 0;
+        return Math.max(0, baseDetail + offset);
+    }
+
+    _replaceSurfaceGeometry(levelKey, geometry) {
+        const mesh = this.surfaceLODLevels?.[levelKey];
+        if (!mesh || !geometry) return;
+        if (mesh.geometry) {
+            mesh.geometry.dispose();
+        }
+        mesh.geometry = geometry;
+    }
+
+    _assignSurfaceMaterial(levelKey, material) {
+        const mesh = this.surfaceLODLevels?.[levelKey];
+        if (!mesh || !material) return;
+        mesh.material = material;
+    }
+
+    _disposeGasLODResources() {
+        if (this.gasLODTextures?.length) {
+            this.gasLODTextures.forEach((texture) => texture?.dispose?.());
+        }
+        if (this.gasLODMaterials?.length) {
+            const retained = new Set();
+            PLANET_SURFACE_LOD_ORDER.forEach((key) => {
+                const mat = this.surfaceLODLevels?.[key]?.material;
+                if (mat) retained.add(mat);
+            });
+            this.gasLODMaterials.forEach((material) => {
+                if (material && material !== this.planetMaterial && !retained.has(material)) {
+                    material.dispose?.();
+                }
+            });
+        }
+        this.gasLODMaterials = [];
+        this.gasLODTextures = [];
+    }
+
+    _buildRockyGeometry(detail, generators, profile, offsets) {
+        const geometry = new THREE.IcosahedronGeometry(1, Math.max(0, detail));
+        const positions = geometry.getAttribute("position");
+        const colors = new Float32Array(positions.count * 3);
+        const vertex = new THREE.Vector3();
+        const normal = new THREE.Vector3();
+        const sampleDir = new THREE.Vector3();
+        const warpVec = new THREE.Vector3();
+        const unitVertex = new THREE.Vector3();
+        const { baseNoise, ridgeNoise, warpNoiseX, warpNoiseY, warpNoiseZ, craterNoise } = generators;
+
+        for (let i = 0; i < positions.count; i += 1) {
+            vertex.fromBufferAttribute(positions, i);
+            normal.copy(vertex).normalize();
+            sampleDir.copy(normal);
+
+            if (profile.warpStrength > 0) {
+                const warpAmount = profile.warpStrength * 0.35;
+                const fx = profile.warpFrequency;
+                const offset = profile.warpOffset;
+                warpVec.set(
+                    warpNoiseX(normal.x * fx + offset.x, normal.y * fx + offset.y, normal.z * fx + offset.z),
+                    warpNoiseY(normal.x * fx + offset.y, normal.y * fx + offset.z, normal.z * fx + offset.x),
+                    warpNoiseZ(normal.x * fx + offset.z, normal.y * fx + offset.x, normal.z * fx + offset.y)
+                );
+                sampleDir.addScaledVector(warpVec, warpAmount).normalize();
+            }
+
+            let amplitude = 1;
+            let frequency = this.params.noiseFrequency;
+            let totalAmplitude = 0;
+            let sum = 0;
+            let ridgeSum = 0;
+            let billowSum = 0;
+
+            for (let layer = 0; layer < this.params.noiseLayers; layer += 1) {
+                const offset = offsets[layer];
+                const sx = sampleDir.x * frequency + offset.x;
+                const sy = sampleDir.y * frequency + offset.y;
+                const sz = sampleDir.z * frequency + offset.z;
+
+                const sample = baseNoise(sx, sy, sz);
+                sum += sample * amplitude;
+
+                const ridgeSample = ridgeNoise(
+                    sx * profile.ridgeFrequency,
+                    sy * profile.ridgeFrequency,
+                    sz * profile.ridgeFrequency
+                );
+                ridgeSum += (1 - Math.abs(ridgeSample)) * amplitude;
+
+                billowSum += Math.pow(Math.abs(sample), profile.ruggedPower) * amplitude;
+
+                totalAmplitude += amplitude;
+                amplitude *= this.params.persistence;
+                frequency *= this.params.lacunarity;
+            }
+
+            if (totalAmplitude > 0) {
+                sum /= totalAmplitude;
+                ridgeSum /= totalAmplitude;
+                billowSum /= totalAmplitude;
+            }
+
+            let elevation = sum;
+            elevation = THREE.MathUtils.lerp(elevation, ridgeSum * 2 - 1, profile.ridgeWeight);
+            elevation = THREE.MathUtils.lerp(elevation, billowSum * 2 - 1, profile.billowWeight);
+            elevation = Math.sign(elevation) * Math.pow(Math.abs(elevation), profile.sharpness);
+
+            let normalized = elevation * 0.5 + 0.5;
+            normalized = Math.pow(THREE.MathUtils.clamp(normalized, 0, 1), profile.plateauPower);
+
+            if (profile.striationStrength > 0) {
+                const striation = Math.sin((sampleDir.x + sampleDir.z) * profile.striationFrequency + profile.striationPhase);
+                normalized += striation * profile.striationStrength;
+            }
+
+            if (profile.equatorLift || profile.poleDrop) {
+                const latitude = Math.abs(sampleDir.y);
+                normalized += (1 - latitude) * profile.equatorLift;
+                normalized -= latitude * profile.poleDrop;
+            }
+
+            const craterSample = craterNoise(
+                sampleDir.x * profile.craterFrequency + profile.craterOffset.x,
+                sampleDir.y * profile.craterFrequency + profile.craterOffset.y,
+                sampleDir.z * profile.craterFrequency + profile.craterOffset.z
+            );
+            const craterValue = (craterSample + 1) * 0.5;
+            if (craterValue > profile.craterThreshold) {
+                const craterT = (craterValue - profile.craterThreshold) / Math.max(1e-6, 1 - profile.craterThreshold);
+                normalized -= Math.pow(craterT, profile.craterSharpness) * profile.craterDepth;
+            }
+
+            normalized = THREE.MathUtils.clamp(normalized, 0, 1);
+
+            const displacement = (normalized - this.params.oceanLevel) * this.params.noiseAmplitude;
+            const finalRadius = this.params.radius + displacement;
+            vertex.copy(normal).multiplyScalar(finalRadius);
+            positions.setXYZ(i, vertex.x, vertex.y, vertex.z);
+
+            unitVertex.copy(vertex).normalize();
+            const color = this.sampleColor(normalized, finalRadius, unitVertex);
+            const offsetIndex = i * 3;
+            colors[offsetIndex + 0] = color.r;
+            colors[offsetIndex + 1] = color.g;
+            colors[offsetIndex + 2] = color.b;
+        }
+
+        geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+        geometry.computeVertexNormals();
+        geometry.computeBoundingSphere();
+        return geometry;
+    }
+
+
+    update(delta, simulationDelta, camera = null) {
+        if (camera && this.surfaceLOD) {
+            this.surfaceLOD.updateMatrixWorld(true);
+            this.surfaceLOD.update(camera);
+            this._syncActiveSurfaceMesh();
+        }
+
         const rotationDelta = this.params.rotationSpeed * simulationDelta * Math.PI * 2;
         this.spinGroup.rotation.y += rotationDelta;
         this.cloudsMesh.rotation.y += rotationDelta * 1.12;
@@ -259,20 +491,45 @@ export class Planet {
         this.updatePalette();
 
         if (this.params.planetType === 'gas_giant') {
-          this.planetMaterial.vertexColors = false;
-          this.planetMaterial.map = this.generateGasGiantTexture(this.params);
-          this.planetMaterial.needsUpdate = true;
+          this._disposeGasLODResources();
 
-          const gasDetailScale = Math.max(0.25, Math.min(2.0, this.visualSettings?.gasResolution ?? 1.0));
-          const gasSegments = Math.max(24, Math.round(128 * gasDetailScale));
-          const geometry = new THREE.SphereGeometry(this.params.radius, gasSegments, gasSegments);
-          this.planetMesh.geometry.dispose();
-          this.planetMesh.geometry = geometry;
+          const baseSegments = Math.max(24, Math.round(128 * Math.max(0.25, this.visualSettings?.gasResolution ?? 1.0)));
+          PLANET_SURFACE_LOD_ORDER.forEach((levelKey) => {
+            const config = PLANET_SURFACE_LOD_CONFIG[levelKey] || PLANET_SURFACE_LOD_CONFIG.medium;
+            const segmentScale = Math.max(0.4, config.gasSegmentScale ?? 1);
+            const segments = Math.max(12, Math.round(baseSegments * segmentScale));
+            const geometry = new THREE.SphereGeometry(this.params.radius, segments, segments);
+            this._replaceSurfaceGeometry(levelKey, geometry);
 
+            const textureScale = Math.max(0.25, config.textureScale ?? 1);
+            const texture = this.generateGasGiantTexture(this.params, { resolutionScale: textureScale });
+            const material = new THREE.MeshStandardMaterial({
+              map: texture,
+              roughness: 0.35,
+              metalness: 0.08,
+              flatShading: false,
+              vertexColors: false
+            });
+            material.needsUpdate = true;
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.ClampToEdgeWrapping;
+            texture.anisotropy = Math.max(2, Math.round(8 * textureScale));
+            texture.needsUpdate = true;
+
+            this._assignSurfaceMaterial(levelKey, material);
+            this.gasLODMaterials.push(material);
+            this.gasLODTextures.push(texture);
+          });
+
+          this.planetMesh = this.surfaceLODLevels.medium;
           this.oceanMesh.visible = false;
           this.foamMesh.visible = false;
 
         } else {
+          this._disposeGasLODResources();
+          PLANET_SURFACE_LOD_ORDER.forEach((levelKey) => {
+            this._assignSurfaceMaterial(levelKey, this.planetMaterial);
+          });
           this.planetMaterial.vertexColors = true;
           this.planetMaterial.map = null;
           this.planetMaterial.needsUpdate = true;
@@ -299,116 +556,16 @@ export class Planet {
 
           const profile = this.deriveTerrainProfile(this.params.seed);
 
-          const detail = Math.round(this.params.subdivisions);
-          const geometry = new THREE.IcosahedronGeometry(1, detail);
-          const positions = geometry.getAttribute("position");
-          const colors = new Float32Array(positions.count * 3);
-          const vertex = new THREE.Vector3();
-          const normal = new THREE.Vector3();
-          const sampleDir = new THREE.Vector3();
-          const warpVec = new THREE.Vector3();
+          const generators = { baseNoise, ridgeNoise, warpNoiseX, warpNoiseY, warpNoiseZ, craterNoise };
+          const geometryByLevel = {};
+          PLANET_SURFACE_LOD_ORDER.forEach((levelKey) => {
+            const detail = this._getSurfaceDetailForLevel(levelKey);
+            geometryByLevel[levelKey] = this._buildRockyGeometry(detail, generators, profile, offsets);
+            this._replaceSurfaceGeometry(levelKey, geometryByLevel[levelKey]);
+          });
 
-          for (let i = 0; i < positions.count; i += 1) {
-            vertex.fromBufferAttribute(positions, i);
-            normal.copy(vertex).normalize();
-            sampleDir.copy(normal);
+          this.planetMesh = this.surfaceLODLevels.medium;
 
-            if (profile.warpStrength > 0) {
-              const warpAmount = profile.warpStrength * 0.35;
-              const fx = profile.warpFrequency;
-              const offset = profile.warpOffset;
-              warpVec.set(
-                warpNoiseX(normal.x * fx + offset.x, normal.y * fx + offset.y, normal.z * fx + offset.z),
-                warpNoiseY(normal.x * fx + offset.y, normal.y * fx + offset.z, normal.z * fx + offset.x),
-                warpNoiseZ(normal.x * fx + offset.z, normal.y * fx + offset.x, normal.z * fx + offset.y)
-              );
-              sampleDir.addScaledVector(warpVec, warpAmount).normalize();
-            }
-
-            let amplitude = 1;
-            let frequency = this.params.noiseFrequency;
-            let totalAmplitude = 0;
-            let sum = 0;
-            let ridgeSum = 0;
-            let billowSum = 0;
-
-            for (let layer = 0; layer < this.params.noiseLayers; layer += 1) {
-              const offset = offsets[layer];
-              const sx = sampleDir.x * frequency + offset.x;
-              const sy = sampleDir.y * frequency + offset.y;
-              const sz = sampleDir.z * frequency + offset.z;
-
-              const sample = baseNoise(sx, sy, sz);
-              sum += sample * amplitude;
-
-              const ridgeSample = ridgeNoise(
-                sx * profile.ridgeFrequency,
-                sy * profile.ridgeFrequency,
-                sz * profile.ridgeFrequency
-              );
-              ridgeSum += (1 - Math.abs(ridgeSample)) * amplitude;
-
-              billowSum += Math.pow(Math.abs(sample), profile.ruggedPower) * amplitude;
-
-              totalAmplitude += amplitude;
-              amplitude *= this.params.persistence;
-              frequency *= this.params.lacunarity;
-            }
-
-            if (totalAmplitude > 0) {
-              sum /= totalAmplitude;
-              ridgeSum /= totalAmplitude;
-              billowSum /= totalAmplitude;
-            }
-
-            let elevation = sum;
-            elevation = THREE.MathUtils.lerp(elevation, ridgeSum * 2 - 1, profile.ridgeWeight);
-            elevation = THREE.MathUtils.lerp(elevation, billowSum * 2 - 1, profile.billowWeight);
-            elevation = Math.sign(elevation) * Math.pow(Math.abs(elevation), profile.sharpness);
-
-            let normalized = elevation * 0.5 + 0.5;
-            normalized = Math.pow(THREE.MathUtils.clamp(normalized, 0, 1), profile.plateauPower);
-
-            if (profile.striationStrength > 0) {
-              const striation = Math.sin((sampleDir.x + sampleDir.z) * profile.striationFrequency + profile.striationPhase);
-              normalized += striation * profile.striationStrength;
-            }
-
-            if (profile.equatorLift || profile.poleDrop) {
-              const latitude = Math.abs(sampleDir.y);
-              normalized += (1 - latitude) * profile.equatorLift;
-              normalized -= latitude * profile.poleDrop;
-            }
-
-            const craterSample = craterNoise(
-              sampleDir.x * profile.craterFrequency + profile.craterOffset.x,
-              sampleDir.y * profile.craterFrequency + profile.craterOffset.y,
-              sampleDir.z * profile.craterFrequency + profile.craterOffset.z
-            );
-            const craterValue = (craterSample + 1) * 0.5;
-            if (craterValue > profile.craterThreshold) {
-              const craterT = (craterValue - profile.craterThreshold) / Math.max(1e-6, 1 - profile.craterThreshold);
-              normalized -= Math.pow(craterT, profile.craterSharpness) * profile.craterDepth;
-            }
-
-            normalized = THREE.MathUtils.clamp(normalized, 0, 1);
-
-            const displacement = (normalized - this.params.oceanLevel) * this.params.noiseAmplitude;
-            const finalRadius = this.params.radius + displacement;
-            vertex.copy(normal).multiplyScalar(finalRadius);
-            positions.setXYZ(i, vertex.x, vertex.y, vertex.z);
-
-            const color = this.sampleColor(normalized, finalRadius, vertex.clone().normalize());
-            colors[i * 3 + 0] = color.r;
-            colors[i * 3 + 1] = color.g;
-            colors[i * 3 + 2] = color.b;
-          }
-
-          geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-          geometry.computeVertexNormals();
-
-          this.planetMesh.geometry.dispose();
-          this.planetMesh.geometry = geometry;
 
           const oceanVisible = this.params.oceanLevel > 0.001 && this.params.noiseAmplitude > 0.0001;
           const oceanScale = this.params.radius * 1.001;
@@ -563,6 +720,8 @@ export class Planet {
           }
         }
 
+        this._updateSurfaceLodDistances();
+
         const cloudScale = this.params.radius * (1 + Math.max(0.0, this.params.cloudHeight || 0.03));
         const atmosphereScale = this.params.radius * (1.06 + Math.max(0.0, (this.params.cloudHeight || 0.03)) * 0.8);
         this.cloudsMesh.scale.setScalar(cloudScale);
@@ -570,6 +729,7 @@ export class Planet {
 
         this.updateCore();
         this.updateRings();
+        this._syncActiveSurfaceMesh();
     }
 
     deriveTerrainProfile(seed) {
@@ -770,11 +930,14 @@ export class Planet {
         this.cloudTextureDirty = false;
     }
 
-    generateGasGiantTexture(p) {
+    generateGasGiantTexture(p, { resolutionScale = 1 } = {}) {
+        const baseNoiseRes = this.visualSettings?.noiseResolution ?? 1.0;
+        const baseGasRes = this.visualSettings?.gasResolution ?? 1.0;
+        const scale = Math.max(0.25, resolutionScale);
         return generateGasGiantTextureExt({
           ...p,
-          noiseResolution: this.visualSettings?.noiseResolution ?? 1.0,
-          gasResolution: this.visualSettings?.gasResolution ?? 1.0
+          noiseResolution: Math.max(0.25, baseNoiseRes * scale),
+          gasResolution: Math.max(0.25, baseGasRes * scale)
         });
     }
 
@@ -1279,78 +1442,92 @@ export class Planet {
     }
 
     applyImpactDeformation(worldPosition, impactRadius, { strength = 1, directionWorld = null, obliquity = 0 } = {}) {
-        if (!this.planetMesh || !this.planetMesh.geometry || !worldPosition) return;
-        const geometry = this.planetMesh.geometry;
-        const positions = geometry.getAttribute('position');
-        if (!positions) return;
-        if (positions.setUsage) {
-          try { positions.setUsage(THREE.DynamicDrawUsage); } catch {}
-        } else if ('usage' in positions) {
-          positions.usage = THREE.DynamicDrawUsage;
-        }
+        if (!worldPosition || impactRadius <= 0) return;
+        if (this.params.planetType === 'gas_giant') return;
 
-        const localImpact = this.planetMesh.worldToLocal(worldPosition.clone());
-        if (localImpact.lengthSq() === 0) return;
-        const centerDir = localImpact.clone().normalize();
+        const meshes = this.surfaceLODLevels ? Object.values(this.surfaceLODLevels) : [];
+        const targets = meshes.length ? meshes : (this.planetMesh ? [this.planetMesh] : []);
+        if (!targets.length) return;
 
-        const up = centerDir;
-        const tangentLocal = (() => {
-          if (!directionWorld || directionWorld.lengthSq() < 1e-8) return null;
-          const p1 = this.planetMesh.worldToLocal(worldPosition.clone());
-          const p2 = this.planetMesh.worldToLocal(worldPosition.clone().add(directionWorld.clone()));
-          const dirLocal = p2.sub(p1).normalize();
-          const tangent = dirLocal.sub(up.clone().multiplyScalar(dirLocal.dot(up))).normalize();
-          return tangent.lengthSq() > 0.5 ? tangent : null;
-        })();
-        const bitangentLocal = tangentLocal ? new THREE.Vector3().crossVectors(up, tangentLocal).normalize() : null;
-
-        const craterAngle = THREE.MathUtils.clamp(impactRadius / Math.max(1e-6, this.params.radius), 0.01, Math.PI / 2);
-
-        const baseDepth = Math.min(impactRadius * 0.45, (this.params.noiseAmplitude || 0.5) * 0.6 + 0.02);
-        const depth = THREE.MathUtils.clamp(baseDepth * THREE.MathUtils.clamp(strength, 0.2, 3.5), 0.005, impactRadius);
-
-        const obliq = THREE.MathUtils.clamp(isFinite(obliquity) ? obliquity : 0, 0, Math.PI / 2);
-        const elongBase = (this.params.impactElongationMul ?? 1.6);
-        const elongation = tangentLocal ? (1 + elongBase * (obliq / (Math.PI / 2))) : 1;
-        const minorScale = 1 / elongation;
-
-        const arr = positions.array;
+        const up = new THREE.Vector3();
+        const tangentCandidate = new THREE.Vector3();
+        const bitangent = new THREE.Vector3();
         const v = new THREE.Vector3();
         const vDir = new THREE.Vector3();
         const local = new THREE.Vector3();
 
-        for (let i = 0; i < arr.length; i += 3) {
-          v.set(arr[i + 0], arr[i + 1], arr[i + 2]);
-          const r = v.length();
-          if (r <= 0) continue;
-          vDir.copy(v).divideScalar(r);
-          let ang;
-          if (tangentLocal) {
-            const du = vDir.dot(tangentLocal);
-            const dv = vDir.dot(bitangentLocal);
-            const dn = vDir.dot(up);
-            const u = du / elongation;
-            const w = dv / minorScale;
-            local.set(u, dn, w).normalize();
-            ang = Math.acos(THREE.MathUtils.clamp(local.y, -1, 1));
-          } else {
-            ang = Math.acos(THREE.MathUtils.clamp(vDir.dot(centerDir), -1, 1));
+        targets.forEach((mesh) => {
+          if (!mesh?.geometry) return;
+          const geometry = mesh.geometry;
+          const positions = geometry.getAttribute('position');
+          if (!positions) return;
+          if (positions.setUsage) {
+            try { positions.setUsage(THREE.DynamicDrawUsage); } catch {}
+          } else if ('usage' in positions) {
+            positions.usage = THREE.DynamicDrawUsage;
           }
-          if (ang > craterAngle) continue;
 
-          const t = 1 - ang / craterAngle;
-          const falloff = t * t * (3 - 2 * t);
+          const localImpact = mesh.worldToLocal(worldPosition.clone());
+          if (localImpact.lengthSq() === 0) return;
+          const centerDir = up.copy(localImpact).normalize();
 
-          const newR = Math.max(0.01, r - depth * falloff);
-          vDir.multiplyScalar(newR);
-          arr[i + 0] = vDir.x;
-          arr[i + 1] = vDir.y;
-          arr[i + 2] = vDir.z;
-        }
+          let tangentLocal = null;
+          if (directionWorld && directionWorld.lengthSq() >= 1e-8) {
+            const p1 = mesh.worldToLocal(worldPosition.clone());
+            const p2 = mesh.worldToLocal(worldPosition.clone().add(directionWorld.clone()));
+            const dirLocal = p2.sub(p1).normalize();
+            const projection = centerDir.dot(dirLocal);
+            tangentCandidate.copy(dirLocal).sub(centerDir.clone().multiplyScalar(projection)).normalize();
+            if (tangentCandidate.lengthSq() > 0.5) {
+              tangentLocal = tangentCandidate.clone();
+            }
+          }
+          const bitangentLocal = tangentLocal ? bitangent.copy(centerDir).cross(tangentLocal).normalize() : null;
 
-        positions.needsUpdate = true;
-        geometry.computeVertexNormals();
-        if (geometry.attributes.normal) geometry.attributes.normal.needsUpdate = true;
-        geometry.computeBoundingSphere();
+          const craterAngle = THREE.MathUtils.clamp(impactRadius / Math.max(1e-6, this.params.radius), 0.01, Math.PI / 2);
+          const baseDepth = Math.min(impactRadius * 0.45, (this.params.noiseAmplitude || 0.5) * 0.6 + 0.02);
+          const depth = THREE.MathUtils.clamp(baseDepth * THREE.MathUtils.clamp(strength, 0.2, 3.5), 0.005, impactRadius);
+
+          const obliq = THREE.MathUtils.clamp(isFinite(obliquity) ? obliquity : 0, 0, Math.PI / 2);
+          const elongBase = (this.params.impactElongationMul ?? 1.6);
+          const elongation = tangentLocal ? (1 + elongBase * (obliq / (Math.PI / 2))) : 1;
+          const minorScale = 1 / elongation;
+
+          const arr = positions.array;
+          for (let i = 0; i < arr.length; i += 3) {
+            v.set(arr[i + 0], arr[i + 1], arr[i + 2]);
+            const r = v.length();
+            if (r <= 0) continue;
+            vDir.copy(v).divideScalar(r);
+            let ang;
+            if (tangentLocal) {
+              const du = vDir.dot(tangentLocal);
+              const dv = vDir.dot(bitangentLocal);
+              const dn = vDir.dot(centerDir);
+              const u = du / elongation;
+              const w = dv / minorScale;
+              local.set(u, dn, w).normalize();
+              ang = Math.acos(THREE.MathUtils.clamp(local.y, -1, 1));
+            } else {
+              ang = Math.acos(THREE.MathUtils.clamp(vDir.dot(centerDir), -1, 1));
+            }
+            if (ang > craterAngle) continue;
+
+            const t = 1 - ang / craterAngle;
+            const falloff = t * t * (3 - 2 * t);
+
+            const newR = Math.max(0.01, r - depth * falloff);
+            vDir.multiplyScalar(newR);
+            arr[i + 0] = vDir.x;
+            arr[i + 1] = vDir.y;
+            arr[i + 2] = vDir.z;
+          }
+
+          positions.needsUpdate = true;
+          geometry.computeVertexNormals();
+          if (geometry.attributes.normal) geometry.attributes.normal.needsUpdate = true;
+          geometry.computeBoundingSphere();
+        });
     }
 }
+
