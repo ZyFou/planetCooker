@@ -30,27 +30,6 @@
           </p>
         </section>
 
-        <form class="explore__filters" id="explore-filters">
-          <label class="explore__filter">
-            <span class="explore__filter-label">Preset</span>
-            <input type="text" id="filter-preset" name="preset" placeholder="Any" autocomplete="off" />
-          </label>
-          <label class="explore__filter">
-            <span class="explore__filter-label">Seed</span>
-            <input type="text" id="filter-seed" name="seed" placeholder="Any" autocomplete="off" />
-          </label>
-          <label class="explore__filter">
-            <span class="explore__filter-label">Sort</span>
-            <select id="filter-sort" name="sort">
-              <option value="recent">Newest</option>
-              <option value="popular">Most visited</option>
-            </select>
-          </label>
-          <div class="explore__filter-actions">
-            <button type="submit" class="btn btn-secondary">Apply</button>
-            <button type="button" id="filters-reset" class="btn btn-ghost">Reset</button>
-          </div>
-        </form>
 
         <section class="explore__content">
           <div class="explore__list" id="explore-list" role="list"></div>
@@ -63,6 +42,10 @@
                 allow="accelerometer; fullscreen"
                 src=""
               ></iframe>
+              <div class="explore__preview-loader" id="preview-loader">
+                <div class="explore__loader-spinner"></div>
+                <p>Loading preview...</p>
+              </div>
               <!-- <div class="explore__preview-empty" id="preview-empty">Select a system to preview</div> -->
             </div>
             <div class="explore__preview-details" id="preview-details"></div>

@@ -1,7 +1,8 @@
 import * as THREE from "three";
 
-export function createSunTexture({ inner = 0.1, outer = 1, innerAlpha = 1, outerAlpha = 0 } = {}) {
-  const size = 256;
+export function createSunTexture({ inner = 0.1, outer = 1, innerAlpha = 1, outerAlpha = 0, resolution = 1.0 } = {}) {
+  const scale = Math.max(0.25, Math.min(2.0, resolution || 1.0));
+  const size = Math.max(32, Math.round(256 * scale));
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
@@ -18,12 +19,12 @@ export function createSunTexture({ inner = 0.1, outer = 1, innerAlpha = 1, outer
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.needsUpdate = true;
-  texture.anisotropy = 2;
+  texture.anisotropy = Math.max(1, Math.round(2 * scale));
   return texture;
 }
 
-export function createStarfield({ seed, count }) {
-  const starCount = Math.max(100, Math.round(count || 2000));
+export function createStarfield({ seed, count, resolution = 1.0 }) {
+  const starCount = Math.max(0, Math.round(count || 2000));
   const geometry = new THREE.BufferGeometry();
   const positions = new Float32Array(starCount * 3);
   const colors = new Float32Array(starCount * 3);
@@ -59,7 +60,7 @@ export function createStarfield({ seed, count }) {
   geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
   geometry.setAttribute("aPhase", new THREE.BufferAttribute(phases, 1));
 
-  const pointTexture = createSunTexture({ inner: 0.0, outer: 0.5, innerAlpha: 1, outerAlpha: 0 });
+  const pointTexture = createSunTexture({ inner: 0.0, outer: 0.5, innerAlpha: 1, outerAlpha: 0, resolution });
   const material = new THREE.PointsMaterial({
     size: 1.6,
     map: pointTexture,
