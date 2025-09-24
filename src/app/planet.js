@@ -1505,7 +1505,7 @@ export class Planet {
         const baseCount = Math.max(10, Math.round(this.params.explosionParticleBase || 80));
         let count = Math.max(20, Math.floor(baseCount * THREE.MathUtils.clamp(effectiveStrength, 0.2, 4)));
         if (this.visualSettings?.particleMax != null) {
-          count = Math.min(count, Math.max(100, this.visualSettings.particleMax));
+          count = Math.min(count, this.visualSettings.particleMax);
         }
         const geometry = new THREE.BufferGeometry();
         const positions = new Float32Array(count * 3);
@@ -1565,10 +1565,10 @@ export class Planet {
         geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
         geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 
-        const pointTexture = generateAnnulusTextureExt({ inner: 0.0, outer: 0.55, innerAlpha: 1, outerAlpha: 0 });
+        const pointTexture = generateAnnulusTextureExt({ innerRatio: 0.0, color: 0xffffff, opacity: 1 });
         const sizeVariation = this.params.explosionSizeVariation || 1.0;
         const material = new THREE.PointsMaterial({
-          size: Math.max(0.1, (this.params.explosionSize || 0.8) * Math.max(1, effectiveStrength) * sizeVariation),
+          size: Math.max(0.05, (this.params.explosionSize || 0.4) * (0.5 + effectiveStrength * 0.5) * sizeVariation),
           map: pointTexture,
           vertexColors: true,
           transparent: true,
