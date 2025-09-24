@@ -495,11 +495,22 @@ const params = {
   ringSpinSpeed: 0.05,
   ringAllowRandom: true,
   ringCount: 0,
-  rings: []
+  rings: [],
+  aurora: {
+    enabled: false,
+    colors: ["#38ff7a", "#3fb4ff"],
+    latitudeCenterDeg: 65,
+    latitudeWidthDeg: 12,
+    height: 0.06,
+    intensity: 1.0,
+    noiseScale: 2.0,
+    banding: 0.8,
+    nightBoost: 1.5
+  }
 };
 
 const presets = {
-  "Earth-like": { planetType: "rocky", seed: "BLUEHOME", radius: 1.32, subdivisions: 6, noiseLayers: 5, noiseFrequency: 2.8, noiseAmplitude: 0.52, persistence: 0.48, lacunarity: 2.25, oceanLevel: 0.46, colorOcean: "#1b3c6d", colorShallow: "#2f7fb6", colorLow: "#305a33", colorMid: "#b49e74", colorHigh: "#f2f6f5", atmosphereColor: "#7baeff", atmosphereOpacity: 0.23, atmosphereIntensity: 1.0, atmosphereFresnelPower: 2.0, atmosphereRimPower: 3.0, cloudsOpacity: 0.42, axisTilt: 23, rotationSpeed: 0.12, simulationSpeed: 0.12, gravity: 9.81, sunColor: "#ffd27f", sunIntensity: 1.6, sunDistance: 48, sunSize: 1, sunHaloSize: 6.5, sunGlowStrength: 1.4, sunPulseSpeed: 0.45, moonMassScale: 1, starCount: 2200, starBrightness: 0.92, starTwinkleSpeed: 0.6, moons: [{ size: 0.27, distance: 4.2, orbitSpeed: 0.38, inclination: 6, color: "#cfd0d4", phase: 1.1, eccentricity: 0.055 }], impactDeformation: true, impactStrengthMul: 2.5, impactSpeedMul: 1.2, impactMassMul: 2.0, icePolesEnabled: true, icePolesCoverage: 0.12, icePolesColor: "#e8f4f8", icePolesNoiseScale: 2.5, icePolesNoiseStrength: 0.3 },
+  "Earth-like": { planetType: "rocky", seed: "BLUEHOME", radius: 1.32, subdivisions: 6, noiseLayers: 5, noiseFrequency: 2.8, noiseAmplitude: 0.52, persistence: 0.48, lacunarity: 2.25, oceanLevel: 0.46, colorOcean: "#1b3c6d", colorShallow: "#2f7fb6", colorLow: "#305a33", colorMid: "#b49e74", colorHigh: "#f2f6f5", atmosphereColor: "#7baeff", atmosphereOpacity: 0.23, atmosphereIntensity: 1.0, atmosphereFresnelPower: 2.0, atmosphereRimPower: 3.0, cloudsOpacity: 0.42, axisTilt: 23, rotationSpeed: 0.12, simulationSpeed: 0.12, gravity: 9.81, sunColor: "#ffd27f", sunIntensity: 1.6, sunDistance: 48, sunSize: 1, sunHaloSize: 6.5, sunGlowStrength: 1.4, sunPulseSpeed: 0.45, moonMassScale: 1, starCount: 2200, starBrightness: 0.92, starTwinkleSpeed: 0.6, moons: [{ size: 0.27, distance: 4.2, orbitSpeed: 0.38, inclination: 6, color: "#cfd0d4", phase: 1.1, eccentricity: 0.055 }], impactDeformation: true, impactStrengthMul: 2.5, impactSpeedMul: 1.2, impactMassMul: 2.0, icePolesEnabled: true, icePolesCoverage: 0.12, icePolesColor: "#e8f4f8", icePolesNoiseScale: 2.5, icePolesNoiseStrength: 0.3, "aurora": { "enabled": true, "colors": ["#38ff7a", "#3fb4ff"], "latitudeCenterDeg": 65, "latitudeWidthDeg": 12, "height": 0.06, "intensity": 1.0, "noiseScale": 2.0, "banding": 0.8, "nightBoost": 1.5 } },
   "Mars": { planetType: "rocky", seed: "MARS", radius: 0.71, subdivisions: 6, noiseLayers: 5, noiseFrequency: 3.1, noiseAmplitude: 0.34, persistence: 0.46, lacunarity: 2.2, oceanLevel: 0.0, colorOcean: "#211b1b", colorShallow: "#3b2a22", colorLow: "#7a3e27", colorMid: "#b25a32", colorHigh: "#e4c7a1", colorCore: "#8b4513", coreEnabled: true, coreSize: 0.4, coreVisible: true, atmosphereColor: "#ffb382", atmosphereOpacity: 0.0, atmosphereIntensity: 0.8, atmosphereFresnelPower: 1.5, atmosphereRimPower: 2.5, cloudsOpacity: 0.0, axisTilt: 25, rotationSpeed: 0.24, simulationSpeed: 0.12, gravity: 3.71, sunColor: "#ffd27f", sunIntensity: 1.8, sunDistance: 60, sunSize: 1, sunHaloSize: 6.5, sunGlowStrength: 1.2, sunPulseSpeed: 0.5, moonMassScale: 0.6, starCount: 2400, starBrightness: 0.9, starTwinkleSpeed: 0.6, moons: [{ size: 0.08, distance: 2.6, orbitSpeed: 0.8, inclination: 1, color: "#9e7a5c", phase: 0.3, eccentricity: 0.015 }, { size: 0.06, distance: 3.8, orbitSpeed: 0.66, inclination: 1.8, color: "#7a5d48", phase: 2.1, eccentricity: 0.025 }], icePolesEnabled: true, icePolesCoverage: 0.18, icePolesColor: "#f0f8ff", icePolesNoiseScale: 3.0, icePolesNoiseStrength: 0.4 },
   "Jupiter": { planetType: "gas_giant", seed: "JUPITER", radius: 3.5, axisTilt: 3, rotationSpeed: 0.48, simulationSpeed: 0.32, gravity: 24.79, gasGiantStrataCount: 5, gasGiantStrataColor1: "#c7b59a", gasGiantStrataColor2: "#efe7dd", gasGiantStrataColor3: "#b3a58b", gasGiantStrataColor4: "#d6c8a7", gasGiantStrataColor5: "#c0b8a8", gasGiantStrataSize1: 0.3, gasGiantStrataSize2: 0.2, gasGiantStrataSize3: 0.2, gasGiantStrataSize4: 0.2, gasGiantStrataSize5: 0.1, gasGiantNoiseScale: 3.0, gasGiantNoiseStrength: 0.15, atmosphereColor: "#d9c7a0", atmosphereOpacity: 0.38, cloudsOpacity: 0.7, sunColor: "#ffd27f", sunIntensity: 2.8, sunDistance: 120, sunSize: 1.6, sunHaloSize: 10.5, sunGlowStrength: 2.2, sunPulseSpeed: 0.25, moonMassScale: 2.2, starCount: 3400, starBrightness: 1.1, starTwinkleSpeed: 0.45, moons: [{ size: 0.35, distance: 5.8, orbitSpeed: 0.52, inclination: 2, color: "#d9d0c0", phase: 0.1, eccentricity: 0.01 }, { size: 0.32, distance: 7.3, orbitSpeed: 0.44, inclination: 0, color: "#b3a58b", phase: 0.7, eccentricity: 0.002 }, { size: 0.3, distance: 9.7, orbitSpeed: 0.36, inclination: 0.1, color: "#d6c8a7", phase: 1.3, eccentricity: 0.004 }, { size: 0.28, distance: 15.7, orbitSpeed: 0.23, inclination: 0.5, color: "#c0b8a8", phase: 2.0, eccentricity: 0.01 }] },
   "Saturn": { planetType: "gas_giant", seed: "SATURN", radius: 3.2, axisTilt: 27, rotationSpeed: 0.42, simulationSpeed: 0.32, gravity: 10.44, gasGiantStrataCount: 5, gasGiantStrataColor1: "#bda77e", gasGiantStrataColor2: "#dccfb0", gasGiantStrataColor3: "#f3ecde", gasGiantStrataColor4: "#cdbb9a", gasGiantStrataColor5: "#bfb39a", gasGiantStrataSize1: 0.4, gasGiantStrataSize2: 0.3, gasGiantStrataSize3: 0.1, gasGiantStrataSize4: 0.1, gasGiantStrataSize5: 0.1, gasGiantNoiseScale: 3.5, gasGiantNoiseStrength: 0.12, atmosphereColor: "#e6d8b5", atmosphereOpacity: 0.33, cloudsOpacity: 0.6, sunColor: "#ffd27f", sunIntensity: 2.6, sunDistance: 140, sunSize: 1.6, sunHaloSize: 12.5, sunGlowStrength: 2.0, sunPulseSpeed: 0.25, moonMassScale: 2.2, starCount: 3300, starBrightness: 1.05, starTwinkleSpeed: 0.45, ringEnabled: true, ringAngle: 0, ringSpinSpeed: 0.03, ringCount: 4, rings: [{ style: "Texture", color: "#bfb39a", start: 1.28, end: 1.35, opacity: 0.5, noiseScale: 2.4, noiseStrength: 0.15, spinSpeed: 0.03, brightness: 0.9 }, { style: "Texture", color: "#e3dccb", start: 1.38, end: 1.80, opacity: 0.95, noiseScale: 2.8, noiseStrength: 0.25, spinSpeed: 0.03, brightness: 1.2 }, { style: "Texture", color: "#d7ccb4", start: 1.88, end: 2.30, opacity: 0.9, noiseScale: 2.6, noiseStrength: 0.22, spinSpeed: 0.03, brightness: 1.1 }, { style: "Texture", color: "#f3eee2", start: 2.35, end: 2.42, opacity: 0.6, noiseScale: 2.0, noiseStrength: 0.10, spinSpeed: 0.035, brightness: 1.1 }], moons: [{ size: 0.3, distance: 10.0, orbitSpeed: 0.3, inclination: 2, color: "#d9d6cf", phase: 0.1, eccentricity: 0.01 }, { size: 0.22, distance: 6.8, orbitSpeed: 0.42, inclination: 1, color: "#cdbb9a", phase: 0.8, eccentricity: 0.02 }] },
@@ -521,7 +532,7 @@ const starPresets = {
   "Neutron Star": { sunColor: "#9ecaff", sunIntensity: 3.2, sunDistance: 65, sunSize: 0.6, sunHaloSize: 5.2, sunGlowStrength: 2.6, sunPulseSpeed: 1.8, sunNoiseScale: 3.0, sunParticleCount: 260, sunParticleSpeed: 1.4, sunParticleSize: 0.09, sunParticleColor: "#96caff", sunParticleLifetime: 1.8 }
 };
 
-const shareKeys = [ "seed", "planetType", "gasGiantStrataCount", "gasGiantStrataColor1", "gasGiantStrataColor2", "gasGiantStrataColor3", "gasGiantStrataColor4", "gasGiantStrataColor5", "gasGiantStrataColor6", "gasGiantStrataSize1", "gasGiantStrataSize2", "gasGiantStrataSize3", "gasGiantStrataSize4", "gasGiantStrataSize5", "gasGiantStrataSize6", "gasGiantNoiseScale", "gasGiantNoiseStrength", "gasGiantStrataWarp", "gasGiantStrataWarpScale", "radius", "subdivisions", "noiseLayers", "noiseFrequency", "noiseAmplitude", "persistence", "lacunarity", "oceanLevel", "colorOcean", "colorShallow", "colorFoam", "foamEnabled", "colorLow", "colorMid", "colorHigh", "colorCore", "coreEnabled", "coreSize", "coreVisible", "atmosphereColor", "atmosphereOpacity", "cloudsOpacity", "cloudHeight", "cloudDensity", "cloudNoiseScale", "cloudDriftSpeed", "axisTilt", "rotationSpeed", "simulationSpeed", "gravity", "sunColor", "sunIntensity", "sunDistance", "sunSize", "sunHaloSize", "sunGlowStrength", "sunPulseSpeed", "sunVariant", "sunPreset", "sunNoiseScale", "sunParticleCount", "sunParticleSpeed", "sunParticleSize", "sunParticleColor", "sunParticleLifetime", "blackHoleCoreSize", "blackHoleDiskRadius", "blackHoleDiskThickness", "blackHoleDiskIntensity", "blackHoleDiskTilt", "blackHoleDiskYaw", "blackHoleDiskTwist", "blackHoleSpinSpeed", "blackHoleHaloSpinSpeed", "blackHoleDiskStyle", "blackHoleHaloStyle", "blackHoleDiskNoiseScale", "blackHoleDiskNoiseStrength", "blackHoleHaloRadius", "blackHoleHaloAngle", "blackHoleHaloThickness", "blackHoleHaloIntensity", "blackHoleHaloNoiseScale", "blackHoleHaloNoiseStrength", "moonCount", "moonMassScale", "starCount", "starBrightness", "starTwinkleSpeed", "physicsEnabled", "physicsTwoWay", "physicsDamping", "physicsSubsteps", "showOrbitLines", "impactDeformation", "impactStrengthMul", "impactSpeedMul", "impactMassMul", "impactElongationMul", "explosionEnabled", "explosionColor", "explosionStrength", "explosionParticleBase", "explosionSize", "explosionGravity", "explosionDamping", "explosionLifetime", "explosionColorVariation", "explosionSpeedVariation", "explosionSizeVariation", "ringEnabled", "ringAngle", "ringSpinSpeed", "ringAllowRandom", "ringCount" ];
+const shareKeys = [ "seed", "planetType", "gasGiantStrataCount", "gasGiantStrataColor1", "gasGiantStrataColor2", "gasGiantStrataColor3", "gasGiantStrataColor4", "gasGiantStrataColor5", "gasGiantStrataColor6", "gasGiantStrataSize1", "gasGiantStrataSize2", "gasGiantStrataSize3", "gasGiantStrataSize4", "gasGiantStrataSize5", "gasGiantStrataSize6", "gasGiantNoiseScale", "gasGiantNoiseStrength", "gasGiantStrataWarp", "gasGiantStrataWarpScale", "radius", "subdivisions", "noiseLayers", "noiseFrequency", "noiseAmplitude", "persistence", "lacunarity", "oceanLevel", "colorOcean", "colorShallow", "colorFoam", "foamEnabled", "colorLow", "colorMid", "colorHigh", "colorCore", "coreEnabled", "coreSize", "coreVisible", "atmosphereColor", "atmosphereOpacity", "cloudsOpacity", "cloudHeight", "cloudDensity", "cloudNoiseScale", "cloudDriftSpeed", "axisTilt", "rotationSpeed", "simulationSpeed", "gravity", "sunColor", "sunIntensity", "sunDistance", "sunSize", "sunHaloSize", "sunGlowStrength", "sunPulseSpeed", "sunVariant", "sunPreset", "sunNoiseScale", "sunParticleCount", "sunParticleSpeed", "sunParticleSize", "sunParticleColor", "sunParticleLifetime", "blackHoleCoreSize", "blackHoleDiskRadius", "blackHoleDiskThickness", "blackHoleDiskIntensity", "blackHoleDiskTilt", "blackHoleDiskYaw", "blackHoleDiskTwist", "blackHoleSpinSpeed", "blackHoleHaloSpinSpeed", "blackHoleDiskStyle", "blackHoleHaloStyle", "blackHoleDiskNoiseScale", "blackHoleDiskNoiseStrength", "blackHoleHaloRadius", "blackHoleHaloAngle", "blackHoleHaloThickness", "blackHoleHaloIntensity", "blackHoleHaloNoiseScale", "blackHoleHaloNoiseStrength", "moonCount", "moonMassScale", "starCount", "starBrightness", "starTwinkleSpeed", "physicsEnabled", "physicsTwoWay", "physicsDamping", "physicsSubsteps", "showOrbitLines", "impactDeformation", "impactStrengthMul", "impactSpeedMul", "impactMassMul", "impactElongationMul", "explosionEnabled", "explosionColor", "explosionStrength", "explosionParticleBase", "explosionSize", "explosionGravity", "explosionDamping", "explosionLifetime", "explosionColorVariation", "explosionSpeedVariation", "explosionSizeVariation", "ringEnabled", "ringAngle", "ringSpinSpeed", "ringAllowRandom", "ringCount", "aurora" ];
 //#endregion
 
 //#region State tracking
@@ -709,6 +720,7 @@ setupPlanetControls({
     updateTilt: () => planet?.updateTilt(),
     updateSun: () => sun?.updateSun(),
     updateRings: () => planet?.updateRings(),
+    updateAurora: () => planet?.updateAurora(),
     updateStarfieldUniforms,
     regenerateStarfield,
     updateGravityDisplay,
@@ -802,9 +814,11 @@ function applyPreset(presetName, options = {}) {
   try {
     const preset = presets[presetName];
     
-    // Apply all preset values to params
+    // Apply all preset values to params (deep-merge aurora)
     Object.keys(preset).forEach(key => {
-      if (key !== 'moons') { // Handle moons separately
+      if (key === 'aurora') {
+        mergeAurora(preset[key]);
+      } else if (key !== 'moons') { // Handle moons separately
         params[key] = preset[key];
       }
     });
@@ -984,7 +998,9 @@ async function initFromHash() {
         currentShareId = configData.id || hash;
         // Apply the loaded configuration
         const prevType = params.planetType;
-        Object.assign(params, configData.data);
+        const data = configData.data || {};
+        if (data.aurora) mergeAurora(data.aurora);
+        Object.keys(data).forEach(k => { if (k !== 'aurora') params[k] = data[k]; });
         // Guard against GUI onChange side-effects while syncing controls
         isApplyingPreset = true;
         try {
@@ -1037,7 +1053,8 @@ async function initFromHash() {
             params.moonCount = decoded.moons.length;
           } catch {}
         }
-        Object.assign(params, loadedData);
+        if (loadedData?.aurora) mergeAurora(loadedData.aurora);
+        Object.keys(loadedData || {}).forEach(k => { if (k !== 'aurora') params[k] = loadedData[k]; });
         
         isApplyingPreset = true;
         try {
@@ -1570,8 +1587,10 @@ function setupMobilePanelToggle() {
         if (isLikelyApiId) {
           const cfg = await loadConfigurationFromAPIExt(code);
           if (cfg?.data) {
-            const prevType = params.planetType;
-            Object.assign(params, cfg.data);
+          const prevType = params.planetType;
+          const data = cfg.data || {};
+          if (data.aurora) mergeAurora(data.aurora);
+          Object.keys(data).forEach(k => { if (k !== 'aurora') params[k] = data[k]; });
             if (prevType !== params.planetType) markPlanetDirty();
           }
         } else {
@@ -1582,7 +1601,8 @@ function setupMobilePanelToggle() {
             params.moonCount = decoded.moons.length;
           }
           const prevType = params.planetType;
-          Object.assign(params, loadedData);
+          if (loadedData?.aurora) mergeAurora(loadedData.aurora);
+          Object.keys(loadedData || {}).forEach(k => { if (k !== 'aurora') params[k] = loadedData[k]; });
           if (prevType !== params.planetType) markPlanetDirty();
         }
         // Apply
@@ -1648,6 +1668,37 @@ function setupMobilePanelToggle() {
 
 function markPlanetDirty() {
     planetDirty = true;
+}
+
+function updateAurora() {
+    if (planet) {
+        planet.updateAurora();
+    }
+}
+
+// Keep aurora object and colors array identity to preserve GUI bindings
+function mergeAurora(nextAurora) {
+    if (!nextAurora) return;
+    if (!params.aurora) params.aurora = {};
+    const curr = params.aurora;
+    if (!Array.isArray(curr.colors)) curr.colors = ["#38ff7a", "#3fb4ff"];
+    if (Array.isArray(nextAurora.colors)) {
+        if (typeof nextAurora.colors[0] === "string") curr.colors[0] = nextAurora.colors[0];
+        if (typeof nextAurora.colors[1] === "string") curr.colors[1] = nextAurora.colors[1];
+    }
+    const keys = [
+        "enabled",
+        "latitudeCenterDeg",
+        "latitudeWidthDeg",
+        "height",
+        "intensity",
+        "noiseScale",
+        "banding",
+        "nightBoost"
+    ];
+    for (const k of keys) {
+        if (nextAurora[k] !== undefined) curr[k] = nextAurora[k];
+    }
 }
 
 function markMoonsDirty() {
@@ -2181,6 +2232,24 @@ function surpriseMe() {
       }
     }
 
+    // Randomize aurora
+    params.aurora.enabled = rng.next() > 0.3; // 70% chance of aurora
+    if (params.aurora.enabled) {
+      const h1 = rng.next();
+      const h2 = (h1 + 0.4 + rng.next() * 0.2) % 1.0;
+      // mutate colors to preserve array identity
+      params.aurora.colors[0] = `#${new THREE.Color().setHSL(h1, 0.9, 0.6).getHexString()}`;
+      params.aurora.colors[1] = `#${new THREE.Color().setHSL(h2, 0.9, 0.6).getHexString()}`;
+      params.aurora.latitudeCenterDeg = 60 + rng.next() * 15;
+      params.aurora.latitudeWidthDeg = THREE.MathUtils.lerp(8, 20, rng.next());
+      // Aurora height at atmosphere level (matches Earth-like preset)
+      params.aurora.height = 0.06;
+      params.aurora.intensity = THREE.MathUtils.lerp(0.5, 2.0, rng.next());
+      params.aurora.noiseScale = THREE.MathUtils.lerp(1.0, 5.0, rng.next());
+      params.aurora.banding = THREE.MathUtils.lerp(0.3, 1.0, rng.next());
+      params.aurora.nightBoost = THREE.MathUtils.lerp(1.2, 2.5, rng.next());
+    }
+
     Object.keys(guiControllers).forEach((key) => {
       if (params[key] !== undefined && guiControllers[key]?.setValue) {
         isApplyingPreset = true;
@@ -2193,6 +2262,25 @@ function surpriseMe() {
       Object.values(guiControllers).forEach((ctrl) => ctrl?.updateDisplay?.());
       guiControllers.refreshPlanetTypeVisibility(params.planetType);
       guiControllers.rebuildRingControls?.();
+      
+      // Update aurora controllers explicitly using setValue for proper GUI updates
+      if (params.aurora) {
+        isApplyingPreset = true;
+        try {
+          if (guiControllers.auroraEnabled) guiControllers.auroraEnabled.setValue(params.aurora.enabled);
+          if (guiControllers.auroraColor1) guiControllers.auroraColor1.setValue(params.aurora.colors[0]);
+          if (guiControllers.auroraColor2) guiControllers.auroraColor2.setValue(params.aurora.colors[1]);
+          if (guiControllers.auroraLatitudeCenter) guiControllers.auroraLatitudeCenter.setValue(params.aurora.latitudeCenterDeg);
+          if (guiControllers.auroraLatitudeWidth) guiControllers.auroraLatitudeWidth.setValue(params.aurora.latitudeWidthDeg);
+          // Aurora height is fixed - no controller to update
+          if (guiControllers.auroraIntensity) guiControllers.auroraIntensity.setValue(params.aurora.intensity);
+          if (guiControllers.auroraNoiseScale) guiControllers.auroraNoiseScale.setValue(params.aurora.noiseScale);
+          if (guiControllers.auroraBanding) guiControllers.auroraBanding.setValue(params.aurora.banding);
+          if (guiControllers.auroraNightBoost) guiControllers.auroraNightBoost.setValue(params.aurora.nightBoost);
+        } finally {
+          isApplyingPreset = false;
+        }
+      }
     } catch {}
 
     normalizeMoonSettings();

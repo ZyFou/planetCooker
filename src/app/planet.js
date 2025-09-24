@@ -4,6 +4,7 @@ import { SeededRNG } from "./utils.js";
 import * as PHYSICS from "./planet/physics.js";
 import { generateRingTexture as generateRingTextureExt, generateAnnulusTexture as generateAnnulusTextureExt, generateGasGiantTexture as generateGasGiantTextureExt, generateRockTexture, generateSandTexture } from "./textures.js";
 import { blackHoleDiskUniforms, blackHoleDiskVertexShader, blackHoleDiskFragmentShader } from "./sun.js";
+import { AuroraNode } from "../nodes/AuroraNode.js";
 
 const surfaceVertexShader = `
     attribute vec3 color;
@@ -278,6 +279,9 @@ export class Planet {
         this.atmosphereMesh.receiveShadow = false;
         this.spinGroup.add(this.atmosphereMesh);
 
+        this.auroraNode = new AuroraNode(this);
+        this.spinGroup.add(this.auroraNode.mesh);
+
         const oceanMaterial = new THREE.MeshPhysicalMaterial({
             color: new THREE.Color(0x1b3c6d),
             transparent: true,
@@ -359,7 +363,7 @@ export class Planet {
         }
         if (activeMesh && this.planetMesh !== activeMesh) {
             this.planetMesh = activeMesh;
-            
+
             // Generate texture for new LOD level if needed (gas giants only)
             if (this.params.planetType === 'gas_giant' && activeLODKey) {
                 this._ensureGasTextureForLOD(activeLODKey);
@@ -394,14 +398,14 @@ export class Planet {
 
     _ensureGasTextureForLOD(levelKey) {
         if (this.params.planetType !== 'gas_giant') return;
-        
+
         const config = PLANET_SURFACE_LOD_CONFIG[levelKey] || PLANET_SURFACE_LOD_CONFIG.medium;
         const textureScale = Math.max(0.25, config.textureScale ?? 1);
         const baseNoiseRes = this.visualSettings?.noiseResolution ?? 1.0;
         const baseGasRes = this.visualSettings?.gasResolution ?? 1.0;
-        
+
         const cacheKey = `${this.params.seed}-${this.params.gasGiantStrataCount}-${this.params.gasGiantNoiseScale}-${this.params.gasGiantNoiseStrength}-${this.params.gasGiantStrataWarp}-${this.params.gasGiantStrataWarpScale}-${textureScale}-${baseNoiseRes}-${baseGasRes}`;
-        
+
         let texture = this.gasTextureCache.get(cacheKey);
         if (!texture) {
             // Generate texture asynchronously to prevent blocking
@@ -412,7 +416,7 @@ export class Planet {
                 texture.anisotropy = Math.max(2, Math.round(8 * textureScale));
                 texture.needsUpdate = true;
                 this.gasTextureCache.set(cacheKey, texture);
-                
+
                 // Update the material with the new texture
                 const mesh = this.surfaceLODLevels?.[levelKey];
                 if (mesh?.material) {
@@ -426,7 +430,7 @@ export class Planet {
     _updateMegaLODLighting() {
         const megaMesh = this.surfaceLODLevels?.mega;
         if (!megaMesh?.material?.uniforms) return;
-        
+
         // Calculate light direction from sun to planet
         const sunDirection = new THREE.Vector3();
         if (this.sun?.sunGroup) {
@@ -434,12 +438,12 @@ export class Planet {
         } else {
             sunDirection.set(1, 0, 0); // Default direction
         }
-        
+
         // Update lighting uniforms
         megaMesh.material.uniforms.lightDirection.value.copy(sunDirection);
         megaMesh.material.uniforms.lightColor.value.set(this.params.sunColor || 0xffffff);
         megaMesh.material.uniforms.lightIntensity.value = this.params.sunIntensity || 1.0;
-        
+
         // Update ambient light (matches scene ambient light: 0x6f87b6, 0.35)
         megaMesh.material.uniforms.ambientLightColor.value.setHex(0x6f87b6);
         megaMesh.material.uniforms.ambientLightIntensity.value = 0.35;
@@ -463,7 +467,7 @@ export class Planet {
         }
         this.gasLODMaterials = [];
         this.gasLODTextures = [];
-        
+
         // Clear texture cache when disposing
         this.gasTextureCache.forEach((texture) => texture?.dispose?.());
         this.gasTextureCache.clear();
@@ -598,7 +602,6 @@ export class Planet {
             this.surfaceLOD.update(camera);
         }
         this._syncActiveSurfaceMesh();
-
         const rotationDelta = this.params.rotationSpeed * simulationDelta * Math.PI * 2;
         this.spinGroup.rotation.y += rotationDelta;
         this.cloudsMesh.rotation.y += rotationDelta * 1.12;
@@ -659,6 +662,10 @@ export class Planet {
 
         this.updateExplosions(simulationDelta);
         this.syncOrbitLinesWithPivots();
+
+        if (this.auroraNode) {
+            this.auroraNode.update(delta);
+        }
     }
 
     rebuildPlanet() {
@@ -984,6 +991,7 @@ export class Planet {
         this.updateCore();
         this.updateRings();
         this._syncActiveSurfaceMesh();
+        this.updateAurora();
     }
 
     deriveTerrainProfile(seed) {
@@ -1782,6 +1790,11 @@ export class Planet {
           if (geometry.attributes.normal) geometry.attributes.normal.needsUpdate = true;
           geometry.computeBoundingSphere();
         });
+    }
+
+    updateAurora() {
+        if (!this.auroraNode) return;
+        this.auroraNode.applyParams(true);
     }
 }
 
