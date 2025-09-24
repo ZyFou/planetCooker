@@ -619,10 +619,10 @@ function updateDebugVectors() {
   }
   
   // Update moon velocity arrows
-  if (debugState.showMoonVelocity && moonsGroup) {
+  if (debugState.showMoonVelocity && planet?.moonsGroup) {
     debugMoonArrows.forEach((arrow, index) => {
-      if (index < moonsGroup.children.length) {
-        const moonPivot = moonsGroup.children[index];
+      if (index < planet.moonsGroup.children.length) {
+        const moonPivot = planet.moonsGroup.children[index];
         arrow.visible = true;
         arrow.position.copy(moonPivot.position);
         

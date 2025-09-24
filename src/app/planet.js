@@ -643,7 +643,7 @@ export class Planet {
             }
             
             const material = new THREE.MeshStandardMaterial({
-              map: texture,
+              map: texture || null,
               roughness: 0.35,
               metalness: 0.08,
               flatShading: false,
