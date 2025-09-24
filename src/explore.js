@@ -50,10 +50,6 @@ function legacyCopy(text) {
   });
 }
 
-function makeCacheKey({ page, limit, preset, seed, sort }) {
-  return JSON.stringify({ page, limit, preset: preset || '', seed: seed || '', sort });
-}
-
 function getClientCache(key) {
   const entry = clientCache.get(key);
   if (!entry) return null;
@@ -76,12 +72,6 @@ function parsePositiveInt(value, fallback) {
   return parsed;
 }
 
-const initialFilters = {
-  preset: (params.get('preset') || '').trim(),
-  seed: (params.get('seed') || '').trim(),
-  sort: params.get('sort') === 'popular' ? 'popular' : 'recent'
-};
-
 const state = {
   pageSize: 12,
   page: parsePositiveInt(params.get('page'), 1),
@@ -91,12 +81,12 @@ const state = {
   loading: false,
   errorMessage: null,
   selectedId: params.get('id') || null,
-  selectedSummary: null,
-  filters: { ...initialFilters }
+  selectedSummary: null
 };
 
 const listEl = document.getElementById('explore-list');
 const previewFrame = document.getElementById('explore-preview');
+const previewLoader = document.getElementById('preview-loader');
 const previewEmpty = document.getElementById('preview-empty');
 const previewDetails = document.getElementById('preview-details');
 const openButton = document.getElementById('open-in-studio');
@@ -104,15 +94,6 @@ const copyButton = document.getElementById('copy-share-id');
 const prevPageButton = document.getElementById('prev-page');
 const nextPageButton = document.getElementById('next-page');
 const paginationInfo = document.getElementById('pagination-info');
-const filtersForm = document.getElementById('explore-filters');
-const presetInput = document.getElementById('filter-preset');
-const seedInput = document.getElementById('filter-seed');
-const sortSelect = document.getElementById('filter-sort');
-const resetButton = document.getElementById('filters-reset');
-
-if (presetInput) presetInput.value = state.filters.preset;
-if (seedInput) seedInput.value = state.filters.seed;
-if (sortSelect) sortSelect.value = state.filters.sort;
 
 function formatRelativeTime(value) {
   try {
@@ -154,9 +135,6 @@ function formatRelativeTime(value) {
 function updateUrl() {
   const nextParams = new URLSearchParams();
   if (state.page > 1) nextParams.set('page', String(state.page));
-  if (state.filters?.preset) nextParams.set('preset', state.filters.preset);
-  if (state.filters?.seed) nextParams.set('seed', state.filters.seed);
-  if (state.filters?.sort && state.filters.sort !== 'recent') nextParams.set('sort', state.filters.sort);
   if (state.selectedId) nextParams.set('id', state.selectedId);
   const nextQuery = nextParams.toString();
   const nextUrl = nextQuery ? `${window.location.pathname}?${nextQuery}` : window.location.pathname;
@@ -277,15 +255,25 @@ function updatePreview(summary) {
   if (!summary) {
     previewFrame.removeAttribute('data-current-id');
     previewFrame.src = '';
+    if (previewLoader) previewLoader.style.opacity = '0';
     if (previewEmpty) previewEmpty.hidden = false;
     if (openButton) openButton.disabled = true;
     if (copyButton) copyButton.disabled = true;
     return;
   }
 
+  if (previewLoader) previewLoader.style.opacity = '1';
+  if (previewEmpty) previewEmpty.hidden = true;
+
   previewFrame.setAttribute('data-current-id', summary.id);
   previewFrame.src = `/studio.html?preview=1&load=${encodeURIComponent(summary.id)}`;
-  if (previewEmpty) previewEmpty.hidden = true;
+
+  previewFrame.onload = () => {
+    if (previewLoader) {
+      previewLoader.style.opacity = '0';
+    }
+  };
+
   if (openButton) {
     openButton.disabled = false;
     openButton.onclick = () => {
@@ -317,13 +305,7 @@ function selectItem(item) {
 }
 
 async function fetchSystems() {
-  const cacheKey = makeCacheKey({
-    page: state.page,
-    limit: state.pageSize,
-    preset: state.filters.preset,
-    seed: state.filters.seed,
-    sort: state.filters.sort
-  });
+  const cacheKey = JSON.stringify({ page: state.page, limit: state.pageSize, sort: 'recent' });
 
   const cached = getClientCache(cacheKey);
   if (cached) {
@@ -345,11 +327,8 @@ async function fetchSystems() {
     const searchParams = new URLSearchParams({
       page: String(state.page),
       limit: String(state.pageSize),
-      sort: state.filters.sort
+      sort: 'recent'
     });
-    
-    if (state.filters.preset) searchParams.set('preset', state.filters.preset);
-    if (state.filters.seed) searchParams.set('seed', state.filters.seed);
 
     const response = await fetch(`${API_ROOT}/explore?${searchParams}`);
     if (!response.ok) {
@@ -409,31 +388,6 @@ function updatePagination() {
   if (paginationInfo) {
     paginationInfo.textContent = `Page ${state.page} of ${state.pageCount}`;
   }
-}
-
-// Event listeners
-if (filtersForm) {
-  filtersForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    state.filters.preset = presetInput?.value?.trim() || '';
-    state.filters.seed = seedInput?.value?.trim() || '';
-    state.filters.sort = sortSelect?.value || 'recent';
-    state.page = 1;
-    updateUrl();
-    fetchSystems();
-  });
-}
-
-if (resetButton) {
-  resetButton.addEventListener('click', () => {
-    state.filters = { preset: '', seed: '', sort: 'recent' };
-    state.page = 1;
-    if (presetInput) presetInput.value = '';
-    if (seedInput) seedInput.value = '';
-    if (sortSelect) sortSelect.value = 'recent';
-    updateUrl();
-    fetchSystems();
-  });
 }
 
 // Initialize
