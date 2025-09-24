@@ -28,7 +28,7 @@ export class AuroraNode {
             transparent: true,
             blending: THREE.AdditiveBlending,
             depthWrite: false,
-            side: THREE.BackSide,
+            side: THREE.DoubleSide,
         });
 
         this.mesh = new THREE.Mesh(geometry, this.material);
