@@ -1,6 +1,5 @@
 // src/shaders/aurora.frag.glsl
 uniform float uTime;
-uniform float uPlanetRadius;
 uniform vec3 uSunDir;
 uniform vec3 uAuroraColor1;
 uniform vec3 uAuroraColor2;
@@ -12,11 +11,11 @@ uniform float uNoiseScale;
 uniform float uBanding;
 uniform float uNightBoost;
 
-varying vec3 vNormal;
 varying vec3 vWorldPosition;
+varying vec3 vWorldNormal;
+varying vec3 vAxisWorld;
+varying vec3 vPlanetCenter;
 
-// 3D simplex noise function
-// https://github.com/stegu/webgl-noise/blob/master/src/noise3D.glsl
 vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
 vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
 vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
@@ -83,37 +82,41 @@ float snoise(vec3 v) {
 }
 
 void main() {
-    vec3 n = normalize(vNormal);
-    float lat = asin(n.y);
+    vec3 worldNormal = normalize(vWorldNormal);
+    vec3 axisWorld = normalize(vAxisWorld);
+    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
 
-    // Polar mask
+    float alignment = clamp(dot(worldNormal, axisWorld), -1.0, 1.0);
+    float lat = asin(alignment);
+
     float latDist = abs(abs(lat) - uLatitudeCenter);
     float polarMask = smoothstep(uLatitudeWidth, 0.0, latDist);
 
-    // Night side boost
-    float lightN = max(dot(n, uSunDir), 0.0);
+    float lightN = max(dot(worldNormal, uSunDir), 0.0);
     float nightMask = smoothstep(0.6, 0.0, lightN);
     float nightBoost = 1.0 + nightMask * uNightBoost;
 
-    // Animated bands
-    vec3 noisePos = n * uNoiseScale + vec3(0.0, 0.0, uTime * 0.1);
+    vec3 noisePos = worldNormal * uNoiseScale + vec3(0.0, 0.0, uTime * 0.1);
     float noise = snoise(noisePos);
     noise = (noise + 1.0) * 0.5;
 
-    // Add banding effect
-    float banding = sin(vWorldPosition.x * 20.0 * uBanding + noise * 5.0) * 0.5 + 0.5;
-    float finalNoise = mix(noise, banding, uBanding);
+    vec3 helper = abs(axisWorld.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = normalize(cross(axisWorld, helper));
+    vec3 bitangent = normalize(cross(axisWorld, tangent));
+    vec3 surfaceDir = normalize(vWorldPosition - vPlanetCenter);
+    vec2 polar = vec2(dot(surfaceDir, tangent), dot(surfaceDir, bitangent));
+    float longitude = atan(polar.y, polar.x);
 
-    // Combine everything
+    float bandPattern = sin(longitude * 20.0 + noise * 5.0) * 0.5 + 0.5;
+    float finalNoise = mix(noise, bandPattern, uBanding);
+
     float finalAlpha = polarMask * finalNoise * uIntensity * nightBoost;
 
-    // Add fresnel effect to fade out at the edges
-    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
-    float fresnel = 1.0 - abs(dot(viewDirection, n));
-    fresnel = pow(fresnel, 2.0);
+    float fresnel = 1.0 - abs(dot(viewDirection, worldNormal));
+    fresnel = pow(fresnel, 1.0);
+    fresnel = mix(1.0, fresnel, 0.3);
     finalAlpha *= fresnel;
 
-    // Color
     vec3 finalColor = mix(uAuroraColor1, uAuroraColor2, finalNoise);
 
     gl_FragColor = vec4(finalColor, finalAlpha);
