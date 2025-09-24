@@ -136,14 +136,123 @@ const atmosphereFragmentShader = `
     }
 `;
 
-const PLANET_SURFACE_LOD_ORDER = ["mega", "ultra", "high", "medium", "low", "micro"];
+const PLANET_SURFACE_LOD_ORDER = [
+    "mega", "megaUltra", "ultra", "ultraHigh", 
+    "highPlus", "high", "highMed", 
+    "mediumHigh", "medium", "mediumMed", 
+    "medLow", "lowHigh", "low", 
+    "lowMed", "microHigh", "micro", "microLow"
+];
+
+// LOD Transition Manager for smooth transitions
+class LODTransitionManager {
+    constructor() {
+        this.currentLOD = 'medium';
+        this.targetLOD = 'medium';
+        this.transitionProgress = 1.0;
+        this.transitionSpeed = 0.02; // Adjust for faster/slower transitions
+        this.isTransitioning = false;
+        this.transitionStartTime = 0;
+        this.transitionDuration = 1000; // milliseconds
+    }
+
+    // Smooth interpolation between two LOD configs
+    interpolateLODConfig(config1, config2, t) {
+        const smoothT = this.easeInOutCubic(t);
+        return {
+            detailOffset: THREE.MathUtils.lerp(config1.detailOffset, config2.detailOffset, smoothT),
+            rockDetailMultiplier: THREE.MathUtils.lerp(config1.rockDetailMultiplier, config2.rockDetailMultiplier, smoothT),
+            rockDetailMin: Math.round(THREE.MathUtils.lerp(config1.rockDetailMin, config2.rockDetailMin, smoothT)),
+            distanceMultiplier: THREE.MathUtils.lerp(config1.distanceMultiplier, config2.distanceMultiplier, smoothT),
+            gasSegmentScale: THREE.MathUtils.lerp(config1.gasSegmentScale, config2.gasSegmentScale, smoothT),
+            textureScale: THREE.MathUtils.lerp(config1.textureScale, config2.textureScale, smoothT)
+        };
+    }
+
+    // Smooth easing function for natural transitions
+    easeInOutCubic(t) {
+        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    }
+
+    // Start transition to new LOD level
+    startTransition(targetLOD) {
+        if (targetLOD === this.currentLOD && this.transitionProgress >= 1.0) {
+            return; // Already at target
+        }
+        
+        this.targetLOD = targetLOD;
+        this.isTransitioning = true;
+        this.transitionStartTime = performance.now();
+        this.transitionProgress = 0.0;
+    }
+
+    // Update transition progress
+    updateTransition() {
+        if (!this.isTransitioning) return false;
+
+        const elapsed = performance.now() - this.transitionStartTime;
+        this.transitionProgress = Math.min(elapsed / this.transitionDuration, 1.0);
+
+        if (this.transitionProgress >= 1.0) {
+            this.currentLOD = this.targetLOD;
+            this.isTransitioning = false;
+            this.transitionProgress = 1.0;
+            return true; // Transition complete
+        }
+
+        return false; // Still transitioning
+    }
+
+    // Get current interpolated LOD config
+    getCurrentLODConfig() {
+        if (!this.isTransitioning || this.transitionProgress >= 1.0) {
+            return PLANET_SURFACE_LOD_CONFIG[this.currentLOD];
+        }
+
+        const currentConfig = PLANET_SURFACE_LOD_CONFIG[this.currentLOD];
+        const targetConfig = PLANET_SURFACE_LOD_CONFIG[this.targetLOD];
+        
+        return this.interpolateLODConfig(currentConfig, targetConfig, this.transitionProgress);
+    }
+
+    // Get current LOD level name (for debugging)
+    getCurrentLODLevel() {
+        return this.isTransitioning ? `${this.currentLOD}→${this.targetLOD}` : this.currentLOD;
+    }
+}
+// Add "intersteps" between each main LOD for finer control
 const PLANET_SURFACE_LOD_CONFIG = {
-    mega: { detailOffset: 4, rockDetailMultiplier: 2.5, rockDetailMin: 15, distanceMultiplier: 0.5, gasSegmentScale: 2.8, textureScale: 2.5 },
-    ultra: { detailOffset: 2, rockDetailMultiplier: 1.9, rockDetailMin: 10, distanceMultiplier: 2, gasSegmentScale: 2.2, textureScale: 2.0 },
-    high: { detailOffset: 1, rockDetailMultiplier: 1.5, rockDetailMin: 7, distanceMultiplier: 6, gasSegmentScale: 1.4, textureScale: 1.25 },
-    medium: { detailOffset: 0, rockDetailMultiplier: 1.0, rockDetailMin: 5, distanceMultiplier: 14, gasSegmentScale: 0.95, textureScale: 0.85 },
-    low: { detailOffset: -2, rockDetailMultiplier: 0.65, rockDetailMin: 3, distanceMultiplier: 32, gasSegmentScale: 0.45, textureScale: 0.45 },
-    micro: { detailOffset: -4, rockDetailMultiplier: 0.4, rockDetailMin: 1, distanceMultiplier: 48, gasSegmentScale: 0.25, textureScale: 0.3 }
+    // Ultra High Quality (100% detail)
+
+    mega:      { detailOffset: 4.0,   rockDetailMultiplier: 2.5,  rockDetailMin: 15, distanceMultiplier: 0.5,  gasSegmentScale: 2.8,  textureScale: 2.5 },
+    
+    // Very High Quality (90% detail)
+    megaUltra: { detailOffset: 3.5,   rockDetailMultiplier: 2.35, rockDetailMin: 13, distanceMultiplier: 0.75, gasSegmentScale: 2.65, textureScale: 2.35 },
+    ultra:     { detailOffset: 3.0,   rockDetailMultiplier: 2.2,  rockDetailMin: 12, distanceMultiplier: 1.0,  gasSegmentScale: 2.5,  textureScale: 2.2 },
+    ultraHigh: { detailOffset: 2.5,   rockDetailMultiplier: 2.05, rockDetailMin: 11, distanceMultiplier: 1.5,  gasSegmentScale: 2.35, textureScale: 2.05 },
+    
+    // High Quality (80% detail)
+    highPlus:  { detailOffset: 2.0,   rockDetailMultiplier: 1.9,  rockDetailMin: 10, distanceMultiplier: 2.0,  gasSegmentScale: 2.2,  textureScale: 1.9 },
+    high:      { detailOffset: 1.5,   rockDetailMultiplier: 1.75, rockDetailMin: 9,  distanceMultiplier: 3.0,  gasSegmentScale: 2.05, textureScale: 1.75 },
+    highMed:   { detailOffset: 1.0,   rockDetailMultiplier: 1.6,  rockDetailMin: 8,  distanceMultiplier: 4.0,  gasSegmentScale: 1.9,  textureScale: 1.6 },
+    
+    // Medium-High Quality (70% detail)
+    mediumHigh:{ detailOffset: 0.5,   rockDetailMultiplier: 1.45, rockDetailMin: 7,  distanceMultiplier: 6.0,  gasSegmentScale: 1.75, textureScale: 1.45 },
+    medium:    { detailOffset: 0.0,   rockDetailMultiplier: 1.3,  rockDetailMin: 6,  distanceMultiplier: 8.0,  gasSegmentScale: 1.6,  textureScale: 1.3 },
+    mediumMed: { detailOffset: -0.5,  rockDetailMultiplier: 1.15, rockDetailMin: 5,  distanceMultiplier: 10.0, gasSegmentScale: 1.45, textureScale: 1.15 },
+    
+    // Medium Quality (60% detail)
+    medLow:    { detailOffset: -1.0,  rockDetailMultiplier: 1.0,  rockDetailMin: 4,  distanceMultiplier: 12.0, gasSegmentScale: 1.3,  textureScale: 1.0 },
+    lowHigh:   { detailOffset: -1.5,  rockDetailMultiplier: 0.85, rockDetailMin: 3,  distanceMultiplier: 16.0, gasSegmentScale: 1.15, textureScale: 0.85 },
+    low:       { detailOffset: -2.0,  rockDetailMultiplier: 0.7,  rockDetailMin: 2,  distanceMultiplier: 20.0, gasSegmentScale: 1.0,  textureScale: 0.7 },
+    
+    // Low Quality (50% detail)
+    lowMed:    { detailOffset: -2.5,  rockDetailMultiplier: 0.55, rockDetailMin: 1,  distanceMultiplier: 24.0, gasSegmentScale: 0.85, textureScale: 0.55 },
+    microHigh: { detailOffset: -3.0,  rockDetailMultiplier: 0.4,  rockDetailMin: 1,  distanceMultiplier: 28.0, gasSegmentScale: 0.7,  textureScale: 0.4 },
+    micro:     { detailOffset: -3.5,  rockDetailMultiplier: 0.25, rockDetailMin: 1,  distanceMultiplier: 32.0, gasSegmentScale: 0.55, textureScale: 0.25 },
+    
+    // Ultra Low Quality (40% detail)
+    microLow:  { detailOffset: -4.0,  rockDetailMultiplier: 0.1,  rockDetailMin: 1,  distanceMultiplier: 36.0, gasSegmentScale: 0.4,  textureScale: 0.1 }
 };
 
 export class Planet {
@@ -202,6 +311,10 @@ export class Planet {
         this.gasLODTextures = [];
         this.gasTextureCache = new Map();
         this.lastGasParams = null;
+        
+        // Initialize LOD transition manager for smooth transitions
+        this.lodTransitionManager = new LODTransitionManager();
+        this.smoothLODTransitionsEnabled = true; // Enable by default
 
         this._createPlanetObjects();
         this.rebuildPlanet();
@@ -332,6 +445,10 @@ export class Planet {
         if (!this.surfaceLOD || !this.surfaceLOD.levels || !this.surfaceLOD.levels.length) return;
         const radius = Math.max(0.1, this.params.radius || 1);
         const resolutionScale = Math.max(0.5, Math.min(1.6, this.visualSettings?.noiseResolution ?? 1.0));
+        
+        // Update transition manager
+        this.lodTransitionManager.updateTransition();
+        
         PLANET_SURFACE_LOD_ORDER.forEach((levelKey, index) => {
             const level = this.surfaceLOD.levels[index];
             if (!level) return;
@@ -339,6 +456,8 @@ export class Planet {
                 level.distance = 0;
                 return;
             }
+            
+            // Use the specific config for this LOD level
             const config = PLANET_SURFACE_LOD_CONFIG[levelKey] || PLANET_SURFACE_LOD_CONFIG.medium;
             const multiplier = config.distanceMultiplier ?? (index * 8);
             level.distance = radius * multiplier * resolutionScale;
@@ -372,6 +491,7 @@ export class Planet {
     }
 
     _getSurfaceDetailForLevel(levelKey) {
+        // Use the specific config for this LOD level
         const config = PLANET_SURFACE_LOD_CONFIG[levelKey] || PLANET_SURFACE_LOD_CONFIG.medium;
         const baseDetail = Math.max(0, Math.round(this.params.subdivisions ?? 0));
         const multiplier = config.rockDetailMultiplier ?? 1;
@@ -379,6 +499,89 @@ export class Planet {
         const minDetail = config.rockDetailMin ?? 0;
         const candidate = Math.round(baseDetail * multiplier + offset);
         return Math.max(minDetail, candidate);
+    }
+
+    // Start smooth LOD transition to target level
+    startLODTransition(targetLOD) {
+        if (PLANET_SURFACE_LOD_ORDER.includes(targetLOD)) {
+            this.lodTransitionManager.startTransition(targetLOD);
+            console.log(`Starting smooth LOD transition to: ${targetLOD}`);
+        }
+    }
+
+    // Get current LOD transition status
+    getLODTransitionStatus() {
+        return {
+            current: this.lodTransitionManager.currentLOD,
+            target: this.lodTransitionManager.targetLOD,
+            progress: this.lodTransitionManager.transitionProgress,
+            isTransitioning: this.lodTransitionManager.isTransitioning
+        };
+    }
+
+    // Auto-adjust LOD based on distance and performance
+    autoAdjustLOD(cameraPosition) {
+        if (!cameraPosition) return;
+        
+        const planetPosition = this.spinGroup.position;
+        const distance = cameraPosition.distanceTo(planetPosition);
+        const radius = Math.max(0.1, this.params.radius || 1);
+        const normalizedDistance = distance / (radius * 10); // Normalize by planet size
+        
+        // Determine target LOD based on distance
+        let targetLOD = 'medium'; // default
+        
+        if (normalizedDistance < 0.5) {
+            targetLOD = 'mega';
+        } else if (normalizedDistance < 1.0) {
+            targetLOD = 'ultra';
+        } else if (normalizedDistance < 2.0) {
+            targetLOD = 'high';
+        } else if (normalizedDistance < 4.0) {
+            targetLOD = 'medium';
+        } else if (normalizedDistance < 8.0) {
+            targetLOD = 'low';
+        } else {
+            targetLOD = 'micro';
+        }
+        
+        // Start transition if target is different from current
+        if (targetLOD !== this.lodTransitionManager.currentLOD && 
+            !this.lodTransitionManager.isTransitioning) {
+            this.startLODTransition(targetLOD);
+        }
+    }
+
+    // Apply smooth LOD transitions by adjusting material properties
+    _applySmoothLODTransitions() {
+        if (!this.smoothLODTransitionsEnabled || !this.lodTransitionManager.isTransitioning) return;
+        
+        const currentConfig = this.lodTransitionManager.getCurrentLODConfig();
+        const targetConfig = PLANET_SURFACE_LOD_CONFIG[this.lodTransitionManager.targetLOD];
+        
+        if (!targetConfig) return;
+        
+        // Apply smooth transitions to material properties
+        // This could include opacity, roughness, or other visual properties
+        // For now, we'll use the transition progress to blend visual effects
+        
+        const progress = this.lodTransitionManager.transitionProgress;
+        
+        // Example: Smoothly adjust material opacity during transitions
+        if (this.planetMesh && this.planetMesh.material) {
+            // You can add smooth material property transitions here
+            // this.planetMesh.material.opacity = THREE.MathUtils.lerp(1.0, 0.8, progress);
+        }
+    }
+
+    // Enable/disable smooth LOD transitions
+    setSmoothLODTransitions(enabled) {
+        this.smoothLODTransitionsEnabled = enabled;
+        if (!enabled) {
+            // Reset transition manager to current state
+            this.lodTransitionManager.isTransitioning = false;
+            this.lodTransitionManager.transitionProgress = 1.0;
+        }
     }
 
     _replaceSurfaceGeometry(levelKey, geometry) {
@@ -982,6 +1185,9 @@ export class Planet {
         }
 
         this._updateSurfaceLodDistances();
+        
+        // Apply smooth LOD transitions
+        this._applySmoothLODTransitions();
 
         const cloudScale = this.params.radius * (1 + Math.max(0.0, this.params.cloudHeight || 0.03));
         const atmosphereScale = this.params.radius * (1.06 + Math.max(0.0, (this.params.cloudHeight || 0.03)) * 0.8);
