@@ -42,8 +42,9 @@ const atmosphereFragmentShader = `
     }
 `;
 
-const PLANET_SURFACE_LOD_ORDER = ["ultra", "high", "medium", "low", "micro"];
+const PLANET_SURFACE_LOD_ORDER = ["mega", "ultra", "high", "medium", "low", "micro"];
 const PLANET_SURFACE_LOD_CONFIG = {
+    mega: { detailOffset: 4, rockDetailMultiplier: 2.5, rockDetailMin: 15, distanceMultiplier: 0.5, gasSegmentScale: 2.8, textureScale: 2.5 },
     ultra: { detailOffset: 2, rockDetailMultiplier: 1.9, rockDetailMin: 10, distanceMultiplier: 2, gasSegmentScale: 2.2, textureScale: 2.0 },
     high: { detailOffset: 1, rockDetailMultiplier: 1.5, rockDetailMin: 7, distanceMultiplier: 6, gasSegmentScale: 1.4, textureScale: 1.25 },
     medium: { detailOffset: 0, rockDetailMultiplier: 1.0, rockDetailMin: 5, distanceMultiplier: 14, gasSegmentScale: 0.95, textureScale: 0.85 },
