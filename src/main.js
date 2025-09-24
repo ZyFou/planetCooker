@@ -105,7 +105,7 @@ sceneContainer.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x05070f);
 
-const camera = new THREE.PerspectiveCamera(55, sceneContainer.clientWidth / sceneContainer.clientHeight, 0.1, 500);
+const camera = new THREE.PerspectiveCamera(55, sceneContainer.clientWidth / sceneContainer.clientHeight, 0.1, 1000);
 camera.position.set(0, 2.4, 8.5);
 
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -113,7 +113,7 @@ controls.enableDamping = true;
 controls.dampingFactor = 0.045;
 controls.rotateSpeed = 0.7;
 controls.minDistance = 2;
-controls.maxDistance = 80;
+controls.maxDistance = 200;
 if (previewMode) {
   controls.enablePan = false;
   controls.enableZoom = false;
@@ -1089,7 +1089,7 @@ async function initFromHash() {
 
 async function initializeApp() {
   sun = new Sun(scene, null, params, visualSettings);
-  planet = new Planet(scene, params, moonSettings, guiControllers, visualSettings, sun);
+  planet = new Planet(scene, camera, params, moonSettings, guiControllers, visualSettings, sun);
   sun.planetRoot = planet.planetRoot; // Circular dependency fix
 
   const loadedFromHash = await initFromHash();

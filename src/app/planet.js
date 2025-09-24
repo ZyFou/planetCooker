@@ -4,6 +4,7 @@ import { SeededRNG } from "./utils.js";
 import * as PHYSICS from "./planet/physics.js";
 import { generateRingTexture as generateRingTextureExt, generateAnnulusTexture as generateAnnulusTextureExt, generateGasGiantTexture as generateGasGiantTextureExt } from "./textures.js";
 import { blackHoleDiskUniforms, blackHoleDiskVertexShader, blackHoleDiskFragmentShader } from "./sun.js";
+import { LODManager } from "./LODManager.js";
 
 const atmosphereVertexShader = `
     varying vec3 vNormal;
@@ -43,13 +44,16 @@ const atmosphereFragmentShader = `
 `;
 
 export class Planet {
-    constructor(scene, params, moonSettings, guiControllers, visualSettings, sun) {
+    constructor(scene, camera, params, moonSettings, guiControllers, visualSettings, sun) {
         this.scene = scene;
+        this.camera = camera;
         this.params = params;
         this.moonSettings = moonSettings;
         this.guiControllers = guiControllers;
         this.visualSettings = visualSettings;
         this.sun = sun;
+
+        this.lodManager = new LODManager(this.camera, this.params);
 
         this.planetSystem = new THREE.Group();
         this.scene.add(this.planetSystem);
@@ -92,6 +96,9 @@ export class Planet {
 
         this.activeExplosions = [];
 
+        this.previousPlanetMesh = null;
+        this.transitionProgress = 1;
+
         this._createPlanetObjects();
         this.rebuildPlanet();
     }
@@ -101,8 +108,19 @@ export class Planet {
             vertexColors: true,
             roughness: 0.82,
             metalness: 0.12,
-            flatShading: false
+            flatShading: false,
+            transparent: true,
+            opacity: 1.0
         });
+
+        this.planetMaterial.onBeforeCompile = (shader) => {
+            shader.uniforms.fade = { value: 1.0 };
+            shader.fragmentShader = 'uniform float fade;\n' + shader.fragmentShader;
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <dithering_fragment>',
+                '#include <dithering_fragment>\n    gl_FragColor.a *= fade;'
+            );
+        };
 
         const initialGeometry = new THREE.IcosahedronGeometry(1, 5);
         this.planetMesh = new THREE.Mesh(initialGeometry, this.planetMaterial);
@@ -193,26 +211,68 @@ export class Planet {
     }
 
     update(delta, simulationDelta) {
-        const rotationDelta = this.params.rotationSpeed * simulationDelta * Math.PI * 2;
+        this.lodManager.update(this.planetRoot);
+        const lodParams = this.lodManager.lodParams;
+
+        if (this.lodManager.subdivisionChanged) {
+            if (this.previousPlanetMesh) {
+                this.spinGroup.remove(this.previousPlanetMesh);
+                this.previousPlanetMesh.geometry.dispose();
+                this.previousPlanetMesh.material.dispose();
+            }
+            this.previousPlanetMesh = this.planetMesh;
+
+            const geometry = this._createPlanetGeometry(lodParams);
+            const newMaterial = this.planetMaterial.clone();
+            newMaterial.onBeforeCompile = this.planetMaterial.onBeforeCompile;
+
+            this.planetMesh = new THREE.Mesh(geometry, newMaterial);
+            this.planetMesh.castShadow = true;
+            this.planetMesh.receiveShadow = true;
+            this.spinGroup.add(this.planetMesh);
+
+            this.transitionProgress = 0;
+        }
+
+        if (this.transitionProgress < 1) {
+            this.transitionProgress = Math.min(1, this.transitionProgress + delta / 0.5); // 0.5s transition
+            if (this.planetMesh.material.uniforms && this.planetMesh.material.uniforms.fade) {
+                this.planetMesh.material.uniforms.fade.value = this.transitionProgress;
+            }
+            if (this.previousPlanetMesh && this.previousPlanetMesh.material.uniforms && this.previousPlanetMesh.material.uniforms.fade) {
+                this.previousPlanetMesh.material.uniforms.fade.value = 1 - this.transitionProgress;
+            }
+
+            if (this.transitionProgress === 1) {
+                if (this.previousPlanetMesh) {
+                    this.spinGroup.remove(this.previousPlanetMesh);
+                    this.previousPlanetMesh.geometry.dispose();
+                    this.previousPlanetMesh.material.dispose();
+                    this.previousPlanetMesh = null;
+                }
+            }
+        }
+
+        const rotationDelta = lodParams.rotationSpeed * simulationDelta * Math.PI * 2;
         this.spinGroup.rotation.y += rotationDelta;
         this.cloudsMesh.rotation.y += rotationDelta * 1.12;
-        this.cloudsMesh.rotation.y += delta * this.params.cloudDriftSpeed;
+        this.cloudsMesh.rotation.y += delta * lodParams.cloudDriftSpeed;
 
-        if (this.params.ringEnabled && this.ringMeshes && this.ringMeshes.length) {
+        if (lodParams.ringEnabled && this.ringMeshes && this.ringMeshes.length) {
             for (let i = 0; i < this.ringMeshes.length; i += 1) {
                 const mesh = this.ringMeshes[i];
                 if (!mesh) continue;
-                const speed = (mesh.userData?.spinSpeed ?? this.params.ringSpinSpeed ?? 0);
+                const speed = (mesh.userData?.spinSpeed ?? lodParams.ringSpinSpeed ?? 0);
                 if (Math.abs(speed) > 1e-4) {
                     mesh.rotation.z += delta * speed;
                 }
             }
         }
 
-        const gravityFactor = Math.sqrt(this.params.gravity / 9.81);
-        if (this.params.physicsEnabled) {
+        const gravityFactor = Math.sqrt(lodParams.gravity / 9.81);
+        if (lodParams.physicsEnabled) {
             PHYSICS.stepMoonPhysics(simulationDelta, {
-                params: this.params,
+                params: lodParams,
                 planetRoot: this.planetRoot,
                 moonsGroup: this.moonsGroup,
                 moonSettings: this.moonSettings,
@@ -228,7 +288,7 @@ export class Planet {
                 guiControllers: this.guiControllers,
             });
         } else {
-            const planetMass = PHYSICS.getPlanetMass(this.params);
+            const planetMass = PHYSICS.getPlanetMass(lodParams);
             const mu = PHYSICS.getGravParameter(planetMass);
             this.moonsGroup.children.forEach((pivot, index) => {
                 const moon = this.moonSettings[index];
@@ -256,18 +316,29 @@ export class Planet {
     }
 
     rebuildPlanet() {
+        const lodParams = this.lodManager.lodParams;
         this.updatePalette();
 
-        if (this.params.planetType === 'gas_giant') {
+        if (lodParams.planetType === 'gas_giant') {
           this.planetMaterial.vertexColors = false;
-          this.planetMaterial.map = this.generateGasGiantTexture(this.params);
+          this.planetMaterial.map = this.generateGasGiantTexture(lodParams);
           this.planetMaterial.needsUpdate = true;
 
           const gasDetailScale = Math.max(0.25, Math.min(2.0, this.visualSettings?.gasResolution ?? 1.0));
           const gasSegments = Math.max(24, Math.round(128 * gasDetailScale));
-          const geometry = new THREE.SphereGeometry(this.params.radius, gasSegments, gasSegments);
-          this.planetMesh.geometry.dispose();
-          this.planetMesh.geometry = geometry;
+          const geometry = new THREE.SphereGeometry(lodParams.radius, gasSegments, gasSegments);
+          if (this.lodManager.isTransitioning) {
+              this.previousPlanetMesh = this.planetMesh;
+              const newMaterial = this.planetMaterial.clone();
+              newMaterial.onBeforeCompile = this.planetMaterial.onBeforeCompile;
+              this.planetMesh = new THREE.Mesh(geometry, newMaterial);
+              this.planetMesh.castShadow = true;
+              this.planetMesh.receiveShadow = true;
+              this.spinGroup.add(this.planetMesh);
+          } else {
+            this.planetMesh.geometry.dispose();
+            this.planetMesh.geometry = geometry;
+          }
 
           this.oceanMesh.visible = false;
           this.foamMesh.visible = false;
@@ -277,144 +348,26 @@ export class Planet {
           this.planetMaterial.map = null;
           this.planetMaterial.needsUpdate = true;
 
-          const rng = new SeededRNG(this.params.seed);
-          const noiseRng = rng.fork();
+          const geometry = this._createPlanetGeometry(lodParams);
 
-          const baseNoise = createNoise3D(() => noiseRng.next());
-          const ridgeNoise = createNoise3D(() => noiseRng.next());
-          const warpNoiseX = createNoise3D(() => noiseRng.next());
-          const warpNoiseY = createNoise3D(() => noiseRng.next());
-          const warpNoiseZ = createNoise3D(() => noiseRng.next());
-          const craterNoise = createNoise3D(() => noiseRng.next());
-
-          const offsets = [];
-          for (let i = 0; i < this.params.noiseLayers; i += 1) {
-            const fork = noiseRng.fork();
-            offsets.push(new THREE.Vector3(
-              fork.nextFloat(-128, 128),
-              fork.nextFloat(-128, 128),
-              fork.nextFloat(-128, 128)
-            ));
+          if (this.lodManager.isTransitioning) {
+              this.previousPlanetMesh = this.planetMesh;
+              const newMaterial = this.planetMaterial.clone();
+              newMaterial.onBeforeCompile = this.planetMaterial.onBeforeCompile;
+              this.planetMesh = new THREE.Mesh(geometry, newMaterial);
+              this.planetMesh.castShadow = true;
+              this.planetMesh.receiveShadow = true;
+              this.spinGroup.add(this.planetMesh);
+          } else {
+            this.planetMesh.geometry.dispose();
+            this.planetMesh.geometry = geometry;
           }
 
-          const profile = this.deriveTerrainProfile(this.params.seed);
-
-          const detail = Math.round(this.params.subdivisions);
-          const geometry = new THREE.IcosahedronGeometry(1, detail);
-          const positions = geometry.getAttribute("position");
-          const colors = new Float32Array(positions.count * 3);
-          const vertex = new THREE.Vector3();
-          const normal = new THREE.Vector3();
-          const sampleDir = new THREE.Vector3();
-          const warpVec = new THREE.Vector3();
-
-          for (let i = 0; i < positions.count; i += 1) {
-            vertex.fromBufferAttribute(positions, i);
-            normal.copy(vertex).normalize();
-            sampleDir.copy(normal);
-
-            if (profile.warpStrength > 0) {
-              const warpAmount = profile.warpStrength * 0.35;
-              const fx = profile.warpFrequency;
-              const offset = profile.warpOffset;
-              warpVec.set(
-                warpNoiseX(normal.x * fx + offset.x, normal.y * fx + offset.y, normal.z * fx + offset.z),
-                warpNoiseY(normal.x * fx + offset.y, normal.y * fx + offset.z, normal.z * fx + offset.x),
-                warpNoiseZ(normal.x * fx + offset.z, normal.y * fx + offset.x, normal.z * fx + offset.y)
-              );
-              sampleDir.addScaledVector(warpVec, warpAmount).normalize();
-            }
-
-            let amplitude = 1;
-            let frequency = this.params.noiseFrequency;
-            let totalAmplitude = 0;
-            let sum = 0;
-            let ridgeSum = 0;
-            let billowSum = 0;
-
-            for (let layer = 0; layer < this.params.noiseLayers; layer += 1) {
-              const offset = offsets[layer];
-              const sx = sampleDir.x * frequency + offset.x;
-              const sy = sampleDir.y * frequency + offset.y;
-              const sz = sampleDir.z * frequency + offset.z;
-
-              const sample = baseNoise(sx, sy, sz);
-              sum += sample * amplitude;
-
-              const ridgeSample = ridgeNoise(
-                sx * profile.ridgeFrequency,
-                sy * profile.ridgeFrequency,
-                sz * profile.ridgeFrequency
-              );
-              ridgeSum += (1 - Math.abs(ridgeSample)) * amplitude;
-
-              billowSum += Math.pow(Math.abs(sample), profile.ruggedPower) * amplitude;
-
-              totalAmplitude += amplitude;
-              amplitude *= this.params.persistence;
-              frequency *= this.params.lacunarity;
-            }
-
-            if (totalAmplitude > 0) {
-              sum /= totalAmplitude;
-              ridgeSum /= totalAmplitude;
-              billowSum /= totalAmplitude;
-            }
-
-            let elevation = sum;
-            elevation = THREE.MathUtils.lerp(elevation, ridgeSum * 2 - 1, profile.ridgeWeight);
-            elevation = THREE.MathUtils.lerp(elevation, billowSum * 2 - 1, profile.billowWeight);
-            elevation = Math.sign(elevation) * Math.pow(Math.abs(elevation), profile.sharpness);
-
-            let normalized = elevation * 0.5 + 0.5;
-            normalized = Math.pow(THREE.MathUtils.clamp(normalized, 0, 1), profile.plateauPower);
-
-            if (profile.striationStrength > 0) {
-              const striation = Math.sin((sampleDir.x + sampleDir.z) * profile.striationFrequency + profile.striationPhase);
-              normalized += striation * profile.striationStrength;
-            }
-
-            if (profile.equatorLift || profile.poleDrop) {
-              const latitude = Math.abs(sampleDir.y);
-              normalized += (1 - latitude) * profile.equatorLift;
-              normalized -= latitude * profile.poleDrop;
-            }
-
-            const craterSample = craterNoise(
-              sampleDir.x * profile.craterFrequency + profile.craterOffset.x,
-              sampleDir.y * profile.craterFrequency + profile.craterOffset.y,
-              sampleDir.z * profile.craterFrequency + profile.craterOffset.z
-            );
-            const craterValue = (craterSample + 1) * 0.5;
-            if (craterValue > profile.craterThreshold) {
-              const craterT = (craterValue - profile.craterThreshold) / Math.max(1e-6, 1 - profile.craterThreshold);
-              normalized -= Math.pow(craterT, profile.craterSharpness) * profile.craterDepth;
-            }
-
-            normalized = THREE.MathUtils.clamp(normalized, 0, 1);
-
-            const displacement = (normalized - this.params.oceanLevel) * this.params.noiseAmplitude;
-            const finalRadius = this.params.radius + displacement;
-            vertex.copy(normal).multiplyScalar(finalRadius);
-            positions.setXYZ(i, vertex.x, vertex.y, vertex.z);
-
-            const color = this.sampleColor(normalized, finalRadius, vertex.clone().normalize());
-            colors[i * 3 + 0] = color.r;
-            colors[i * 3 + 1] = color.g;
-            colors[i * 3 + 2] = color.b;
-          }
-
-          geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-          geometry.computeVertexNormals();
-
-          this.planetMesh.geometry.dispose();
-          this.planetMesh.geometry = geometry;
-
-          const oceanVisible = this.params.oceanLevel > 0.001 && this.params.noiseAmplitude > 0.0001;
-          const oceanScale = this.params.radius * 1.001;
-          const foamScale = this.params.radius * 1.003;
+          const oceanVisible = lodParams.oceanLevel > 0.001 && lodParams.noiseAmplitude > 0.0001;
+          const oceanScale = lodParams.radius * 1.001;
+          const foamScale = lodParams.radius * 1.003;
           this.oceanMesh.visible = oceanVisible;
-          this.foamMesh.visible = oceanVisible && this.params.foamEnabled;
+          this.foamMesh.visible = oceanVisible && lodParams.foamEnabled;
           if (oceanVisible) {
             this.oceanMesh.scale.setScalar(oceanScale);
             this.foamMesh.scale.setScalar(foamScale);
@@ -446,7 +399,7 @@ export class Planet {
             const warpOffset = profile.warpOffset;
             const craterOffset = profile.craterOffset;
 
-            const shorelineHalfWidth = Math.max(0.002, this.params.noiseAmplitude * 0.06);
+            const shorelineHalfWidth = Math.max(0.002, lodParams.noiseAmplitude * 0.06);
 
             for (let y = 0; y < texHeight; y += 1) {
               const v = y / (texHeight - 1);
@@ -477,13 +430,14 @@ export class Planet {
                   sampleDirX *= invLen; sampleDirY *= invLen; sampleDirZ *= invLen;
                 }
 
+                const lodParams = this.lodManager.lodParams;
                 let amplitude = 1;
-                let frequency = this.params.noiseFrequency;
+                let frequency = lodParams.noiseFrequency;
                 let totalAmplitude = 0;
                 let sum = 0;
                 let ridgeSum = 0;
                 let billowSum = 0;
-                for (let layer = 0; layer < this.params.noiseLayers; layer += 1) {
+                for (let layer = 0; layer < lodParams.noiseLayers; layer += 1) {
                   const o = offsets[layer];
                   const sx = sampleDirX * frequency + o.x;
                   const sy = sampleDirY * frequency + o.y;
@@ -497,8 +451,8 @@ export class Planet {
                   billowSum += Math.pow(Math.abs(s), ruggedPower) * amplitude;
 
                   totalAmplitude += amplitude;
-                  amplitude *= this.params.persistence;
-                  frequency *= this.params.lacunarity;
+                  amplitude *= lodParams.persistence;
+                  frequency *= lodParams.lacunarity;
                 }
                 if (totalAmplitude > 0) {
                   sum /= totalAmplitude;
@@ -529,9 +483,9 @@ export class Planet {
                 }
                 normalized = THREE.MathUtils.clamp(normalized, 0, 1);
 
-                const displacementHere = (normalized - this.params.oceanLevel) * this.params.noiseAmplitude;
-                const finalR = this.params.radius + displacementHere;
-                const distFromShore = Math.abs(finalR - this.params.radius);
+                const displacementHere = (normalized - lodParams.oceanLevel) * lodParams.noiseAmplitude;
+                const finalR = lodParams.radius + displacementHere;
+                const distFromShore = Math.abs(finalR - lodParams.radius);
 
                 let alpha = 1 - THREE.MathUtils.smoothstep(distFromShore, 0, shorelineHalfWidth);
                 alpha *= THREE.MathUtils.clamp(0.5 + Math.sign(displacementHere) * 0.5, 0, 1);
@@ -562,14 +516,149 @@ export class Planet {
             this.foamMesh.material.needsUpdate = true;
           }
         }
-
-        const cloudScale = this.params.radius * (1 + Math.max(0.0, this.params.cloudHeight || 0.03));
-        const atmosphereScale = this.params.radius * (1.06 + Math.max(0.0, (this.params.cloudHeight || 0.03)) * 0.8);
+        const lodParams = this.lodManager.lodParams;
+        const cloudScale = lodParams.radius * (1 + Math.max(0.0, lodParams.cloudHeight || 0.03));
+        const atmosphereScale = lodParams.radius * (1.06 + Math.max(0.0, (lodParams.cloudHeight || 0.03)) * 0.8);
         this.cloudsMesh.scale.setScalar(cloudScale);
         this.atmosphereMesh.scale.setScalar(atmosphereScale);
 
         this.updateCore();
         this.updateRings();
+    }
+
+    _createPlanetGeometry(lodParams) {
+        const rng = new SeededRNG(lodParams.seed);
+        const noiseRng = rng.fork();
+
+        const baseNoise = createNoise3D(() => noiseRng.next());
+        const ridgeNoise = createNoise3D(() => noiseRng.next());
+        const warpNoiseX = createNoise3D(() => noiseRng.next());
+        const warpNoiseY = createNoise3D(() => noiseRng.next());
+        const warpNoiseZ = createNoise3D(() => noiseRng.next());
+        const craterNoise = createNoise3D(() => noiseRng.next());
+
+        const offsets = [];
+        for (let i = 0; i < lodParams.noiseLayers; i += 1) {
+            const fork = noiseRng.fork();
+            offsets.push(new THREE.Vector3(
+                fork.nextFloat(-128, 128),
+                fork.nextFloat(-128, 128),
+                fork.nextFloat(-128, 128)
+            ));
+        }
+
+        const profile = this.deriveTerrainProfile(lodParams.seed);
+
+        const detail = Math.round(lodParams.subdivisions);
+        const geometry = new THREE.IcosahedronGeometry(1, detail);
+        const positions = geometry.getAttribute("position");
+        const colors = new Float32Array(positions.count * 3);
+        const vertex = new THREE.Vector3();
+        const normal = new THREE.Vector3();
+        const sampleDir = new THREE.Vector3();
+        const warpVec = new THREE.Vector3();
+
+        for (let i = 0; i < positions.count; i += 1) {
+            vertex.fromBufferAttribute(positions, i);
+            normal.copy(vertex).normalize();
+            sampleDir.copy(normal);
+
+            if (profile.warpStrength > 0) {
+                const warpAmount = profile.warpStrength * 0.35;
+                const fx = profile.warpFrequency;
+                const offset = profile.warpOffset;
+                warpVec.set(
+                    warpNoiseX(normal.x * fx + offset.x, normal.y * fx + offset.y, normal.z * fx + offset.z),
+                    warpNoiseY(normal.x * fx + offset.y, normal.y * fx + offset.z, normal.z * fx + offset.x),
+                    warpNoiseZ(normal.x * fx + offset.z, normal.y * fx + offset.x, normal.z * fx + offset.y)
+                );
+                sampleDir.addScaledVector(warpVec, warpAmount).normalize();
+            }
+
+            const lodParams = this.lodManager.lodParams;
+            let amplitude = 1;
+            let frequency = lodParams.noiseFrequency;
+            let totalAmplitude = 0;
+            let sum = 0;
+            let ridgeSum = 0;
+            let billowSum = 0;
+
+            for (let layer = 0; layer < lodParams.noiseLayers; layer += 1) {
+                const offset = offsets[layer];
+                const sx = sampleDir.x * frequency + offset.x;
+                const sy = sampleDir.y * frequency + offset.y;
+                const sz = sampleDir.z * frequency + offset.z;
+
+                const sample = baseNoise(sx, sy, sz);
+                sum += sample * amplitude;
+
+                const ridgeSample = ridgeNoise(
+                    sx * profile.ridgeFrequency,
+                    sy * profile.ridgeFrequency,
+                    sz * profile.ridgeFrequency
+                );
+                ridgeSum += (1 - Math.abs(ridgeSample)) * amplitude;
+
+                billowSum += Math.pow(Math.abs(sample), profile.ruggedPower) * amplitude;
+
+                totalAmplitude += amplitude;
+                amplitude *= lodParams.persistence;
+                frequency *= lodParams.lacunarity;
+            }
+
+            if (totalAmplitude > 0) {
+                sum /= totalAmplitude;
+                ridgeSum /= totalAmplitude;
+                billowSum /= totalAmplitude;
+            }
+
+            let elevation = sum;
+            elevation = THREE.MathUtils.lerp(elevation, ridgeSum * 2 - 1, profile.ridgeWeight);
+            elevation = THREE.MathUtils.lerp(elevation, billowSum * 2 - 1, profile.billowWeight);
+            elevation = Math.sign(elevation) * Math.pow(Math.abs(elevation), profile.sharpness);
+
+            let normalized = elevation * 0.5 + 0.5;
+            normalized = Math.pow(THREE.MathUtils.clamp(normalized, 0, 1), profile.plateauPower);
+
+            if (profile.striationStrength > 0) {
+                const striation = Math.sin((sampleDir.x + sampleDir.z) * profile.striationFrequency + profile.striationPhase);
+                normalized += striation * profile.striationStrength;
+            }
+
+            if (profile.equatorLift || profile.poleDrop) {
+                const latitude = Math.abs(sampleDir.y);
+                normalized += (1 - latitude) * profile.equatorLift;
+                normalized -= latitude * profile.poleDrop;
+            }
+
+            const craterSample = craterNoise(
+                sampleDir.x * profile.craterFrequency + profile.craterOffset.x,
+                sampleDir.y * profile.craterFrequency + profile.craterOffset.y,
+                sampleDir.z * profile.craterFrequency + profile.craterOffset.z
+            );
+            const craterValue = (craterSample + 1) * 0.5;
+            if (craterValue > profile.craterThreshold) {
+                const craterT = (craterValue - profile.craterThreshold) / Math.max(1e-6, 1 - profile.craterThreshold);
+                normalized -= Math.pow(craterT, profile.craterSharpness) * profile.craterDepth;
+            }
+
+            const lodParams = this.lodManager.lodParams;
+            normalized = THREE.MathUtils.clamp(normalized, 0, 1);
+
+            const displacement = (normalized - lodParams.oceanLevel) * lodParams.noiseAmplitude;
+            const finalRadius = lodParams.radius + displacement;
+            vertex.copy(normal).multiplyScalar(finalRadius);
+            positions.setXYZ(i, vertex.x, vertex.y, vertex.z);
+
+            const color = this.sampleColor(normalized, finalRadius, vertex.clone().normalize());
+            colors[i * 3 + 0] = color.r;
+            colors[i * 3 + 1] = color.g;
+            colors[i * 3 + 2] = color.b;
+        }
+
+        geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+        geometry.computeVertexNormals();
+        return geometry;
     }
 
     deriveTerrainProfile(seed) {
@@ -607,14 +696,15 @@ export class Planet {
     }
 
     sampleColor(elevation, radius, vertexPosition) {
+        const lodParams = this.lodManager.lodParams;
         let baseColor;
         const scratchColor = new THREE.Color();
 
-        if (elevation <= this.params.oceanLevel) {
-          const oceanT = this.params.oceanLevel <= 0 ? 0 : THREE.MathUtils.clamp(elevation / Math.max(this.params.oceanLevel, 1e-6), 0, 1);
+        if (elevation <= lodParams.oceanLevel) {
+          const oceanT = lodParams.oceanLevel <= 0 ? 0 : THREE.MathUtils.clamp(elevation / Math.max(lodParams.oceanLevel, 1e-6), 0, 1);
           baseColor = this.palette.ocean.clone().lerp(this.palette.shallow, Math.pow(oceanT, 0.65));
         } else {
-          const landT = THREE.MathUtils.clamp((elevation - this.params.oceanLevel) / Math.max(1 - this.params.oceanLevel, 1e-6), 0, 1);
+          const landT = THREE.MathUtils.clamp((elevation - lodParams.oceanLevel) / Math.max(1 - lodParams.oceanLevel, 1e-6), 0, 1);
 
           if (landT < 0.5) {
             const t = Math.pow(landT / 0.5, 1.1);
@@ -624,24 +714,24 @@ export class Planet {
             baseColor = this.palette.mid.clone().lerp(this.palette.high, highT);
           }
         }
-
-        if (this.params.icePolesEnabled && vertexPosition) {
+        const lodParams = this.lodManager.lodParams;
+        if (lodParams.icePolesEnabled && vertexPosition) {
           const latitude = Math.abs(vertexPosition.y);
-          const poleThreshold = this.params.icePolesCoverage;
+          const poleThreshold = lodParams.icePolesCoverage;
 
           if (latitude > (1 - poleThreshold)) {
             const iceStrength = (latitude - (1 - poleThreshold)) / poleThreshold;
 
-            const iceNoise = createNoise3D(() => new SeededRNG(this.params.seed).next());
+            const iceNoise = createNoise3D(() => new SeededRNG(lodParams.seed).next());
             const noiseValue = iceNoise(
-              vertexPosition.x * this.params.icePolesNoiseScale,
-              vertexPosition.y * this.params.icePolesNoiseScale,
-              vertexPosition.z * this.params.icePolesNoiseScale
+              vertexPosition.x * lodParams.icePolesNoiseScale,
+              vertexPosition.y * lodParams.icePolesNoiseScale,
+              vertexPosition.z * lodParams.icePolesNoiseScale
             );
 
             const noiseInfluence = (noiseValue + 1) * 0.5;
-            const finalIceStrength = iceStrength * (1 - this.params.icePolesNoiseStrength) +
-                                    iceStrength * noiseInfluence * this.params.icePolesNoiseStrength;
+            const finalIceStrength = iceStrength * (1 - lodParams.icePolesNoiseStrength) +
+                                    iceStrength * noiseInfluence * lodParams.icePolesNoiseStrength;
 
             baseColor.lerp(this.palette.icePoles, finalIceStrength);
           }
@@ -651,47 +741,50 @@ export class Planet {
     }
 
     updatePalette() {
-        this.palette.ocean.set(this.params.colorOcean);
-        this.palette.shallow.set(this.params.colorShallow);
-        this.palette.foam.set(this.params.colorFoam);
-        this.palette.low.set(this.params.colorLow);
-        this.palette.mid.set(this.params.colorMid);
-        this.palette.high.set(this.params.colorHigh);
-        this.palette.core.set(this.params.colorCore);
-        this.palette.atmosphere.set(this.params.atmosphereColor);
-        this.palette.icePoles.set(this.params.icePolesColor);
+        const lodParams = this.lodManager.lodParams;
+        this.palette.ocean.set(lodParams.colorOcean);
+        this.palette.shallow.set(lodParams.colorShallow);
+        this.palette.foam.set(lodParams.colorFoam);
+        this.palette.low.set(lodParams.colorLow);
+        this.palette.mid.set(lodParams.colorMid);
+        this.palette.high.set(lodParams.colorHigh);
+        this.palette.core.set(lodParams.colorCore);
+        this.palette.atmosphere.set(lodParams.atmosphereColor);
+        this.palette.icePoles.set(lodParams.icePolesColor);
 
-        this.atmosphereUniforms.sunColor.value.set(this.params.sunColor);
-        this.atmosphereUniforms.atmosphereColor.value.set(this.params.atmosphereColor);
+        this.atmosphereUniforms.sunColor.value.set(lodParams.sunColor);
+        this.atmosphereUniforms.atmosphereColor.value.set(lodParams.atmosphereColor);
     }
 
     updateCore() {
+        const lodParams = this.lodManager.lodParams;
         if (this.coreMesh) {
-          const coreScale = this.params.radius * this.params.coreSize;
+          const coreScale = lodParams.radius * lodParams.coreSize;
           this.coreMesh.scale.setScalar(coreScale);
-          this.coreMesh.material.color.set(this.params.colorCore);
-          this.coreMesh.visible = this.params.coreEnabled && this.params.coreVisible;
+          this.coreMesh.material.color.set(lodParams.colorCore);
+          this.coreMesh.visible = lodParams.coreEnabled && lodParams.coreVisible;
           this.coreMesh.material.needsUpdate = true;
         }
     }
 
     updateClouds() {
-        this.cloudsMaterial.opacity = this.params.cloudsOpacity;
+        const lodParams = this.lodManager.lodParams;
+        this.cloudsMaterial.opacity = lodParams.cloudsOpacity;
 
-        this.atmosphereUniforms.atmosphereIntensity.value = this.params.atmosphereIntensity;
-        this.atmosphereUniforms.sunBrightness.value = this.params.sunIntensity;
-        this.atmosphereUniforms.sunColor.value.set(this.params.sunColor);
-        this.atmosphereUniforms.atmosphereColor.value.set(this.params.atmosphereColor);
-        this.atmosphereUniforms.atmosphereFresnelPower.value = this.params.atmosphereFresnelPower;
-        this.atmosphereUniforms.atmosphereRimPower.value = this.params.atmosphereRimPower;
+        this.atmosphereUniforms.atmosphereIntensity.value = lodParams.atmosphereIntensity;
+        this.atmosphereUniforms.sunBrightness.value = lodParams.sunIntensity;
+        this.atmosphereUniforms.sunColor.value.set(lodParams.sunColor);
+        this.atmosphereUniforms.atmosphereColor.value.set(lodParams.atmosphereColor);
+        this.atmosphereUniforms.atmosphereFresnelPower.value = lodParams.atmosphereFresnelPower;
+        this.atmosphereUniforms.atmosphereRimPower.value = lodParams.atmosphereRimPower;
 
         const sunDirection = new THREE.Vector3();
         sunDirection.subVectors(this.sun.sunGroup.position, this.planetRoot.position).normalize();
         this.atmosphereUniforms.lightDirection.value.copy(sunDirection);
 
-        this.cloudsMesh.visible = this.params.cloudsOpacity > 0.001;
-        this.atmosphereMesh.visible = this.params.atmosphereOpacity > 0.001;
-        const cloudScale = Math.max(0.1, this.params.radius * (1 + Math.max(0, this.params.cloudHeight || 0.03)));
+        this.cloudsMesh.visible = lodParams.cloudsOpacity > 0.001;
+        this.atmosphereMesh.visible = lodParams.atmosphereOpacity > 0.001;
+        const cloudScale = Math.max(0.1, lodParams.radius * (1 + Math.max(0, lodParams.cloudHeight || 0.03)));
         this.cloudsMesh.scale.setScalar(cloudScale);
 
         this.cloudTextureDirty = true;
@@ -707,13 +800,15 @@ export class Planet {
     }
 
     updateTilt() {
-        const radians = THREE.MathUtils.degToRad(this.params.axisTilt);
+        const lodParams = this.lodManager.lodParams;
+        const radians = THREE.MathUtils.degToRad(lodParams.axisTilt);
         this.tiltGroup.rotation.z = radians;
         this.moonsGroup.rotation.z = radians;
         this.orbitLinesGroup.rotation.z = radians;
     }
 
     regenerateCloudTexture() {
+        const lodParams = this.lodManager.lodParams;
         const resScale = Math.max(0.25, Math.min(2.0, this.visualSettings?.noiseResolution ?? 1.0));
         const width = Math.max(64, Math.round(1024 * resScale));
         const height = Math.max(32, Math.round(512 * resScale));
@@ -724,10 +819,10 @@ export class Planet {
         const img = ctx.createImageData(width, height);
         const data = img.data;
 
-        const rng = new SeededRNG(`${this.params.seed || "default"}-clouds`);
+        const rng = new SeededRNG(`${lodParams.seed || "default"}-clouds`);
         const noise = createNoise3D(() => rng.next());
-        const scale = Math.max(0.2, this.params.cloudNoiseScale || 3.2);
-        const density = THREE.MathUtils.clamp(this.params.cloudDensity ?? 0.5, 0, 1);
+        const scale = Math.max(0.2, lodParams.cloudNoiseScale || 3.2);
+        const density = THREE.MathUtils.clamp(lodParams.cloudDensity ?? 0.5, 0, 1);
         const threshold = THREE.MathUtils.clamp(0.15 + (1 - density) * 0.75, 0.05, 0.9);
         const feather = 0.12;
 
@@ -751,7 +846,7 @@ export class Planet {
             }
             val = THREE.MathUtils.clamp(val, 0, 1);
             const a = THREE.MathUtils.clamp((val - threshold) / Math.max(1e-6, feather), 0, 1);
-            const alpha = Math.pow(a, 1.2) * this.params.cloudsOpacity;
+            const alpha = Math.pow(a, 1.2) * this.lodManager.lodParams.cloudsOpacity;
 
             const i = (y * width + x) * 4;
             data[i + 0] = 255;
@@ -779,8 +874,9 @@ export class Planet {
     }
 
     updateRings() {
+        const lodParams = this.lodManager.lodParams;
         if (!this.ringGroup) return;
-        if (!this.params.ringEnabled) {
+        if (!lodParams.ringEnabled) {
           this.ringMeshes.forEach((mesh) => {
             if (!mesh) return;
             if (mesh.material) {
@@ -797,11 +893,11 @@ export class Planet {
           return;
         }
 
-        const angle = THREE.MathUtils.degToRad(this.params.ringAngle || 0);
+        const angle = THREE.MathUtils.degToRad(lodParams.ringAngle || 0);
         const ringDetailScale = Math.max(0.25, Math.min(1.5, this.visualSettings?.ringDetail ?? 1.0));
         const segments = Math.max(32, Math.round(256 * ringDetailScale));
         const noiseResolutionScale = Math.max(0.25, Math.min(2.0, this.visualSettings?.noiseResolution ?? 1.0));
-        const ringDefs = Array.isArray(this.params.rings) ? this.params.rings : [];
+        const ringDefs = Array.isArray(lodParams.rings) ? lodParams.rings : [];
         if (ringDefs.length === 0) {
           this.ringMeshes.forEach((mesh) => {
             if (!mesh) return;
@@ -843,8 +939,8 @@ export class Planet {
         ringDefs.forEach((def, index) => {
           const startR = Math.max(1.05, def.start);
           const endR = Math.max(startR + 0.05, def.end);
-          const inner = Math.max(this.params.radius * startR, this.params.radius + 0.02);
-          const outer = Math.max(this.params.radius * endR, inner + 0.02);
+          const inner = Math.max(lodParams.radius * startR, lodParams.radius + 0.02);
+          const outer = Math.max(lodParams.radius * endR, inner + 0.02);
           const innerRatio = THREE.MathUtils.clamp(inner / outer, 0, 0.98);
 
           const mesh = this.ringMeshes[index];
@@ -904,7 +1000,7 @@ export class Planet {
 
           mesh.rotation.set(0, 0, 0);
           mesh.rotation.x = Math.PI / 2 + angle;
-          mesh.userData.spinSpeed = def.spinSpeed ?? (this.params.ringSpinSpeed || 0);
+          mesh.userData.spinSpeed = def.spinSpeed ?? (lodParams.ringSpinSpeed || 0);
         });
     }
 
@@ -966,7 +1062,7 @@ export class Planet {
           const eccentricity = THREE.MathUtils.clamp(moon.eccentricity ?? 0, 0, 0.95);
           const phase = (moon.phase ?? 0) % (Math.PI * 2);
 
-          if (!this.params.physicsEnabled) {
+          if (!this.lodManager.lodParams.physicsEnabled) {
             PHYSICS.computeOrbitPosition(semiMajor, eccentricity, phase, mesh.position);
             pivot.userData.physics = null;
             pivot.userData.trueAnomaly = phase;
@@ -985,7 +1081,7 @@ export class Planet {
             pivot.userData.maxTrajectoryPoints = 200;
           }
 
-          if (!this.params.physicsEnabled) {
+          if (!this.lodManager.lodParams.physicsEnabled) {
             this.updateOrbitLine(pivot.userData.orbit.geometry, moon);
             this.updateOrbitMaterial(pivot, true);
             this.alignOrbitLineWithPivot(pivot);
@@ -1001,7 +1097,7 @@ export class Planet {
           }
         });
 
-        if (this.params.physicsEnabled) {
+        if (this.lodManager.lodParams.physicsEnabled) {
           this.initMoonPhysics();
         } else {
             this.guiControllers.updateStabilityDisplay(this.moonSettings.length, this.moonSettings.length);
@@ -1097,10 +1193,10 @@ export class Planet {
     }
 
     syncOrbitLinesWithPivots() {
-        if (!this.params.showOrbitLines) return;
+        if (!this.lodManager.lodParams.showOrbitLines) return;
         this.moonsGroup.children.forEach((pivot) => {
           if (!pivot?.userData?.orbit) return;
-          if (this.params.physicsEnabled && pivot.userData.trajectoryHistory && pivot.userData.trajectoryHistory.length > 1) {
+          if (this.lodManager.lodParams.physicsEnabled && pivot.userData.trajectoryHistory && pivot.userData.trajectoryHistory.length > 1) {
             this.updateTrajectoryLine(pivot);
           } else {
             this.alignOrbitLineWithPivot(pivot);
@@ -1109,8 +1205,8 @@ export class Planet {
     }
 
     updateOrbitLinesVisibility() {
-        this.orbitLinesGroup.visible = this.params.showOrbitLines;
-        if (this.params.showOrbitLines) {
+        this.orbitLinesGroup.visible = this.lodManager.lodParams.showOrbitLines;
+        if (this.lodManager.lodParams.showOrbitLines) {
             this.syncOrbitLinesWithPivots();
         }
     }
@@ -1134,7 +1230,7 @@ export class Planet {
 
     initMoonPhysics() {
         PHYSICS.initMoonPhysics({
-            params: this.params,
+            params: this.lodManager.lodParams,
             planetRoot: this.planetRoot,
             moonsGroup: this.moonsGroup,
             moonSettings: this.moonSettings,
@@ -1152,9 +1248,10 @@ export class Planet {
     }
 
     spawnExplosion(position, color = new THREE.Color(0xffaa66), strength = 1) {
-        if (!this.params.explosionEnabled) return;
-        const effectiveStrength = Math.max(0.05, this.params.explosionStrength) * Math.max(0.1, strength);
-        const baseCount = Math.max(10, Math.round(this.params.explosionParticleBase || 80));
+        const lodParams = this.lodManager.lodParams;
+        if (!lodParams.explosionEnabled) return;
+        const effectiveStrength = Math.max(0.05, lodParams.explosionStrength) * Math.max(0.1, strength);
+        const baseCount = Math.max(10, Math.round(lodParams.explosionParticleBase || 80));
         let count = Math.max(20, Math.floor(baseCount * THREE.MathUtils.clamp(effectiveStrength, 0.2, 4)));
         if (this.visualSettings?.particleMax != null) {
           count = Math.min(count, Math.max(100, this.visualSettings.particleMax));
@@ -1165,7 +1262,7 @@ export class Planet {
         const colors = new Float32Array(count * 3);
 
         const baseCol = new THREE.Color();
-        baseCol.set(this.params.explosionColor || 0xffaa66);
+        baseCol.set(lodParams.explosionColor || 0xffaa66);
         const col = new THREE.Color(color);
 
         const colorVariations = [
@@ -1190,7 +1287,7 @@ export class Planet {
           ).normalize();
 
           const baseSpeed = THREE.MathUtils.lerp(3.5, 10.5, Math.random()) * effectiveStrength;
-          const speedVariation = THREE.MathUtils.lerp(0.5, 2.0, Math.random()) * (this.params.explosionSpeedVariation || 1.0);
+          const speedVariation = THREE.MathUtils.lerp(0.5, 2.0, Math.random()) * (lodParams.explosionSpeedVariation || 1.0);
           const speed = baseSpeed * speedVariation;
 
           velocities[i * 3 + 0] = dir.x * speed;
@@ -1198,7 +1295,7 @@ export class Planet {
           velocities[i * 3 + 2] = dir.z * speed;
 
           const baseColor = colorVariations[Math.floor(Math.random() * colorVariations.length)];
-          const colorVariation = this.params.explosionColorVariation || 0.5;
+          const colorVariation = lodParams.explosionColorVariation || 0.5;
           const tint = baseColor.clone().lerp(
             new THREE.Color(Math.random(), Math.random(), Math.random()),
             Math.random() * colorVariation
@@ -1218,9 +1315,9 @@ export class Planet {
         geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 
         const pointTexture = generateAnnulusTextureExt({ inner: 0.0, outer: 0.55, innerAlpha: 1, outerAlpha: 0 });
-        const sizeVariation = this.params.explosionSizeVariation || 1.0;
+        const sizeVariation = lodParams.explosionSizeVariation || 1.0;
         const material = new THREE.PointsMaterial({
-          size: Math.max(0.1, (this.params.explosionSize || 0.8) * Math.max(1, effectiveStrength) * sizeVariation),
+          size: Math.max(0.1, (lodParams.explosionSize || 0.8) * Math.max(1, effectiveStrength) * sizeVariation),
           map: pointTexture,
           vertexColors: true,
           transparent: true,
@@ -1237,8 +1334,8 @@ export class Planet {
           object: points,
           velocities,
           life: 0,
-          maxLife: Math.max(0.1, this.params.explosionLifetime || 1.6),
-          damping: THREE.MathUtils.clamp(this.params.explosionDamping ?? 0.9, 0.4, 1)
+          maxLife: Math.max(0.1, lodParams.explosionLifetime || 1.6),
+          damping: THREE.MathUtils.clamp(lodParams.explosionDamping ?? 0.9, 0.4, 1)
         });
     }
 
@@ -1304,13 +1401,13 @@ export class Planet {
         })();
         const bitangentLocal = tangentLocal ? new THREE.Vector3().crossVectors(up, tangentLocal).normalize() : null;
 
-        const craterAngle = THREE.MathUtils.clamp(impactRadius / Math.max(1e-6, this.params.radius), 0.01, Math.PI / 2);
+        const craterAngle = THREE.MathUtils.clamp(impactRadius / Math.max(1e-6, this.lodManager.lodParams.radius), 0.01, Math.PI / 2);
 
-        const baseDepth = Math.min(impactRadius * 0.45, (this.params.noiseAmplitude || 0.5) * 0.6 + 0.02);
+        const baseDepth = Math.min(impactRadius * 0.45, (this.lodManager.lodParams.noiseAmplitude || 0.5) * 0.6 + 0.02);
         const depth = THREE.MathUtils.clamp(baseDepth * THREE.MathUtils.clamp(strength, 0.2, 3.5), 0.005, impactRadius);
 
         const obliq = THREE.MathUtils.clamp(isFinite(obliquity) ? obliquity : 0, 0, Math.PI / 2);
-        const elongBase = (this.params.impactElongationMul ?? 1.6);
+        const elongBase = (this.lodManager.lodParams.impactElongationMul ?? 1.6);
         const elongation = tangentLocal ? (1 + elongBase * (obliq / (Math.PI / 2))) : 1;
         const minorScale = 1 / elongation;
 
