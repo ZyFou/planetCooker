@@ -1136,7 +1136,7 @@ initializeApp().then(() => {
     raycaster.setFromCamera(mouse, camera);
 
     const moonMeshes = planet.moonsGroup.children.map(p => p.userData.mesh).filter(m => m);
-    const focusableObjects = [planet.planetMesh, sun.sunSphere, ...moonMeshes];
+    const focusableObjects = [planet.planetMesh, sun.sunVisual, ...moonMeshes];
     const intersects = raycaster.intersectObjects(focusableObjects, true);
 
     if (intersects.length > 0) {
@@ -1359,7 +1359,7 @@ function setupMobilePanelToggle() {
       if (targetId === 'planet') {
           focusOnObject(planet.planetMesh);
       } else if (targetId === 'sun') {
-          focusOnObject(sun.sunSphere);
+          focusOnObject(sun.sunVisual);
       } else if (targetId.startsWith('moon-')) {
           const moonIndex = parseInt(targetId.split('-')[1], 10);
           if (!isNaN(moonIndex) && moonIndex < planet.moonsGroup.children.length) {
