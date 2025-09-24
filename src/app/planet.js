@@ -42,11 +42,13 @@ const atmosphereFragmentShader = `
     }
 `;
 
-const PLANET_SURFACE_LOD_ORDER = ["high", "medium", "low"];
+const PLANET_SURFACE_LOD_ORDER = ["ultra", "high", "medium", "low", "micro"];
 const PLANET_SURFACE_LOD_CONFIG = {
-    high: { detailOffset: 1, distanceMultiplier: 4, gasSegmentScale: 1.6, textureScale: 1.45 },
-    medium: { detailOffset: 0, distanceMultiplier: 12, gasSegmentScale: 0.95, textureScale: 0.9 },
-    low: { detailOffset: -2, distanceMultiplier: 28, gasSegmentScale: 0.35, textureScale: 0.35 }
+    ultra: { detailOffset: 2, distanceMultiplier: 2, gasSegmentScale: 2.0, textureScale: 1.75 },
+    high: { detailOffset: 1, distanceMultiplier: 6, gasSegmentScale: 1.35, textureScale: 1.2 },
+    medium: { detailOffset: 0, distanceMultiplier: 14, gasSegmentScale: 0.9, textureScale: 0.85 },
+    low: { detailOffset: -2, distanceMultiplier: 32, gasSegmentScale: 0.45, textureScale: 0.45 },
+    micro: { detailOffset: -4, distanceMultiplier: 48, gasSegmentScale: 0.25, textureScale: 0.28 }
 };
 
 export class Planet {
@@ -213,7 +215,8 @@ export class Planet {
     }
 
     _createSurfaceMeshPlaceholder(levelKey, orderIndex = 0) {
-        const baseDetail = levelKey === "high" ? 4 : levelKey === "medium" ? 3 : 2;
+        const baseDetailMap = { ultra: 5, high: 4, medium: 3, low: 2, micro: 1 };
+        const baseDetail = baseDetailMap[levelKey] ?? 2;
         const geometry = new THREE.IcosahedronGeometry(1, Math.max(0, baseDetail));
         const mesh = new THREE.Mesh(geometry, this.planetMaterial);
         mesh.castShadow = true;
@@ -422,8 +425,8 @@ export class Planet {
         if (camera && this.surfaceLOD) {
             this.surfaceLOD.updateMatrixWorld(true);
             this.surfaceLOD.update(camera);
-            this._syncActiveSurfaceMesh();
         }
+        this._syncActiveSurfaceMesh();
 
         const rotationDelta = this.params.rotationSpeed * simulationDelta * Math.PI * 2;
         this.spinGroup.rotation.y += rotationDelta;
