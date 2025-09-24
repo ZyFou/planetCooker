@@ -12,13 +12,19 @@ const surfaceVertexShader = `
     varying vec3 vNormal;
     varying vec2 vUv;
     varying vec3 vPosition;
+    varying vec3 vWorldPosition;
+    varying vec4 vShadowCoord;
 
     void main() {
         vColor = color;
         vNormal = normalize(normalMatrix * normal);
         vUv = uv;
         vPosition = position;
+        vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        
+        // Shadow mapping support
+        vShadowCoord = gl_Position;
     }
 `;
 
@@ -27,11 +33,37 @@ const surfaceFragmentShader = `
     varying vec3 vNormal;
     varying vec2 vUv;
     varying vec3 vPosition;
+    varying vec3 vWorldPosition;
+    varying vec4 vShadowCoord;
 
     uniform sampler2D tRock;
     uniform sampler2D tSand;
     uniform sampler2D tSplat;
     uniform float detailStrength;
+    uniform vec3 lightDirection;
+    uniform vec3 lightColor;
+    uniform float lightIntensity;
+    uniform vec3 ambientLightColor;
+    uniform float ambientLightIntensity;
+    uniform sampler2D shadowMap;
+    uniform mat4 shadowMatrix;
+
+    // Shadow mapping function
+    float getShadow(vec4 shadowCoord) {
+        vec3 shadowCoords = shadowCoord.xyz / shadowCoord.w;
+        shadowCoords = shadowCoords * 0.5 + 0.5;
+        
+        if (shadowCoords.x < 0.0 || shadowCoords.x > 1.0 || 
+            shadowCoords.y < 0.0 || shadowCoords.y > 1.0) {
+            return 1.0;
+        }
+        
+        float depth = texture2D(shadowMap, shadowCoords.xy).r;
+        float currentDepth = shadowCoords.z;
+        
+        float bias = 0.001;
+        return currentDepth - bias > depth ? 0.3 : 1.0;
+    }
 
     void main() {
         vec4 splat = texture2D(tSplat, vUv);
@@ -43,7 +75,25 @@ const surfaceFragmentShader = `
         detail = detail * 0.6 + 0.4;
         float detailFactor = mix(1.0, detail, clamp(detailStrength, 0.0, 1.0));
 
-        vec3 finalColor = vColor * detailFactor;
+        vec3 baseColor = vColor * detailFactor;
+        
+        // Normalize the normal
+        vec3 normal = normalize(vNormal);
+        vec3 lightDir = normalize(lightDirection);
+        
+        // Ambient lighting
+        vec3 ambient = baseColor * ambientLightColor * ambientLightIntensity;
+        
+        // Diffuse lighting
+        float NdotL = max(dot(normal, lightDir), 0.0);
+        vec3 diffuse = baseColor * lightColor * lightIntensity * NdotL;
+        
+        // Shadow calculation
+        float shadow = getShadow(vShadowCoord);
+        
+        // Combine lighting with shadows
+        vec3 finalColor = ambient + diffuse * shadow;
+        
         gl_FragColor = vec4(finalColor, 1.0);
     }
 `;
@@ -371,6 +421,28 @@ export class Planet {
                 }
             }, 0);
         }
+    }
+
+    _updateMegaLODLighting() {
+        const megaMesh = this.surfaceLODLevels?.mega;
+        if (!megaMesh?.material?.uniforms) return;
+        
+        // Calculate light direction from sun to planet
+        const sunDirection = new THREE.Vector3();
+        if (this.sun?.sunGroup) {
+            sunDirection.subVectors(this.sun.sunGroup.position, this.planetRoot.position).normalize();
+        } else {
+            sunDirection.set(1, 0, 0); // Default direction
+        }
+        
+        // Update lighting uniforms
+        megaMesh.material.uniforms.lightDirection.value.copy(sunDirection);
+        megaMesh.material.uniforms.lightColor.value.set(this.params.sunColor || 0xffffff);
+        megaMesh.material.uniforms.lightIntensity.value = this.params.sunIntensity || 1.0;
+        
+        // Update ambient light (matches scene ambient light: 0x6f87b6, 0.35)
+        megaMesh.material.uniforms.ambientLightColor.value.setHex(0x6f87b6);
+        megaMesh.material.uniforms.ambientLightIntensity.value = 0.35;
     }
 
     _disposeGasLODResources() {
@@ -734,15 +806,12 @@ export class Planet {
                 const rockTexture = generateRockTexture({ seed: this.params.seed });
                 const sandTexture = generateSandTexture({ seed: this.params.seed });
 
-                const material = new THREE.ShaderMaterial({
-                    uniforms: {
-                        tRock: { value: rockTexture },
-                        tSand: { value: sandTexture },
-                        tSplat: { value: splatTexture },
-                        detailStrength: { value: 0.35 },
-                    },
-                    vertexShader: surfaceVertexShader,
-                    fragmentShader: surfaceFragmentShader,
+                // Use MeshStandardMaterial for proper shadow support
+                const material = new THREE.MeshStandardMaterial({
+                    vertexColors: true,
+                    roughness: 0.82,
+                    metalness: 0.12,
+                    flatShading: false
                 });
                 this._assignSurfaceMaterial(levelKey, material);
             } else {
