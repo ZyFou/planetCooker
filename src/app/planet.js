@@ -464,7 +464,7 @@ class CubeFaceChunk {
         this.isFadingIn = false; 
         this.manager.planet._setLODFadeAlpha(this.mesh, 1);
         // Finaliser avec opacité pleine
-        if (this.mesh.material) {
+        if (this.mesh && this.mesh.material) {
           this.mesh.material.depthWrite = true;
           this.mesh.material.alphaHash = false;
           this.mesh.material.transparent = false;
@@ -482,12 +482,14 @@ class CubeFaceChunk {
       
       if (t>=1) {
         this.isFadingOut = false;
-        // remove & dispose
-        const m = this.mesh;
-        this.mesh = null;
-        if (m.geometry) m.geometry.dispose();
-        if (m.material) m.material.dispose();
-        m.removeFromParent();
+        if (this.mesh) {
+          this.mesh.visible = false; // <- force
+          const m = this.mesh;
+          this.mesh = null;
+          if (m.geometry) m.geometry.dispose();
+          if (m.material) m.material.dispose();
+          m.removeFromParent();
+        }
       }
     }
 
@@ -716,8 +718,28 @@ class ChunkedLODSphere {
     return g;
   }
 
+  // Exemple simple : invalider toutes les X ms ou si rotation Δ>ε
+  _needsRecomputeBounds() {
+    const now = performance.now();
+    if (!this._lastBoundsT) this._lastBoundsT = 0;
+    const rotY = this.planet.spinGroup.rotation.y;
+    const changed = Math.abs((this._lastRotY ?? 0) - rotY) > 0.005 || (now - this._lastBoundsT) > 250;
+    if (changed) { this._lastRotY = rotY; this._lastBoundsT = now; return true; }
+    return false;
+  }
+
   // parcours + split/merge + fade
   update(camera) {
+    // 0) si la planète a tourné ou bougé, rafraîchir les bounds des feuilles visibles
+    if (this._needsRecomputeBounds()) {
+      const stack = [...this.roots];
+      for (const n of stack) {
+        // on peut limiter aux feuilles pour le coût
+        if (n.mesh) n.computeBoundsWorld(); 
+        if (n.children) stack.push(...n.children);
+      }
+    }
+
     // 1) split pass
     const stack = [...this.roots];
     for (const node of stack) {
@@ -1934,22 +1956,29 @@ export class Planet {
           // --- Activer le LOD par chunks pour les planètes rocheuses ---
           if (this.chunkedLODEnabled) {
             // cacher l'ancien LOD global
-            if (this.surfaceLOD) this.surfaceLOD.visible = false;
+            if (this.surfaceLOD) {
+              this.surfaceLOD.visible = false;
+              // Empêcher tout auto-update ou fade de ce côté
+              this.setSmoothLODTransitions(false);
+            }
 
             // reconstruire le chunk manager avec les params actuels
             if (this.chunkLOD) { this.chunkLOD.dispose(); this.chunkLOD = null; }
             this.chunkLOD = new ChunkedLODSphere(this, {
               maxLevel: 6,
-              baseResolution: 13,
-              splitDistanceK: 6.5,
-              hysteresis: 1.35,
+              baseResolution: 9,  // Réduit pour plus de chunks
+              splitDistanceK: 5.5,
+              hysteresis: 1.5,
               fadeDurationMs: 180,
               skirtDepth: 0.004,
               chunkFadeSpread: this._lodChunkFadeSpread ?? 0.25
             });
           } else {
             if (this.chunkLOD) { this.chunkLOD.dispose(); this.chunkLOD = null; }
-            if (this.surfaceLOD) this.surfaceLOD.visible = true;
+            if (this.surfaceLOD) {
+              this.surfaceLOD.visible = true;
+              this.setSmoothLODTransitions(true);
+            }
           }
         }
 
