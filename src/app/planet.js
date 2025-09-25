@@ -148,12 +148,12 @@ const PLANET_SURFACE_LOD_ORDER = [
 class LODTransitionManager {
     constructor() {
         this.currentLOD = 'medium';
+        this.previousLOD = 'medium';
         this.targetLOD = 'medium';
         this.transitionProgress = 1.0;
-        this.transitionSpeed = 0.02; // Adjust for faster/slower transitions
         this.isTransitioning = false;
         this.transitionStartTime = 0;
-        this.transitionDuration = 1000; // milliseconds
+        this.transitionDuration = 320; // milliseconds
     }
 
     // Smooth interpolation between two LOD configs
@@ -176,14 +176,15 @@ class LODTransitionManager {
 
     // Start transition to new LOD level
     startTransition(targetLOD) {
-        if (targetLOD === this.currentLOD && this.transitionProgress >= 1.0) {
-            return; // Already at target
+        if (targetLOD === this.targetLOD && !this.isTransitioning) {
+            return;
         }
-        
+
+        this.previousLOD = this.currentLOD;
         this.targetLOD = targetLOD;
-        this.isTransitioning = true;
+        this.isTransitioning = this.previousLOD !== this.targetLOD;
         this.transitionStartTime = performance.now();
-        this.transitionProgress = 0.0;
+        this.transitionProgress = this.isTransitioning ? 0.0 : 1.0;
     }
 
     // Update transition progress
@@ -191,16 +192,18 @@ class LODTransitionManager {
         if (!this.isTransitioning) return false;
 
         const elapsed = performance.now() - this.transitionStartTime;
-        this.transitionProgress = Math.min(elapsed / this.transitionDuration, 1.0);
+        const duration = Math.max(1, this.transitionDuration);
+        this.transitionProgress = Math.min(elapsed / duration, 1.0);
 
         if (this.transitionProgress >= 1.0) {
             this.currentLOD = this.targetLOD;
+            this.previousLOD = this.targetLOD;
             this.isTransitioning = false;
             this.transitionProgress = 1.0;
-            return true; // Transition complete
+            return true;
         }
 
-        return false; // Still transitioning
+        return false;
     }
 
     // Get current interpolated LOD config
@@ -209,15 +212,15 @@ class LODTransitionManager {
             return PLANET_SURFACE_LOD_CONFIG[this.currentLOD];
         }
 
-        const currentConfig = PLANET_SURFACE_LOD_CONFIG[this.currentLOD];
+        const currentConfig = PLANET_SURFACE_LOD_CONFIG[this.previousLOD];
         const targetConfig = PLANET_SURFACE_LOD_CONFIG[this.targetLOD];
-        
+
         return this.interpolateLODConfig(currentConfig, targetConfig, this.transitionProgress);
     }
 
     // Get current LOD level name (for debugging)
     getCurrentLODLevel() {
-        return this.isTransitioning ? `${this.currentLOD}→${this.targetLOD}` : this.currentLOD;
+        return this.isTransitioning ? `${this.previousLOD}->${this.targetLOD}` : this.currentLOD;
     }
 }
 // Add "intersteps" between each main LOD for finer control
@@ -255,6 +258,477 @@ const PLANET_SURFACE_LOD_CONFIG = {
     microLow:  { detailOffset: -4.0,  rockDetailMultiplier: 0.1,  rockDetailMin: 1,  distanceMultiplier: 36.0, gasSegmentScale: 0.4,  textureScale: 0.1 }
 };
 
+// --- Chunked LOD over a Cube-Sphere -------------------------------------------------------------
+
+const CHUNK_LOD_DEFAULTS = {
+  enabled: true,
+  maxLevel: 6,                 // profondeur max de quadtree (≈ 90° / 2^L par face)
+  baseResolution: 17,          // (n x n) vertices par chunk racine ; rester impair pour UV/centres
+  splitDistanceK: 6.5,         // tuning: plus grand → split plus tôt (plus de détails)
+  hysteresis: 1.35,            // anti-oscillation split/merge (merge = split / hysteresis)
+  fadeDurationMs: 280,
+  skirtDepth: 0.004,           // petites jupes anti-cracks (en fraction du radius)
+  chunkFadeSpread: 0.45        // utilise ton _lodChunkFadeSpread
+};
+
+// map face index → base axes (cube -> sphere)
+const FACE_AXES = [
+  // +X, -X, +Y, -Y, +Z, -Z
+  { u:[0,0,  -1], v:[0,1,0],  n:[1,0,0] },   // +X
+  { u:[0,0,   1], v:[0,1,0],  n:[-1,0,0] },  // -X
+  { u:[1,0,  0], v:[0,0,1],   n:[0,1,0] },   // +Y
+  { u:[1,0,  0], v:[0,0,-1],  n:[0,-1,0] },  // -Y
+  { u:[1,0,  0], v:[0,1,0],   n:[0,0,1] },   // +Z
+  { u:[-1,0, 0], v:[0,1,0],   n:[0,0,-1] },  // -Z
+];
+
+function vec3(a){ return new THREE.Vector3(a[0],a[1],a[2]); }
+
+// cube -> sphere (exact)
+function cubeToSphere(x, y, z) {
+  const x2 = x*x, y2 = y*y, z2 = z*z;
+  const sx = x * Math.sqrt(1 - (y2/2) - (z2/2) + (y2*z2/3));
+  const sy = y * Math.sqrt(1 - (z2/2) - (x2/2) + (z2*x2/3));
+  const sz = z * Math.sqrt(1 - (x2/2) - (y2/2) + (x2*y2/3));
+  return new THREE.Vector3(sx, sy, sz);
+}
+
+class CubeFaceChunk {
+  constructor(manager, faceIndex, bounds, level, parent=null) {
+    this.manager = manager;
+    this.faceIndex = faceIndex;  // 0..5
+    this.bounds = bounds;        // {umin,umax,vmin,vmax} dans [-1,1] face plane
+    this.level = level;          // 0 = racine
+    this.parent = parent;
+    this.children = null;
+    this.mesh = null;
+    this.isFadingIn = false;
+    this.isFadingOut = false;
+    this.fadeStart = 0;
+    this.isLeaf = true;
+    this.screenMetric = 0;
+    this.centerWorld = new THREE.Vector3();
+    this.radiusWorld = 0;        // bounding sphere approx pour ce patch
+  }
+
+  dispose() {
+    if (this.mesh) {
+      if (this.mesh.geometry) this.mesh.geometry.dispose();
+      if (this.mesh.material) this.mesh.material.dispose();
+      this.mesh.removeFromParent();
+      this.mesh = null;
+    }
+    if (this.children) {
+      this.children.forEach(c => c.dispose());
+      this.children = null;
+    }
+  }
+
+  // crée/maj géométrie du chunk
+  ensureMesh() {
+    if (this.mesh) return;
+    const planet = this.manager.planet;
+    const g = this.manager.buildPatchGeometry(this.faceIndex, this.bounds, this.level);
+    const mat = this.manager.material;
+    this.mesh = new THREE.Mesh(g, mat);
+    this.mesh.castShadow = true;
+    this.mesh.receiveShadow = true;
+    this.mesh.frustumCulled = true;
+    planet._installLODFadeHooks(this.mesh);
+    planet._setLODFadeAlpha(this.mesh, 0); // start transparent for fade-in
+    this.manager.group.add(this.mesh);
+
+    // approx bounding sphere: centre du patch et rayon ~ demi-diagonale locale
+    this.computeBoundsWorld();
+  }
+
+  computeBoundsWorld() {
+    const {umin,umax,vmin,vmax} = this.bounds;
+    const fAxes = FACE_AXES[this.faceIndex];
+    const U = vec3(fAxes.u), V = vec3(fAxes.v), N = vec3(fAxes.n);
+    const corners = [
+      [umin,vmin],[umax,vmin],[umax,vmax],[umin,vmax]
+    ];
+    const R = this.manager.params.radius;
+    const tmp = new THREE.Vector3();
+    const acc = new THREE.Vector3();
+    acc.set(0,0,0);
+    for (const [u,v] of corners) {
+      tmp.copy(N).addScaledVector(U,u).addScaledVector(V,v);
+      cubeToSphere(tmp.x, tmp.y, tmp.z).multiplyScalar(R);
+      acc.add(tmp);
+    }
+    this.centerWorld.copy(acc.multiplyScalar(0.25)).add(this.manager.originWorld);
+    // rayon approx = angle du patch * R
+    const halfDU = (umax-umin)*0.5, halfDV = (vmax-vmin)*0.5;
+    const angular = Math.max(halfDU, halfDV) * (Math.PI/2); // chaque face couvre 90°
+    this.radiusWorld = Math.max(angular * R, 0.001);
+  }
+
+  // renvoie true si devrait splitter
+  shouldSplit(camera) {
+    if (this.level >= this.manager.cfg.maxLevel) return false;
+    const camPos = camera.getWorldPosition(new THREE.Vector3());
+    const d = camPos.distanceTo(this.centerWorld);
+    // simple metric: si patch “projete” à l’écran dépasse un certain seuil
+    // approx taille-écran ~ (diamètre chunk / distance) * focal
+    const planet = this.manager.planet;
+    const R = this.manager.params.radius;
+    const diameter = Math.max(0.001, 2 * this.radiusWorld);
+    const splitNear = R * this.manager.cfg.splitDistanceK * Math.pow(0.5, this.level);
+    // plus on est près que splitNear, plus on split
+    const metric = splitNear / Math.max(d, 1e-3);
+    this.screenMetric = metric;
+    return metric > 1.0;
+  }
+
+  shouldMerge(camera) {
+    if (!this.isLeaf) return false; // merge decision occurs on parent handling children
+    const camPos = camera.getWorldPosition(new THREE.Vector3());
+    const d = camPos.distanceTo(this.centerWorld);
+    const R = this.manager.params.radius;
+    const splitNear = R * this.manager.cfg.splitDistanceK * Math.pow(0.5, this.level);
+    const metric = splitNear / Math.max(d, 1e-3);
+    return metric < (1.0 / this.manager.cfg.hysteresis);
+  }
+
+  // split en 4 enfants (quadtree)
+  split() {
+    if (this.children) return;
+    const {umin,umax,vmin,vmax} = this.bounds;
+    const umid = (umin+umax)/2, vmid = (vmin+vmax)/2;
+    const l = this.level+1;
+    this.children = [
+      new CubeFaceChunk(this.manager, this.faceIndex, { umin, umax:umid, vmin, vmax:vmid }, l, this),
+      new CubeFaceChunk(this.manager, this.faceIndex, { umin:umid, umax, vmin, vmax:vmid }, l, this),
+      new CubeFaceChunk(this.manager, this.faceIndex, { umin:umid, umax, vmin:vmid, vmax }, l, this),
+      new CubeFaceChunk(this.manager, this.faceIndex, { umin, umax:umid, vmin:vmid, vmax }, l, this),
+    ];
+    this.isLeaf = false;
+
+    // fade in children & fade out self
+    const now = performance.now();
+    this.children.forEach(c => {
+      c.ensureMesh();
+      c.isFadingIn = true;
+      c.fadeStart = now;
+      this.manager.planet._setLODFadeAlpha(c.mesh, 0);
+    });
+
+    if (this.mesh) {
+      this.isFadingOut = true;
+      this.fadeStart = now;
+      this.manager.planet._setLODFadeAlpha(this.mesh, 1);
+    }
+  }
+
+  // détruit récursivement les enfants avec fondu inverse
+  merge() {
+    if (!this.children) return;
+    const now = performance.now();
+    // fade in parent (if exists)
+    if (this.mesh) {
+      this.isFadingIn = true;
+      this.fadeStart = now;
+      this.manager.planet._setLODFadeAlpha(this.mesh, 0);
+    } else {
+      this.ensureMesh();
+      this.isFadingIn = true;
+      this.fadeStart = now;
+    }
+    // fade out children
+    this.children.forEach(c => {
+      if (c.mesh) {
+        c.isFadingOut = true;
+        c.fadeStart = now;
+        this.manager.planet._setLODFadeAlpha(c.mesh, 1);
+      }
+    });
+  }
+
+  tickFade() {
+    const cfg = this.manager.cfg;
+    const tNow = performance.now();
+    const ease = (t)=> (t<0?0:t>1?1:(t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2));
+
+    if (this.isFadingIn && this.mesh) {
+      const t = (tNow - this.fadeStart)/cfg.fadeDurationMs;
+      this.manager.planet._setLODFadeProfile(this.mesh, { mode:'in', progress:ease(t), spread:this.manager.cfg.chunkFadeSpread, ease:1.2 });
+      if (t>=1) { this.isFadingIn = false; this.manager.planet._setLODFadeAlpha(this.mesh, 1); }
+    }
+    if (this.isFadingOut && this.mesh) {
+      const t = (tNow - this.fadeStart)/cfg.fadeDurationMs;
+      this.manager.planet._setLODFadeProfile(this.mesh, { mode:'out', progress:ease(t), spread:this.manager.cfg.chunkFadeSpread, ease:1.2 });
+      if (t>=1) {
+        this.isFadingOut = false;
+        // remove & dispose
+        const m = this.mesh;
+        this.mesh = null;
+        if (m.geometry) m.geometry.dispose();
+        if (m.material) m.material.dispose();
+        m.removeFromParent();
+      }
+    }
+
+    if (!this.isLeaf && this.children) {
+      let allGone = true;
+      for (const c of this.children) {
+        c.tickFade();
+        if (c.isFadingOut || c.mesh) allGone = false;
+      }
+      if (allGone) {
+        // enfants totalement retirés
+        this.children.forEach(c => c.dispose());
+        this.children = null;
+        this.isLeaf = true;
+      }
+    }
+  }
+}
+
+class ChunkedLODSphere {
+  constructor(planet, cfg={}) {
+    this.planet = planet;
+    this.cfg = {...CHUNK_LOD_DEFAULTS, ...cfg};
+    this.params = planet.params;
+    this.group = new THREE.Group();
+    this.group.name = 'ChunkedLODSphere';
+    planet.spinGroup.add(this.group);
+
+    // origine monde (pour centrage)
+    this.originWorld = new THREE.Vector3(0,0,0);
+
+    // matériau partagé (vertexColors comme ton mesh rocky)
+    this.material = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.82,
+      metalness: 0.12,
+      flatShading: false
+    });
+
+    // bruit/profil identiques à rebuildPlanet()
+    this._initNoise();
+
+    // 6 faces racines
+    this.roots = [];
+    for (let f=0; f<6; f++) {
+      const root = new CubeFaceChunk(this, f, { umin:-1,umax:1,vmin:-1,vmax:1 }, 0, null);
+      root.ensureMesh();  // visible via fade
+      this.planet._setLODFadeAlpha(root.mesh, 1);
+      this.roots.push(root);
+    }
+  }
+
+  dispose() {
+    this.roots.forEach(r => r.dispose());
+    this.roots = [];
+    if (this.group) {
+      this.group.removeFromParent();
+      this.group = null;
+    }
+  }
+
+  _initNoise() {
+    const rng = new SeededRNG(this.params.seed);
+    const noiseRng = rng.fork();
+    this.baseNoise = createNoise3D(() => noiseRng.next());
+    this.ridgeNoise = createNoise3D(() => noiseRng.next());
+    this.warpNoiseX = createNoise3D(() => noiseRng.next());
+    this.warpNoiseY = createNoise3D(() => noiseRng.next());
+    this.warpNoiseZ = createNoise3D(() => noiseRng.next());
+    this.craterNoise = createNoise3D(() => noiseRng.next());
+    this.profile = this.planet.deriveTerrainProfile(this.params.seed);
+
+    // offsets par couche
+    this.offsets = [];
+    for (let i = 0; i < this.params.noiseLayers; i++) {
+      const fork = noiseRng.fork();
+      this.offsets.push(new THREE.Vector3(
+        fork.nextFloat(-128,128),
+        fork.nextFloat(-128,128),
+        fork.nextFloat(-128,128)
+      ));
+    }
+  }
+
+  // fabrique la géométrie du patch en grille quad (convertie en triangles)
+  buildPatchGeometry(faceIndex, bounds, level) {
+    const n = Math.max(5, this.cfg.baseResolution * Math.pow(2, Math.min(level, this.cfg.maxLevel))); // grid points
+    const verts = n * n;
+    const idxCount = (n-1)*(n-1)*6;
+
+    const g = new THREE.BufferGeometry();
+    const positions = new Float32Array(verts*3);
+    const colors = new Float32Array(verts*3);
+    const uvs = new Float32Array(verts*2);
+    const indices = new Uint32Array(idxCount);
+
+    const fAxes = FACE_AXES[faceIndex];
+    const U = vec3(fAxes.u), V = vec3(fAxes.v), N = vec3(fAxes.n);
+
+    const { umin,umax,vmin,vmax } = bounds;
+    const R = this.params.radius;
+    const skirt = this.cfg.skirtDepth * R;
+
+    const vpos = new THREE.Vector3();
+    const unit = new THREE.Vector3();
+
+    let ip = 0, iu = 0, ii = 0;
+
+    // --- vertices
+    for (let j=0;j<n;j++){
+      const v = j/(n-1);
+      const vv = THREE.MathUtils.lerp(vmin, vmax, v);
+      for (let i=0;i<n;i++){
+        const u = i/(n-1);
+        const uu = THREE.MathUtils.lerp(umin, umax, u);
+
+        // pos cube -> sphere
+        const c = N.clone().addScaledVector(U, uu).addScaledVector(V, vv);
+        unit.copy(cubeToSphere(c.x, c.y, c.z)).normalize();
+
+        // === displacement (copie compacte de _buildRockyGeometry) ===
+        let amplitude = 1;
+        let frequency = this.params.noiseFrequency;
+        let totalAmp = 0, sum = 0, ridgeSum = 0, billowSum = 0;
+
+        for (let layer=0; layer<this.params.noiseLayers; layer++){
+          const off = this.offsets[layer];
+          const sx = unit.x * frequency + off.x;
+          const sy = unit.y * frequency + off.y;
+          const sz = unit.z * frequency + off.z;
+
+          const s = this.baseNoise(sx, sy, sz);
+          sum += s * amplitude;
+
+          const rs = this.ridgeNoise(
+            sx * this.profile.ridgeFrequency,
+            sy * this.profile.ridgeFrequency,
+            sz * this.profile.ridgeFrequency
+          );
+          ridgeSum += (1 - Math.abs(rs)) * amplitude;
+
+          billowSum += Math.pow(Math.abs(s), this.profile.ruggedPower) * amplitude;
+
+          totalAmp += amplitude;
+          amplitude *= this.params.persistence;
+          frequency *= this.params.lacunarity;
+        }
+        if (totalAmp>0){ sum/=totalAmp; ridgeSum/=totalAmp; billowSum/=totalAmp; }
+
+        let elev = sum;
+        elev = THREE.MathUtils.lerp(elev, ridgeSum*2-1, this.profile.ridgeWeight);
+        elev = THREE.MathUtils.lerp(elev, billowSum*2-1, this.profile.billowWeight);
+        elev = Math.sign(elev)*Math.pow(Math.abs(elev), this.profile.sharpness);
+
+        let normalized = elev*0.5 + 0.5;
+        normalized = Math.pow(THREE.MathUtils.clamp(normalized,0,1), this.profile.plateauPower);
+
+        if (this.profile.striationStrength>0){
+          const str = Math.sin((unit.x + unit.z) * this.profile.striationFrequency + this.profile.striationPhase);
+          normalized += str * this.profile.striationStrength;
+        }
+        if (this.profile.equatorLift || this.profile.poleDrop){
+          const lat = Math.abs(unit.y);
+          normalized += (1-lat)*this.profile.equatorLift;
+          normalized -= lat*this.profile.poleDrop;
+        }
+
+        const cSamp = this.craterNoise(
+          unit.x*this.profile.craterFrequency + this.profile.craterOffset.x,
+          unit.y*this.profile.craterFrequency + this.profile.craterOffset.y,
+          unit.z*this.profile.craterFrequency + this.profile.craterOffset.z
+        );
+        const cVal = (cSamp+1)*0.5;
+        if (cVal > this.profile.craterThreshold){
+          const cT = (cVal - this.profile.craterThreshold) / Math.max(1e-6, 1 - this.profile.craterThreshold);
+          normalized -= Math.pow(cT, this.profile.craterSharpness) * this.profile.craterDepth;
+        }
+        normalized = THREE.MathUtils.clamp(normalized, 0, 1);
+
+        const displacement = (normalized - this.params.oceanLevel) * this.params.noiseAmplitude;
+        const finalR = R + displacement;
+
+        vpos.copy(unit).multiplyScalar(finalR);
+
+        // skirts aux bords pour masquer cracks de niveaux adjacents
+        const onEdge = (i===0 || j===0 || i===n-1 || j===n-1);
+        if (onEdge) vpos.addScaledVector(unit, -skirt);
+
+        // write pos
+        positions[ip+0]=vpos.x; positions[ip+1]=vpos.y; positions[ip+2]=vpos.z; ip+=3;
+
+        // color via palette existante
+        const col = this.planet.sampleColor(normalized, finalR, unit);
+        colors[iu+0]=col.r; colors[iu+1]=col.g; colors[iu+2]=col.b; iu+=3;
+
+        // UV sphériques
+        const Uu = Math.atan2(unit.x, unit.z)/(2*Math.PI)+0.5;
+        const Vv = Math.asin(unit.y)/Math.PI + 0.5;
+        const uvk = (j*n + i)*2;
+        uvs[uvk+0]=Uu; uvs[uvk+1]=Vv;
+      }
+    }
+
+    // --- indices
+    let idx = 0;
+    for (let j=0;j<n-1;j++){
+      for (let i=0;i<n-1;i++){
+        const a =  j   *n + i;
+        const b =  j   *n + (i+1);
+        const c = (j+1)*n + i;
+        const d = (j+1)*n + (i+1);
+        indices[ii++] = a; indices[ii++] = c; indices[ii++] = b;
+        indices[ii++] = b; indices[ii++] = c; indices[ii++] = d;
+      }
+    }
+
+    g.setAttribute('position', new THREE.BufferAttribute(positions,3));
+    g.setAttribute('color',    new THREE.BufferAttribute(colors,3));
+    g.setAttribute('uv',       new THREE.BufferAttribute(uvs,2));
+    g.setIndex(new THREE.BufferAttribute(indices,1));
+    g.computeVertexNormals();
+    g.computeBoundingSphere();
+    return g;
+  }
+
+  // parcours + split/merge + fade
+  update(camera) {
+    // 1) split pass
+    const stack = [...this.roots];
+    for (const node of stack) {
+      if (node.isLeaf && node.shouldSplit(camera)) {
+        node.split();
+      }
+      if (node.children) stack.push(...node.children);
+    }
+
+    // 2) merge candidates: si tous les enfants sont feuilles et sous seuil → merge
+    const post = [...this.roots];
+    for (const node of post) {
+      if (!node.children) continue;
+      let allLeaf = true, allMerge = true;
+      for (const c of node.children) {
+        if (!c.isLeaf) { allLeaf = false; allMerge = false; break; }
+        if (!c.shouldMerge(camera)) allMerge = false;
+      }
+      if (allLeaf && allMerge) {
+        node.merge();
+      } else {
+        post.push(...node.children);
+      }
+    }
+
+    // 3) tick fades
+    const all = [...this.roots];
+    for (const n of all) {
+      n.tickFade();
+      if (n.children) all.push(...n.children);
+    }
+  }
+}
+
+
 export class Planet {
     constructor(scene, params, moonSettings, guiControllers, visualSettings, sun) {
         this.scene = scene;
@@ -263,6 +737,11 @@ export class Planet {
         this.guiControllers = guiControllers;
         this.visualSettings = visualSettings;
         this.sun = sun;
+
+        // LOD par chunks
+        this._lodChunkFadeSpread = 0.45;           // utilisé par _setLODFadeProfile
+        this.chunkedLODEnabled = this.params.chunkedLODEnabled ?? true;
+        this.chunkLOD = null;                       // gestionnaire de chunks
 
         this.planetSystem = new THREE.Group();
         this.scene.add(this.planetSystem);
@@ -311,6 +790,10 @@ export class Planet {
         this.gasLODTextures = [];
         this.gasTextureCache = new Map();
         this.lastGasParams = null;
+
+        this._activeLODKey = null;
+        this._lodTransitionFromMesh = null;
+        this._lodTransitionToMesh = null;
         
         // Initialize LOD transition manager for smooth transitions
         this.lodTransitionManager = new LODTransitionManager();
@@ -435,19 +918,146 @@ export class Planet {
         mesh.receiveShadow = true;
         mesh.name = `PlanetSurface_${levelKey}`;
         mesh.userData.lodKey = levelKey;
+        this._installLODFadeHooks(mesh);
         if (this.surfaceLOD) {
             this.surfaceLOD.addLevel(mesh, 0);
         }
         return mesh;
     }
 
+    _collectMeshes(target) {
+        if (!target) return [];
+        const meshes = [];
+        const stack = [target];
+        while (stack.length) {
+            const current = stack.pop();
+            if (!current) continue;
+            if (current.isMesh) {
+                meshes.push(current);
+            }
+            if (current.children && current.children.length) {
+                for (let i = 0; i < current.children.length; i += 1) {
+                    stack.push(current.children[i]);
+                }
+            }
+        }
+        return meshes;
+    }
+
+    _installLODFadeHooks(target) {
+        if (!target) return;
+        const meshes = this._collectMeshes(target);
+        meshes.forEach((mesh) => {
+            if (!mesh) return;
+            mesh.userData = mesh.userData || {};
+            if (mesh.userData.lodFadeHookInstalled) return;
+
+            mesh.userData.lodFadeAlpha = mesh.userData.lodFadeAlpha ?? 1;
+            mesh.userData.lodFadeJitter = mesh.userData.lodFadeJitter ?? Math.random();
+            const originalBefore = mesh.onBeforeRender;
+            const originalAfter = mesh.onAfterRender;
+            mesh.userData.lodFadeOriginalOnBeforeRender = originalBefore;
+            mesh.userData.lodFadeOriginalOnAfterRender = originalAfter;
+
+            mesh.userData.lodOriginalRenderOrder = mesh.userData.lodOriginalRenderOrder ?? (mesh.renderOrder ?? 0);
+
+            mesh.onBeforeRender = (renderer, scene, camera, geometry, material, group) => {
+                const mat = material || mesh.material;
+                const alpha = mesh.userData?.lodFadeAlpha ?? 1;
+                const fadeActive = alpha < 0.999;
+
+                if (mat) {
+                    mat.userData = mat.userData || {};
+                    if (mat.userData.lodBaseOpacity === undefined) {
+                        mat.userData.lodBaseOpacity = mat.opacity ?? 1;
+                        mat.userData.lodOriginalTransparent = mat.transparent;
+                        mat.userData.lodOriginalAlphaHash = mat.alphaHash;
+                        mat.userData.lodOriginalDepthWrite = mat.depthWrite;
+                    }
+                    const baseOpacity = mat.userData.lodBaseOpacity ?? 1;
+                    mat.opacity = baseOpacity * alpha;
+                    mat.alphaHash = fadeActive;
+                    mat.transparent = mat.userData.lodOriginalTransparent ?? false;
+                    mat.depthWrite = fadeActive ? false : (mat.userData.lodOriginalDepthWrite ?? true);
+                }
+
+                const originalOrder = mesh.userData.lodOriginalRenderOrder ?? 0;
+                mesh.renderOrder = fadeActive ? originalOrder + 10 : originalOrder;
+
+                if (typeof originalBefore === 'function') {
+                    originalBefore.call(mesh, renderer, scene, camera, geometry, mat ?? mesh.material, group);
+                }
+            };
+
+            mesh.onAfterRender = (renderer, scene, camera, geometry, material, group) => {
+                const mat = material || mesh.material;
+                if (mat && mat.userData) {
+                    mat.opacity = mat.userData.lodBaseOpacity ?? mat.opacity ?? 1;
+                    mat.alphaHash = mat.userData.lodOriginalAlphaHash ?? false;
+                    mat.transparent = mat.userData.lodOriginalTransparent ?? false;
+                    mat.depthWrite = mat.userData.lodOriginalDepthWrite ?? mat.depthWrite;
+                }
+                if (mesh.userData && mesh.userData.lodOriginalRenderOrder !== undefined) {
+                    mesh.renderOrder = mesh.userData.lodOriginalRenderOrder;
+                }
+                if (typeof originalAfter === 'function') {
+                    originalAfter.call(mesh, renderer, scene, camera, geometry, mat ?? mesh.material, group);
+                }
+            };
+
+            mesh.userData.lodFadeHookInstalled = true;
+        });
+    }
+
+    _setLODFadeAlpha(target, alpha) {
+        const value = THREE.MathUtils.clamp(alpha ?? 0, 0, 1);
+        if (!target) return;
+        const meshes = this._collectMeshes(target);
+        meshes.forEach((mesh) => {
+            this._installLODFadeHooks(mesh);
+            mesh.userData.lodFadeAlpha = value;
+        });
+    }
+
+    _setLODFadeProfile(target, profile = {}) {
+        if (!target) return;
+        const mode = profile.mode || 'out';
+        const progress = THREE.MathUtils.clamp(profile.progress ?? 0, 0, 1);
+        const spread = THREE.MathUtils.clamp(profile.spread ?? this._lodChunkFadeSpread ?? 0.45, 0, 0.95);
+        const ease = Math.max(0.01, profile.ease ?? 1.2);
+        const meshes = this._collectMeshes(target);
+        if (!meshes.length) return;
+
+        meshes.forEach((mesh) => {
+            this._installLODFadeHooks(mesh);
+            const jitter = mesh.userData?.lodFadeJitter ?? 0;
+            const start = jitter * spread;
+            const end = Math.min(1, start + (1 - spread));
+            const denom = Math.max(1e-4, end - start);
+            let localT = THREE.MathUtils.clamp((progress - start) / denom, 0, 1);
+            if (ease !== 1) {
+                localT = Math.pow(localT, ease);
+            }
+
+            let value = 1;
+            if (mode === 'out') {
+                value = 1 - localT;
+            } else if (mode === 'in') {
+                value = localT;
+            } else if (mode === 'set') {
+                value = THREE.MathUtils.clamp(profile.alpha ?? 1, 0, 1);
+            }
+
+            mesh.userData.lodFadeAlpha = THREE.MathUtils.clamp(value, 0, 1);
+        });
+    }
+
+
     _updateSurfaceLodDistances() {
         if (!this.surfaceLOD || !this.surfaceLOD.levels || !this.surfaceLOD.levels.length) return;
         const radius = Math.max(0.1, this.params.radius || 1);
         const resolutionScale = Math.max(0.5, Math.min(1.6, this.visualSettings?.noiseResolution ?? 1.0));
         
-        // Update transition manager
-        this.lodTransitionManager.updateTransition();
         
         PLANET_SURFACE_LOD_ORDER.forEach((levelKey, index) => {
             const level = this.surfaceLOD.levels[index];
@@ -488,6 +1098,19 @@ export class Planet {
                 this._ensureGasTextureForLOD(activeLODKey);
             }
         }
+
+        if (!activeLODKey) return;
+
+        if (!this._activeLODKey) {
+            this._activeLODKey = activeLODKey;
+            this._finalizeActiveLODTransition(activeLODKey);
+            return;
+        }
+
+        if (activeLODKey !== this._activeLODKey) {
+            this.startLODTransition(activeLODKey);
+            this._activeLODKey = activeLODKey;
+        }
     }
 
     _getSurfaceDetailForLevel(levelKey) {
@@ -503,10 +1126,69 @@ export class Planet {
 
     // Start smooth LOD transition to target level
     startLODTransition(targetLOD) {
-        if (PLANET_SURFACE_LOD_ORDER.includes(targetLOD)) {
-            this.lodTransitionManager.startTransition(targetLOD);
-            console.log(`Starting smooth LOD transition to: ${targetLOD}`);
+        if (!PLANET_SURFACE_LOD_ORDER.includes(targetLOD)) return;
+        if (!this.smoothLODTransitionsEnabled) {
+            this._finalizeActiveLODTransition(targetLOD);
+            return;
         }
+        this._startSmoothLODTransition(targetLOD);
+    }
+
+    _startSmoothLODTransition(targetLOD) {
+        const manager = this.lodTransitionManager;
+        if (!manager) return;
+
+        if (manager.isTransitioning) {
+            this._finalizeActiveLODTransition(manager.targetLOD);
+        }
+
+        const fromKey = manager.currentLOD || targetLOD;
+        manager.startTransition(targetLOD);
+
+        if (!manager.isTransitioning) {
+            this._finalizeActiveLODTransition(targetLOD);
+            return;
+        }
+
+        this._lodTransitionFromMesh = this.surfaceLODLevels?.[fromKey] || null;
+        this._lodTransitionToMesh = this.surfaceLODLevels?.[targetLOD] || null;
+
+        if (this._lodTransitionFromMesh && this._lodTransitionFromMesh !== this._lodTransitionToMesh) {
+            this._lodTransitionFromMesh.visible = true;
+            this._setLODFadeAlpha(this._lodTransitionFromMesh, 1);
+        }
+
+        if (this._lodTransitionToMesh) {
+            this._lodTransitionToMesh.visible = true;
+            this._setLODFadeAlpha(this._lodTransitionToMesh, 1);
+        }
+    }
+
+    _finalizeActiveLODTransition(explicitTarget = null) {
+        const manager = this.lodTransitionManager;
+        const preferredKey = explicitTarget || this._activeLODKey || manager.targetLOD || manager.currentLOD || 'medium';
+        const finalKey = PLANET_SURFACE_LOD_ORDER.includes(preferredKey) ? preferredKey : 'medium';
+        const finalMesh = this.surfaceLODLevels?.[finalKey] || null;
+
+        PLANET_SURFACE_LOD_ORDER.forEach((key) => {
+            const mesh = this.surfaceLODLevels?.[key];
+            if (!mesh) return;
+            const isActive = key === finalKey;
+            mesh.visible = isActive;
+            this._setLODFadeAlpha(mesh, isActive ? 1 : 0);
+        });
+
+        this._lodTransitionFromMesh = null;
+        this._lodTransitionToMesh = finalMesh;
+
+        manager.currentLOD = finalKey;
+        manager.previousLOD = finalKey;
+        manager.targetLOD = finalKey;
+        manager.isTransitioning = false;
+        manager.transitionProgress = 1.0;
+        manager.transitionStartTime = 0;
+
+        this._activeLODKey = finalKey;
     }
 
     // Get current LOD transition status
@@ -554,23 +1236,43 @@ export class Planet {
 
     // Apply smooth LOD transitions by adjusting material properties
     _applySmoothLODTransitions() {
-        if (!this.smoothLODTransitionsEnabled || !this.lodTransitionManager.isTransitioning) return;
-        
-        const currentConfig = this.lodTransitionManager.getCurrentLODConfig();
-        const targetConfig = PLANET_SURFACE_LOD_CONFIG[this.lodTransitionManager.targetLOD];
-        
-        if (!targetConfig) return;
-        
-        // Apply smooth transitions to material properties
-        // This could include opacity, roughness, or other visual properties
-        // For now, we'll use the transition progress to blend visual effects
-        
-        const progress = this.lodTransitionManager.transitionProgress;
-        
-        // Example: Smoothly adjust material opacity during transitions
-        if (this.planetMesh && this.planetMesh.material) {
-            // You can add smooth material property transitions here
-            // this.planetMesh.material.opacity = THREE.MathUtils.lerp(1.0, 0.8, progress);
+        const manager = this.lodTransitionManager;
+        if (!manager) return;
+
+        if (!this.smoothLODTransitionsEnabled) {
+            this._finalizeActiveLODTransition(this._activeLODKey || manager.currentLOD || 'medium');
+            return;
+        }
+
+        if (!manager.isTransitioning) {
+            const currentKey = manager.currentLOD || this._activeLODKey || 'medium';
+            PLANET_SURFACE_LOD_ORDER.forEach((key) => {
+                const mesh = this.surfaceLODLevels?.[key];
+                if (!mesh) return;
+                const isActive = key === currentKey;
+                mesh.visible = isActive;
+                this._setLODFadeAlpha(mesh, isActive ? 1 : 0);
+            });
+            return;
+        }
+
+        const transitionFinished = manager.updateTransition();
+        const progress = manager.transitionProgress;
+
+        const fromMesh = this._lodTransitionFromMesh || this.surfaceLODLevels?.[manager.previousLOD];
+        const toMesh = this._lodTransitionToMesh || this.surfaceLODLevels?.[manager.targetLOD];
+
+        if (fromMesh && fromMesh !== toMesh) {
+            fromMesh.visible = true;
+            this._setLODFadeProfile(fromMesh, { mode: 'out', progress, spread: this._lodChunkFadeSpread, ease: 1.35 });
+        }
+
+        if (toMesh) {
+            toMesh.visible = true;
+            this._setLODFadeAlpha(toMesh, 1);
+        }
+        if (transitionFinished) {
+            this._finalizeActiveLODTransition(manager.targetLOD);
         }
     }
 
@@ -578,9 +1280,7 @@ export class Planet {
     setSmoothLODTransitions(enabled) {
         this.smoothLODTransitionsEnabled = enabled;
         if (!enabled) {
-            // Reset transition manager to current state
-            this.lodTransitionManager.isTransitioning = false;
-            this.lodTransitionManager.transitionProgress = 1.0;
+            this._finalizeActiveLODTransition(this._activeLODKey || this.lodTransitionManager.currentLOD || 'medium');
         }
     }
 
@@ -597,6 +1297,7 @@ export class Planet {
         const mesh = this.surfaceLODLevels?.[levelKey];
         if (!mesh || !material) return;
         mesh.material = material;
+        this._installLODFadeHooks(mesh);
     }
 
     _ensureGasTextureForLOD(levelKey) {
@@ -804,7 +1505,16 @@ export class Planet {
             this.surfaceLOD.updateMatrixWorld(true);
             this.surfaceLOD.update(camera);
         }
+
+        // LOD par chunks (rocheuses)
+        if (this.chunkLOD) {
+          // assure que le groupe suit la planète
+          this.chunkLOD.originWorld.copy(this.planetRoot.getWorldPosition(new THREE.Vector3()));
+          if (camera) this.chunkLOD.update(camera);
+        }
+
         this._syncActiveSurfaceMesh();
+        this._applySmoothLODTransitions();
         const rotationDelta = this.params.rotationSpeed * simulationDelta * Math.PI * 2;
         this.spinGroup.rotation.y += rotationDelta;
         this.cloudsMesh.rotation.y += rotationDelta * 1.12;
@@ -941,6 +1651,10 @@ export class Planet {
           this.planetMesh = this.surfaceLODLevels.medium;
           this.oceanMesh.visible = false;
           this.foamMesh.visible = false;
+
+          // forcer l'ancien LOD pour les géantes gazeuses
+          if (this.chunkLOD) { this.chunkLOD.dispose(); this.chunkLOD = null; }
+          if (this.surfaceLOD) this.surfaceLOD.visible = true;
 
         } else {
           this._disposeGasLODResources();
@@ -1181,6 +1895,27 @@ export class Planet {
             this.foamMesh.material.map = this.foamTexture;
             this.foamMesh.material.alphaMap = this.foamTexture;
             this.foamMesh.material.needsUpdate = true;
+          }
+
+          // --- Activer le LOD par chunks pour les planètes rocheuses ---
+          if (this.chunkedLODEnabled) {
+            // cacher l'ancien LOD global
+            if (this.surfaceLOD) this.surfaceLOD.visible = false;
+
+            // reconstruire le chunk manager avec les params actuels
+            if (this.chunkLOD) { this.chunkLOD.dispose(); this.chunkLOD = null; }
+            this.chunkLOD = new ChunkedLODSphere(this, {
+              maxLevel: 6,
+              baseResolution: 13,
+              splitDistanceK: 6.5,
+              hysteresis: 1.35,
+              fadeDurationMs: 280,
+              skirtDepth: 0.004,
+              chunkFadeSpread: this._lodChunkFadeSpread ?? 0.45
+            });
+          } else {
+            if (this.chunkLOD) { this.chunkLOD.dispose(); this.chunkLOD = null; }
+            if (this.surfaceLOD) this.surfaceLOD.visible = true;
           }
         }
 
