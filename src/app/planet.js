@@ -172,15 +172,6 @@ const FACE_AXES = [
 
 function vec3(a){ return new THREE.Vector3(a[0],a[1],a[2]); }
 
-// cube -> sphere (exact)
-function cubeToSphere(x, y, z) {
-  const x2 = x*x, y2 = y*y, z2 = z*z;
-  const sx = x * Math.sqrt(1 - (y2/2) - (z2/2) + (y2*z2/3));
-  const sy = y * Math.sqrt(1 - (z2/2) - (x2/2) + (z2*x2/3));
-  const sz = z * Math.sqrt(1 - (x2/2) - (y2/2) + (x2*y2/3));
-  return new THREE.Vector3(sx, sy, sz);
-}
-
 class CubeFaceChunk {
   constructor(manager, faceIndex, bounds, level, parent=null) {
     this.manager = manager;
@@ -219,6 +210,7 @@ class CubeFaceChunk {
     const g = this.manager.buildPatchGeometry(this.faceIndex, this.bounds, this.level);
     const mat = this.manager.material;
     this.mesh = new THREE.Mesh(g, mat);
+    this.mesh.renderOrder = this.level;
     this.mesh.castShadow = true;
     this.mesh.receiveShadow = true;
     this.mesh.frustumCulled = true;
@@ -243,7 +235,7 @@ class CubeFaceChunk {
     acc.set(0,0,0);
     for (const [u,v] of corners) {
       tmp.copy(N).addScaledVector(U,u).addScaledVector(V,v);
-      cubeToSphere(tmp.x, tmp.y, tmp.z).multiplyScalar(R);
+      tmp.normalize().multiplyScalar(R);
       acc.add(tmp);
     }
     this.centerWorld.copy(acc.multiplyScalar(0.25)).add(this.manager.originWorld);
@@ -498,7 +490,7 @@ class ChunkedLODSphere {
 
         // pos cube -> sphere
         const c = N.clone().addScaledVector(U, uu).addScaledVector(V, vv);
-        unit.copy(cubeToSphere(c.x, c.y, c.z)).normalize();
+        unit.copy(c).normalize();
 
         // Warp displacement, with polar correction
         const sampleDir = unit.clone();
@@ -654,20 +646,23 @@ class ChunkedLODSphere {
       if (node.children) stack.push(...node.children);
     }
 
-    // 2) merge candidates: si tous les enfants sont feuilles et sous seuil → merge
-    const post = [...this.roots];
-    for (const node of post) {
-      if (!node.children) continue;
-      let allLeaf = true, allMerge = true;
-      for (const c of node.children) {
-        if (!c.isLeaf) { allLeaf = false; allMerge = false; break; }
-        if (!c.shouldMerge(camera)) allMerge = false;
-      }
-      if (allLeaf && allMerge) {
-        node.merge();
-      } else {
-        post.push(...node.children);
-      }
+    // 2) merge pass
+    const merge_stack = [...this.roots];
+    for(const node of merge_stack) {
+        if (!node.isLeaf) {
+            let canMerge = true;
+            for (const child of node.children) {
+                if (!child.isLeaf || !child.shouldMerge(camera)) {
+                    canMerge = false;
+                    break;
+                }
+            }
+            if (canMerge) {
+                node.merge();
+            } else {
+                merge_stack.push(...node.children);
+            }
+        }
     }
 
     // 3) tick fades
@@ -935,9 +930,6 @@ export class Planet {
                     mat.depthWrite = fadeActive ? false : (mat.userData.lodOriginalDepthWrite ?? true);
                 }
 
-                const originalOrder = mesh.userData.lodOriginalRenderOrder ?? 0;
-                mesh.renderOrder = fadeActive ? originalOrder + 10 : originalOrder;
-
                 if (typeof originalBefore === 'function') {
                     originalBefore.call(mesh, renderer, scene, camera, geometry, mat ?? mesh.material, group);
                 }
@@ -950,9 +942,6 @@ export class Planet {
                     mat.alphaHash = mat.userData.lodOriginalAlphaHash ?? false;
                     mat.transparent = mat.userData.lodOriginalTransparent ?? false;
                     mat.depthWrite = mat.userData.lodOriginalDepthWrite ?? mat.depthWrite;
-                }
-                if (mesh.userData && mesh.userData.lodOriginalRenderOrder !== undefined) {
-                    mesh.renderOrder = mesh.userData.lodOriginalRenderOrder;
                 }
                 if (typeof originalAfter === 'function') {
                     originalAfter.call(mesh, renderer, scene, camera, geometry, mat ?? mesh.material, group);
