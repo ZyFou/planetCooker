@@ -164,8 +164,8 @@ const FACE_AXES = [
   // +X, -X, +Y, -Y, +Z, -Z
   { u:[0,0,  -1], v:[0,1,0],  n:[1,0,0] },   // +X
   { u:[0,0,   1], v:[0,1,0],  n:[-1,0,0] },  // -X
-  { u:[1,0,  0], v:[0,0,1],   n:[0,1,0] },   // +Y
-  { u:[1,0,  0], v:[0,0,-1],  n:[0,-1,0] },  // -Y
+  { u:[1,0,  0], v:[0,0,1],   n:[0,1,0] },   // +Y (top)
+  { u:[1,0,  0], v:[0,0,1],   n:[0,-1,0] },  // -Y (bottom) - flipped V for correct orientation
   { u:[1,0,  0], v:[0,1,0],   n:[0,0,1] },   // +Z
   { u:[-1,0, 0], v:[0,1,0],   n:[0,0,-1] },  // -Z
 ];
@@ -1048,6 +1048,38 @@ export class Planet {
             this.startLODTransition(activeLODKey);
             this._activeLODKey = activeLODKey;
         }
+    }
+
+    _finalizeActiveLODTransition(activeLODKey) {
+        // Finalize the LOD transition by ensuring the active mesh is properly set up
+        const activeMesh = this.surfaceLODLevels?.[activeLODKey];
+        if (activeMesh) {
+            // Ensure the mesh is fully opaque and visible
+            this._setLODFadeAlpha(activeMesh, 1);
+            // Update the planet mesh reference
+            this.planetMesh = activeMesh;
+        }
+    }
+
+    startLODTransition(newLODKey) {
+        // Start a smooth transition to a new LOD level
+        const fromMesh = this.surfaceLODLevels?.[this._activeLODKey];
+        const toMesh = this.surfaceLODLevels?.[newLODKey];
+        
+        if (!fromMesh || !toMesh || fromMesh === toMesh) {
+            return;
+        }
+
+        // Store transition meshes for potential cleanup
+        this._lodTransitionFromMesh = fromMesh;
+        this._lodTransitionToMesh = toMesh;
+
+        // Start fade out of old mesh and fade in of new mesh
+        this._setLODFadeAlpha(fromMesh, 1); // Ensure it starts visible
+        this._setLODFadeAlpha(toMesh, 0);   // Start new mesh transparent
+        
+        // The actual transition will be handled by the LOD system's visibility changes
+        // This method primarily sets up the transition state
     }
 
     _getSurfaceDetailForLevel(levelKey) {
