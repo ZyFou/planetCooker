@@ -271,7 +271,13 @@ const CHUNK_LOD_DEFAULTS = {
   hysteresis: 1.35,            // anti-oscillation split/merge (merge = split / hysteresis)
   fadeDurationMs: 280,
   skirtDepth: 0.004,           // petites jupes anti-cracks (en fraction du radius)
-  chunkFadeSpread: 0.45        // utilise ton _lodChunkFadeSpread
+  chunkFadeSpread: 0.45,       // utilise ton _lodChunkFadeSpread
+  visibilityAlignment: 0.0,
+  splitAlignment: 0.08,
+  mergeAlignment: 0.04,
+  frontMetricScale: 1.35,
+  sideMetricScale: 0.45,
+  alignmentMetricPower: 1.5
 };
 
 // map face index → base axes (cube -> sphere)
@@ -312,6 +318,8 @@ class CubeFaceChunk {
     this.screenMetric = 0;
     this.centerWorld = new THREE.Vector3();
     this.radiusWorld = 0;        // bounding sphere approx pour ce patch
+    this.surfaceNormal = new THREE.Vector3(0, 1, 0);
+    this.cameraAlignment = 1;
   }
 
   dispose() {
@@ -366,27 +374,64 @@ class CubeFaceChunk {
     const halfDU = (umax-umin)*0.5, halfDV = (vmax-vmin)*0.5;
     const angular = Math.max(halfDU, halfDV) * (Math.PI/2); // chaque face couvre 90°
     this.radiusWorld = Math.max(angular * R, 0.001);
+    this.surfaceNormal.copy(this.centerWorld).sub(this.manager.originWorld);
+    const len = this.surfaceNormal.length();
+    if (len > 1e-6) {
+      this.surfaceNormal.multiplyScalar(1 / len);
+    } else {
+      this.surfaceNormal.set(0, 1, 0);
+    }
+  }
+
+  _updateScreenMetric() {
+    const camPos = this.manager.getCameraWorldPos();
+    const toCamera = CubeFaceChunk._tmpToCamera;
+    toCamera.copy(camPos).sub(this.centerWorld);
+    let dist = toCamera.length();
+    if (dist < 1e-5) {
+      dist = 1e-5;
+      toCamera.copy(this.surfaceNormal);
+    } else {
+      toCamera.multiplyScalar(1 / dist);
+    }
+    const alignment = Math.max(0, this.surfaceNormal.dot(toCamera));
+    this.cameraAlignment = alignment;
+
+    const diameter = Math.max(0.001, 2 * this.radiusWorld);
+    const baseMetric = this.manager.screenMetricForPatch(diameter, dist);
+    const cfg = this.manager.cfg;
+    const t = Math.pow(alignment, cfg.alignmentMetricPower);
+    const facingScale = THREE.MathUtils.lerp(cfg.sideMetricScale, cfg.frontMetricScale, t);
+    const metric = baseMetric * facingScale;
+    this.screenMetric = metric;
+
+    if (this.mesh && !this.isFadingOut) {
+      this.mesh.visible = alignment > cfg.visibilityAlignment;
+    }
+
+    return metric;
   }
 
   // renvoie true si devrait splitter
   shouldSplit() {
     if (this.level >= this.manager.cfg.maxLevel) return false;
-    const camPos = this.manager.getCameraWorldPos();
-    const d = camPos.distanceTo(this.centerWorld);
-    const diameter = Math.max(0.001, 2 * this.radiusWorld);
-    const metric = this.manager.screenMetricForPatch(diameter, d);
-    this.screenMetric = metric;
-    return metric > this.manager.cfg.screenSpaceErrorTarget;
+    const cfg = this.manager.cfg;
+    const metric = this._updateScreenMetric();
+    if (this.cameraAlignment <= cfg.splitAlignment) {
+      return false;
+    }
+    return metric > cfg.screenSpaceErrorTarget;
   }
 
   shouldMerge() {
     if (!this.isLeaf) return false; // merge decision occurs on parent handling children
-    const camPos = this.manager.getCameraWorldPos();
-    const d = camPos.distanceTo(this.centerWorld);
-    const diameter = Math.max(0.001, 2 * this.radiusWorld);
-    const metric = this.manager.screenMetricForPatch(diameter, d);
-    const hysteresis = Math.max(1.001, this.manager.cfg.hysteresis || 1.0);
-    return metric < (this.manager.cfg.screenSpaceErrorTarget / hysteresis);
+    const cfg = this.manager.cfg;
+    const metric = this._updateScreenMetric();
+    if (this.cameraAlignment <= cfg.mergeAlignment) {
+      return true;
+    }
+    const hysteresis = Math.max(1.001, cfg.hysteresis || 1.0);
+    return metric < (cfg.screenSpaceErrorTarget / hysteresis);
   }
 
   // split en 4 enfants (quadtree)
@@ -498,6 +543,10 @@ class CubeFaceChunk {
       }
     }
 
+    if (!this.isFadingIn && !this.isFadingOut && this.mesh) {
+      this.mesh.visible = this.cameraAlignment > this.manager.cfg.visibilityAlignment;
+    }
+
     if (!this.isLeaf && this.children) {
       let allGone = true;
       for (const c of this.children) {
@@ -513,6 +562,8 @@ class CubeFaceChunk {
     }
   }
 }
+
+CubeFaceChunk._tmpToCamera = new THREE.Vector3();
 
 class ChunkedLODSphere {
   constructor(planet, cfg={}) {
