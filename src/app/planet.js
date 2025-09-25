@@ -454,11 +454,32 @@ class CubeFaceChunk {
     if (this.isFadingIn && this.mesh) {
       const t = (tNow - this.fadeStart)/cfg.fadeDurationMs;
       this.manager.planet._setLODFadeProfile(this.mesh, { mode:'in', progress:ease(t), spread:this.manager.cfg.chunkFadeSpread, ease:1.2 });
-      if (t>=1) { this.isFadingIn = false; this.manager.planet._setLODFadeAlpha(this.mesh, 1); }
+      
+      // Réduire l'overdraw : activer depthWrite dès que les enfants > 70%
+      if (t >= 0.7 && this.mesh.material) {
+        this.mesh.material.depthWrite = true;
+      }
+      
+      if (t>=1) { 
+        this.isFadingIn = false; 
+        this.manager.planet._setLODFadeAlpha(this.mesh, 1);
+        // Finaliser avec opacité pleine
+        if (this.mesh.material) {
+          this.mesh.material.depthWrite = true;
+          this.mesh.material.alphaHash = false;
+          this.mesh.material.transparent = false;
+        }
+      }
     }
     if (this.isFadingOut && this.mesh) {
       const t = (tNow - this.fadeStart)/cfg.fadeDurationMs;
       this.manager.planet._setLODFadeProfile(this.mesh, { mode:'out', progress:ease(t), spread:this.manager.cfg.chunkFadeSpread, ease:1.2 });
+      
+      // Réduire l'overdraw : masquer le parent dès que progress > 0.5
+      if (t >= 0.5) {
+        this.mesh.visible = false;
+      }
+      
       if (t>=1) {
         this.isFadingOut = false;
         // remove & dispose
@@ -503,7 +524,9 @@ class ChunkedLODSphere {
       vertexColors: true,
       roughness: 0.82,
       metalness: 0.12,
-      flatShading: false
+      flatShading: false,
+      side: THREE.FrontSide,      // <- important
+      transparent: false          // <- pas de blend permanent
     });
 
     // bruit/profil identiques à rebuildPlanet()
@@ -678,8 +701,9 @@ class ChunkedLODSphere {
         const b =  j   *n + (i+1);
         const c = (j+1)*n + i;
         const d = (j+1)*n + (i+1);
-        indices[ii++] = a; indices[ii++] = c; indices[ii++] = b;
-        indices[ii++] = b; indices[ii++] = c; indices[ii++] = d;
+        // CCW face camera
+        indices[ii++] = a; indices[ii++] = b; indices[ii++] = c;
+        indices[ii++] = b; indices[ii++] = d; indices[ii++] = c;
       }
     }
 
@@ -739,7 +763,7 @@ export class Planet {
         this.sun = sun;
 
         // LOD par chunks
-        this._lodChunkFadeSpread = 0.45;           // utilisé par _setLODFadeProfile
+        this._lodChunkFadeSpread = 0.25;           // utilisé par _setLODFadeProfile
         this.chunkedLODEnabled = this.params.chunkedLODEnabled ?? true;
         this.chunkLOD = null;                       // gestionnaire de chunks
 
@@ -1176,6 +1200,16 @@ export class Planet {
             const isActive = key === finalKey;
             mesh.visible = isActive;
             this._setLODFadeAlpha(mesh, isActive ? 1 : 0);
+            
+            // Finaliser les transitions LOD avec opacité pleine
+            if (isActive) {
+                this._setLODFadeProfile(mesh, { mode:'set', alpha:1 });
+                if (mesh.material && mesh.material.userData) {
+                    mesh.material.depthWrite = true;      // re-on
+                    mesh.material.alphaHash = false;
+                    mesh.material.transparent = mesh.material.userData.lodOriginalTransparent ?? false;
+                }
+            }
         });
 
         this._lodTransitionFromMesh = null;
@@ -1909,9 +1943,9 @@ export class Planet {
               baseResolution: 13,
               splitDistanceK: 6.5,
               hysteresis: 1.35,
-              fadeDurationMs: 280,
+              fadeDurationMs: 180,
               skirtDepth: 0.004,
-              chunkFadeSpread: this._lodChunkFadeSpread ?? 0.45
+              chunkFadeSpread: this._lodChunkFadeSpread ?? 0.25
             });
           } else {
             if (this.chunkLOD) { this.chunkLOD.dispose(); this.chunkLOD = null; }
