@@ -136,126 +136,14 @@ const atmosphereFragmentShader = `
     }
 `;
 
-const PLANET_SURFACE_LOD_ORDER = [
-    "mega", "megaUltra", "ultra", "ultraHigh", 
-    "highPlus", "high", "highMed", 
-    "mediumHigh", "medium", "mediumMed", 
-    "medLow", "lowHigh", "low", 
-    "lowMed", "microHigh", "micro", "microLow"
-];
+const PLANET_SURFACE_LOD_ORDER = ["ultra", "high", "medium", "low", "micro"];
 
-// LOD Transition Manager for smooth transitions
-class LODTransitionManager {
-    constructor() {
-        this.currentLOD = 'medium';
-        this.previousLOD = 'medium';
-        this.targetLOD = 'medium';
-        this.transitionProgress = 1.0;
-        this.isTransitioning = false;
-        this.transitionStartTime = 0;
-        this.transitionDuration = 320; // milliseconds
-    }
-
-    // Smooth interpolation between two LOD configs
-    interpolateLODConfig(config1, config2, t) {
-        const smoothT = this.easeInOutCubic(t);
-        return {
-            detailOffset: THREE.MathUtils.lerp(config1.detailOffset, config2.detailOffset, smoothT),
-            rockDetailMultiplier: THREE.MathUtils.lerp(config1.rockDetailMultiplier, config2.rockDetailMultiplier, smoothT),
-            rockDetailMin: Math.round(THREE.MathUtils.lerp(config1.rockDetailMin, config2.rockDetailMin, smoothT)),
-            distanceMultiplier: THREE.MathUtils.lerp(config1.distanceMultiplier, config2.distanceMultiplier, smoothT),
-            gasSegmentScale: THREE.MathUtils.lerp(config1.gasSegmentScale, config2.gasSegmentScale, smoothT),
-            textureScale: THREE.MathUtils.lerp(config1.textureScale, config2.textureScale, smoothT)
-        };
-    }
-
-    // Smooth easing function for natural transitions
-    easeInOutCubic(t) {
-        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-    }
-
-    // Start transition to new LOD level
-    startTransition(targetLOD) {
-        if (targetLOD === this.targetLOD && !this.isTransitioning) {
-            return;
-        }
-
-        this.previousLOD = this.currentLOD;
-        this.targetLOD = targetLOD;
-        this.isTransitioning = this.previousLOD !== this.targetLOD;
-        this.transitionStartTime = performance.now();
-        this.transitionProgress = this.isTransitioning ? 0.0 : 1.0;
-    }
-
-    // Update transition progress
-    updateTransition() {
-        if (!this.isTransitioning) return false;
-
-        const elapsed = performance.now() - this.transitionStartTime;
-        const duration = Math.max(1, this.transitionDuration);
-        this.transitionProgress = Math.min(elapsed / duration, 1.0);
-
-        if (this.transitionProgress >= 1.0) {
-            this.currentLOD = this.targetLOD;
-            this.previousLOD = this.targetLOD;
-            this.isTransitioning = false;
-            this.transitionProgress = 1.0;
-            return true;
-        }
-
-        return false;
-    }
-
-    // Get current interpolated LOD config
-    getCurrentLODConfig() {
-        if (!this.isTransitioning || this.transitionProgress >= 1.0) {
-            return PLANET_SURFACE_LOD_CONFIG[this.currentLOD];
-        }
-
-        const currentConfig = PLANET_SURFACE_LOD_CONFIG[this.previousLOD];
-        const targetConfig = PLANET_SURFACE_LOD_CONFIG[this.targetLOD];
-
-        return this.interpolateLODConfig(currentConfig, targetConfig, this.transitionProgress);
-    }
-
-    // Get current LOD level name (for debugging)
-    getCurrentLODLevel() {
-        return this.isTransitioning ? `${this.previousLOD}->${this.targetLOD}` : this.currentLOD;
-    }
-}
-// Add "intersteps" between each main LOD for finer control
 const PLANET_SURFACE_LOD_CONFIG = {
-    // Ultra High Quality (100% detail)
-
-    mega:      { detailOffset: 4.0,   rockDetailMultiplier: 2.5,  rockDetailMin: 15, distanceMultiplier: 0.5,  gasSegmentScale: 2.8,  textureScale: 2.5 },
-    
-    // Very High Quality (90% detail)
-    megaUltra: { detailOffset: 3.5,   rockDetailMultiplier: 2.35, rockDetailMin: 13, distanceMultiplier: 0.75, gasSegmentScale: 2.65, textureScale: 2.35 },
-    ultra:     { detailOffset: 3.0,   rockDetailMultiplier: 2.2,  rockDetailMin: 12, distanceMultiplier: 1.0,  gasSegmentScale: 2.5,  textureScale: 2.2 },
-    ultraHigh: { detailOffset: 2.5,   rockDetailMultiplier: 2.05, rockDetailMin: 11, distanceMultiplier: 1.5,  gasSegmentScale: 2.35, textureScale: 2.05 },
-    
-    // High Quality (80% detail)
-    highPlus:  { detailOffset: 2.0,   rockDetailMultiplier: 1.9,  rockDetailMin: 10, distanceMultiplier: 2.0,  gasSegmentScale: 2.2,  textureScale: 1.9 },
-    high:      { detailOffset: 1.5,   rockDetailMultiplier: 1.75, rockDetailMin: 9,  distanceMultiplier: 3.0,  gasSegmentScale: 2.05, textureScale: 1.75 },
-    highMed:   { detailOffset: 1.0,   rockDetailMultiplier: 1.6,  rockDetailMin: 8,  distanceMultiplier: 4.0,  gasSegmentScale: 1.9,  textureScale: 1.6 },
-    
-    // Medium-High Quality (70% detail)
-    mediumHigh:{ detailOffset: 0.5,   rockDetailMultiplier: 1.45, rockDetailMin: 7,  distanceMultiplier: 6.0,  gasSegmentScale: 1.75, textureScale: 1.45 },
-    medium:    { detailOffset: 0.0,   rockDetailMultiplier: 1.3,  rockDetailMin: 6,  distanceMultiplier: 8.0,  gasSegmentScale: 1.6,  textureScale: 1.3 },
-    mediumMed: { detailOffset: -0.5,  rockDetailMultiplier: 1.15, rockDetailMin: 5,  distanceMultiplier: 10.0, gasSegmentScale: 1.45, textureScale: 1.15 },
-    
-    // Medium Quality (60% detail)
-    medLow:    { detailOffset: -1.0,  rockDetailMultiplier: 1.0,  rockDetailMin: 4,  distanceMultiplier: 12.0, gasSegmentScale: 1.3,  textureScale: 1.0 },
-    lowHigh:   { detailOffset: -1.5,  rockDetailMultiplier: 0.85, rockDetailMin: 3,  distanceMultiplier: 16.0, gasSegmentScale: 1.15, textureScale: 0.85 },
-    low:       { detailOffset: -2.0,  rockDetailMultiplier: 0.7,  rockDetailMin: 2,  distanceMultiplier: 20.0, gasSegmentScale: 1.0,  textureScale: 0.7 },
-    
-    // Low Quality (50% detail)
-    lowMed:    { detailOffset: -2.5,  rockDetailMultiplier: 0.55, rockDetailMin: 1,  distanceMultiplier: 24.0, gasSegmentScale: 0.85, textureScale: 0.55 },
-    microHigh: { detailOffset: -3.0,  rockDetailMultiplier: 0.4,  rockDetailMin: 1,  distanceMultiplier: 28.0, gasSegmentScale: 0.7,  textureScale: 0.4 },
-    micro:     { detailOffset: -3.5,  rockDetailMultiplier: 0.25, rockDetailMin: 1,  distanceMultiplier: 32.0, gasSegmentScale: 0.55, textureScale: 0.25 },
-    
-    // Ultra Low Quality (40% detail)
-    microLow:  { detailOffset: -4.0,  rockDetailMultiplier: 0.1,  rockDetailMin: 1,  distanceMultiplier: 36.0, gasSegmentScale: 0.4,  textureScale: 0.1 }
+    ultra:   { detailOffset: 2.0, rockDetailMultiplier: 2.0, rockDetailMin: 10, distanceMultiplier: 0.8,  gasSegmentScale: 2.0, textureScale: 2.0 },
+    high:    { detailOffset: 1.0, rockDetailMultiplier: 1.5, rockDetailMin: 8,  distanceMultiplier: 1.5,  gasSegmentScale: 1.5, textureScale: 1.5 },
+    medium:  { detailOffset: 0.0, rockDetailMultiplier: 1.0, rockDetailMin: 6,  distanceMultiplier: 3.0,  gasSegmentScale: 1.0, textureScale: 1.0 },
+    low:     { detailOffset: -1.0, rockDetailMultiplier: 0.7, rockDetailMin: 4,  distanceMultiplier: 6.0,  gasSegmentScale: 0.7, textureScale: 0.7 },
+    micro:   { detailOffset: -2.0, rockDetailMultiplier: 0.5, rockDetailMin: 2,  distanceMultiplier: 12.0, gasSegmentScale: 0.5, textureScale: 0.5 },
 };
 
 // --- Chunked LOD over a Cube-Sphere -------------------------------------------------------------
@@ -612,6 +500,23 @@ class ChunkedLODSphere {
         const c = N.clone().addScaledVector(U, uu).addScaledVector(V, vv);
         unit.copy(cubeToSphere(c.x, c.y, c.z)).normalize();
 
+        // Warp displacement, with polar correction
+        const sampleDir = unit.clone();
+        if (this.profile.warpStrength > 0) {
+            const warpAmount = this.profile.warpStrength * 0.35;
+            const poleFalloff = 1.0 - Math.pow(Math.abs(unit.y), 4);
+            const effectiveWarp = warpAmount * poleFalloff;
+
+            const fx = this.profile.warpFrequency;
+            const offset = this.profile.warpOffset;
+            const warpVec = new THREE.Vector3(
+                this.warpNoiseX(unit.x * fx + offset.x, unit.y * fx + offset.y, unit.z * fx + offset.z),
+                this.warpNoiseY(unit.x * fx + offset.y, unit.y * fx + offset.z, unit.z * fx + offset.x),
+                this.warpNoiseZ(unit.x * fx + offset.z, unit.y * fx + offset.x, unit.z * fx + offset.y)
+            );
+            sampleDir.addScaledVector(warpVec, effectiveWarp).normalize();
+        }
+
         // === displacement (copie compacte de _buildRockyGeometry) ===
         let amplitude = 1;
         let frequency = this.params.noiseFrequency;
@@ -619,9 +524,9 @@ class ChunkedLODSphere {
 
         for (let layer=0; layer<this.params.noiseLayers; layer++){
           const off = this.offsets[layer];
-          const sx = unit.x * frequency + off.x;
-          const sy = unit.y * frequency + off.y;
-          const sz = unit.z * frequency + off.z;
+          const sx = sampleDir.x * frequency + off.x;
+          const sy = sampleDir.y * frequency + off.y;
+          const sz = sampleDir.z * frequency + off.z;
 
           const s = this.baseNoise(sx, sy, sz);
           sum += s * amplitude;
@@ -650,19 +555,19 @@ class ChunkedLODSphere {
         normalized = Math.pow(THREE.MathUtils.clamp(normalized,0,1), this.profile.plateauPower);
 
         if (this.profile.striationStrength>0){
-          const str = Math.sin((unit.x + unit.z) * this.profile.striationFrequency + this.profile.striationPhase);
+          const str = Math.sin((sampleDir.x + sampleDir.z) * this.profile.striationFrequency + this.profile.striationPhase);
           normalized += str * this.profile.striationStrength;
         }
         if (this.profile.equatorLift || this.profile.poleDrop){
-          const lat = Math.abs(unit.y);
+          const lat = Math.abs(sampleDir.y);
           normalized += (1-lat)*this.profile.equatorLift;
           normalized -= lat*this.profile.poleDrop;
         }
 
         const cSamp = this.craterNoise(
-          unit.x*this.profile.craterFrequency + this.profile.craterOffset.x,
-          unit.y*this.profile.craterFrequency + this.profile.craterOffset.y,
-          unit.z*this.profile.craterFrequency + this.profile.craterOffset.z
+          sampleDir.x*this.profile.craterFrequency + this.profile.craterOffset.x,
+          sampleDir.y*this.profile.craterFrequency + this.profile.craterOffset.y,
+          sampleDir.z*this.profile.craterFrequency + this.profile.craterOffset.z
         );
         const cVal = (cSamp+1)*0.5;
         if (cVal > this.profile.craterThreshold){
@@ -813,8 +718,14 @@ export class Planet {
         this.planetRoot.add(this.orbitLinesGroup);
 
         this.cloudTexture = null;
-        this.cloudTextureDirty = true;
         this.foamTexture = null;
+        this.lastCloudParams = null;
+        this.lastFoamParams = null;
+        this.ridgeNoise = null;
+        this.warpNoiseX = null;
+        this.warpNoiseY = null;
+        this.warpNoiseZ = null;
+        this.craterNoise = null;
 
         this.palette = {
             ocean: new THREE.Color(this.params.colorOcean),
@@ -836,14 +747,11 @@ export class Planet {
         this.gasLODTextures = [];
         this.gasTextureCache = new Map();
         this.lastGasParams = null;
+        this.icePoleNoise = null;
 
         this._activeLODKey = null;
         this._lodTransitionFromMesh = null;
         this._lodTransitionToMesh = null;
-        
-        // Initialize LOD transition manager for smooth transitions
-        this.lodTransitionManager = new LODTransitionManager();
-        this.smoothLODTransitionsEnabled = true; // Enable by default
 
         this._createPlanetObjects();
         this.rebuildPlanet();
@@ -1102,21 +1010,15 @@ export class Planet {
     _updateSurfaceLodDistances() {
         if (!this.surfaceLOD || !this.surfaceLOD.levels || !this.surfaceLOD.levels.length) return;
         const radius = Math.max(0.1, this.params.radius || 1);
-        const resolutionScale = Math.max(0.5, Math.min(1.6, this.visualSettings?.noiseResolution ?? 1.0));
-        
         
         PLANET_SURFACE_LOD_ORDER.forEach((levelKey, index) => {
             const level = this.surfaceLOD.levels[index];
             if (!level) return;
-            if (index === 0) {
-                level.distance = 0;
-                return;
-            }
-            
-            // Use the specific config for this LOD level
+
             const config = PLANET_SURFACE_LOD_CONFIG[levelKey] || PLANET_SURFACE_LOD_CONFIG.medium;
-            const multiplier = config.distanceMultiplier ?? (index * 8);
-            level.distance = radius * multiplier * resolutionScale;
+            // The first level should always be visible up close.
+            const distance = (index === 0) ? 0 : radius * config.distanceMultiplier;
+            level.distance = distance;
         });
     }
 
@@ -1170,176 +1072,6 @@ export class Planet {
         return Math.max(minDetail, candidate);
     }
 
-    // Start smooth LOD transition to target level
-    startLODTransition(targetLOD) {
-        if (!PLANET_SURFACE_LOD_ORDER.includes(targetLOD)) return;
-        if (!this.smoothLODTransitionsEnabled) {
-            this._finalizeActiveLODTransition(targetLOD);
-            return;
-        }
-        this._startSmoothLODTransition(targetLOD);
-    }
-
-    _startSmoothLODTransition(targetLOD) {
-        const manager = this.lodTransitionManager;
-        if (!manager) return;
-
-        if (manager.isTransitioning) {
-            this._finalizeActiveLODTransition(manager.targetLOD);
-        }
-
-        const fromKey = manager.currentLOD || targetLOD;
-        manager.startTransition(targetLOD);
-
-        if (!manager.isTransitioning) {
-            this._finalizeActiveLODTransition(targetLOD);
-            return;
-        }
-
-        this._lodTransitionFromMesh = this.surfaceLODLevels?.[fromKey] || null;
-        this._lodTransitionToMesh = this.surfaceLODLevels?.[targetLOD] || null;
-
-        if (this._lodTransitionFromMesh && this._lodTransitionFromMesh !== this._lodTransitionToMesh) {
-            this._lodTransitionFromMesh.visible = true;
-            this._setLODFadeAlpha(this._lodTransitionFromMesh, 1);
-        }
-
-        if (this._lodTransitionToMesh) {
-            this._lodTransitionToMesh.visible = true;
-            this._setLODFadeAlpha(this._lodTransitionToMesh, 1);
-        }
-    }
-
-    _finalizeActiveLODTransition(explicitTarget = null) {
-        const manager = this.lodTransitionManager;
-        const preferredKey = explicitTarget || this._activeLODKey || manager.targetLOD || manager.currentLOD || 'medium';
-        const finalKey = PLANET_SURFACE_LOD_ORDER.includes(preferredKey) ? preferredKey : 'medium';
-        const finalMesh = this.surfaceLODLevels?.[finalKey] || null;
-
-        PLANET_SURFACE_LOD_ORDER.forEach((key) => {
-            const mesh = this.surfaceLODLevels?.[key];
-            if (!mesh) return;
-            const isActive = key === finalKey;
-            mesh.visible = isActive;
-            this._setLODFadeAlpha(mesh, isActive ? 1 : 0);
-            
-            // Finaliser les transitions LOD avec opacité pleine
-            if (isActive) {
-                this._setLODFadeProfile(mesh, { mode:'set', alpha:1 });
-                if (mesh.material && mesh.material.userData) {
-                    mesh.material.depthWrite = true;      // re-on
-                    mesh.material.alphaHash = false;
-                    mesh.material.transparent = mesh.material.userData.lodOriginalTransparent ?? false;
-                }
-            }
-        });
-
-        this._lodTransitionFromMesh = null;
-        this._lodTransitionToMesh = finalMesh;
-
-        manager.currentLOD = finalKey;
-        manager.previousLOD = finalKey;
-        manager.targetLOD = finalKey;
-        manager.isTransitioning = false;
-        manager.transitionProgress = 1.0;
-        manager.transitionStartTime = 0;
-
-        this._activeLODKey = finalKey;
-    }
-
-    // Get current LOD transition status
-    getLODTransitionStatus() {
-        return {
-            current: this.lodTransitionManager.currentLOD,
-            target: this.lodTransitionManager.targetLOD,
-            progress: this.lodTransitionManager.transitionProgress,
-            isTransitioning: this.lodTransitionManager.isTransitioning
-        };
-    }
-
-    // Auto-adjust LOD based on distance and performance
-    autoAdjustLOD(cameraPosition) {
-        if (!cameraPosition) return;
-        
-        const planetPosition = this.spinGroup.position;
-        const distance = cameraPosition.distanceTo(planetPosition);
-        const radius = Math.max(0.1, this.params.radius || 1);
-        const normalizedDistance = distance / (radius * 10); // Normalize by planet size
-        
-        // Determine target LOD based on distance
-        let targetLOD = 'medium'; // default
-        
-        if (normalizedDistance < 0.5) {
-            targetLOD = 'mega';
-        } else if (normalizedDistance < 1.0) {
-            targetLOD = 'ultra';
-        } else if (normalizedDistance < 2.0) {
-            targetLOD = 'high';
-        } else if (normalizedDistance < 4.0) {
-            targetLOD = 'medium';
-        } else if (normalizedDistance < 8.0) {
-            targetLOD = 'low';
-        } else {
-            targetLOD = 'micro';
-        }
-        
-        // Start transition if target is different from current
-        if (targetLOD !== this.lodTransitionManager.currentLOD && 
-            !this.lodTransitionManager.isTransitioning) {
-            this.startLODTransition(targetLOD);
-        }
-    }
-
-    // Apply smooth LOD transitions by adjusting material properties
-    _applySmoothLODTransitions() {
-        const manager = this.lodTransitionManager;
-        if (!manager) return;
-
-        if (!this.smoothLODTransitionsEnabled) {
-            this._finalizeActiveLODTransition(this._activeLODKey || manager.currentLOD || 'medium');
-            return;
-        }
-
-        if (!manager.isTransitioning) {
-            const currentKey = manager.currentLOD || this._activeLODKey || 'medium';
-            PLANET_SURFACE_LOD_ORDER.forEach((key) => {
-                const mesh = this.surfaceLODLevels?.[key];
-                if (!mesh) return;
-                const isActive = key === currentKey;
-                mesh.visible = isActive;
-                this._setLODFadeAlpha(mesh, isActive ? 1 : 0);
-            });
-            return;
-        }
-
-        const transitionFinished = manager.updateTransition();
-        const progress = manager.transitionProgress;
-
-        const fromMesh = this._lodTransitionFromMesh || this.surfaceLODLevels?.[manager.previousLOD];
-        const toMesh = this._lodTransitionToMesh || this.surfaceLODLevels?.[manager.targetLOD];
-
-        if (fromMesh && fromMesh !== toMesh) {
-            fromMesh.visible = true;
-            this._setLODFadeProfile(fromMesh, { mode: 'out', progress, spread: this._lodChunkFadeSpread, ease: 1.35 });
-        }
-
-        if (toMesh) {
-            toMesh.visible = true;
-            this._setLODFadeAlpha(toMesh, 1);
-        }
-        if (transitionFinished) {
-            this._finalizeActiveLODTransition(manager.targetLOD);
-        }
-    }
-
-    // Enable/disable smooth LOD transitions
-    setSmoothLODTransitions(enabled) {
-        this.smoothLODTransitionsEnabled = enabled;
-        if (!enabled) {
-            this._finalizeActiveLODTransition(this._activeLODKey || this.lodTransitionManager.currentLOD || 'medium');
-        }
-    }
-
     _replaceSurfaceGeometry(levelKey, geometry) {
         const mesh = this.surfaceLODLevels?.[levelKey];
         if (!mesh || !geometry) return;
@@ -1387,28 +1119,6 @@ export class Planet {
         }
     }
 
-    _updateMegaLODLighting() {
-        const megaMesh = this.surfaceLODLevels?.mega;
-        if (!megaMesh?.material?.uniforms) return;
-
-        // Calculate light direction from sun to planet
-        const sunDirection = new THREE.Vector3();
-        if (this.sun?.sunGroup) {
-            sunDirection.subVectors(this.sun.sunGroup.position, this.planetRoot.position).normalize();
-        } else {
-            sunDirection.set(1, 0, 0); // Default direction
-        }
-
-        // Update lighting uniforms
-        megaMesh.material.uniforms.lightDirection.value.copy(sunDirection);
-        megaMesh.material.uniforms.lightColor.value.set(this.params.sunColor || 0xffffff);
-        megaMesh.material.uniforms.lightIntensity.value = this.params.sunIntensity || 1.0;
-
-        // Update ambient light (matches scene ambient light: 0x6f87b6, 0.35)
-        megaMesh.material.uniforms.ambientLightColor.value.setHex(0x6f87b6);
-        megaMesh.material.uniforms.ambientLightIntensity.value = 0.35;
-    }
-
     _disposeGasLODResources() {
         if (this.gasLODTextures?.length) {
             this.gasLODTextures.forEach((texture) => texture?.dispose?.());
@@ -1452,6 +1162,10 @@ export class Planet {
 
             if (profile.warpStrength > 0) {
                 const warpAmount = profile.warpStrength * 0.35;
+                // Attenuate warp at poles to prevent artifacts
+                const poleFalloff = 1.0 - Math.pow(Math.abs(normal.y), 4);
+                const effectiveWarp = warpAmount * poleFalloff;
+
                 const fx = profile.warpFrequency;
                 const offset = profile.warpOffset;
                 warpVec.set(
@@ -1459,7 +1173,7 @@ export class Planet {
                     warpNoiseY(normal.x * fx + offset.y, normal.y * fx + offset.z, normal.z * fx + offset.x),
                     warpNoiseZ(normal.x * fx + offset.z, normal.y * fx + offset.x, normal.z * fx + offset.y)
                 );
-                sampleDir.addScaledVector(warpVec, warpAmount).normalize();
+                sampleDir.addScaledVector(warpVec, effectiveWarp).normalize();
             }
 
             let amplitude = 1;
@@ -1570,7 +1284,6 @@ export class Planet {
         }
 
         this._syncActiveSurfaceMesh();
-        this._applySmoothLODTransitions();
         const rotationDelta = this.params.rotationSpeed * simulationDelta * Math.PI * 2;
         this.spinGroup.rotation.y += rotationDelta;
         this.cloudsMesh.rotation.y += rotationDelta * 1.12;
@@ -1708,284 +1421,106 @@ export class Planet {
           this.oceanMesh.visible = false;
           this.foamMesh.visible = false;
 
-          // forcer l'ancien LOD pour les géantes gazeuses
-          if (this.chunkLOD) { this.chunkLOD.dispose(); this.chunkLOD = null; }
-          if (this.surfaceLOD) this.surfaceLOD.visible = true;
+            // --- Gas Giant LOD Strategy ---
+            this.ridgeNoise = null;
+            this.warpNoiseX = null;
+            this.warpNoiseY = null;
+            this.warpNoiseZ = null;
+            this.craterNoise = null;
+            // Ensure chunked LOD is disabled and disposed
+            if (this.chunkLOD) {
+                this.chunkLOD.dispose();
+                this.chunkLOD = null;
+            }
+            // Ensure the main LOD system is visible
+            if (this.surfaceLOD) {
+                this.surfaceLOD.visible = true;
+            }
+            this.oceanMesh.visible = false;
+            this.foamMesh.visible = false;
 
         } else {
-          this._disposeGasLODResources();
+            // --- Rocky Planet LOD Strategy ---
+            this._disposeGasLODResources();
 
-          const rng = new SeededRNG(this.params.seed);
-          const noiseRng = rng.fork();
+            // Ensure the main LOD system is hidden
+            if (this.surfaceLOD) {
+                this.surfaceLOD.visible = false;
+            }
 
-          const baseNoise = createNoise3D(() => noiseRng.next());
-          const ridgeNoise = createNoise3D(() => noiseRng.next());
-          const warpNoiseX = createNoise3D(() => noiseRng.next());
-          const warpNoiseY = createNoise3D(() => noiseRng.next());
-          const warpNoiseZ = createNoise3D(() => noiseRng.next());
-          const craterNoise = createNoise3D(() => noiseRng.next());
-
-          const offsets = [];
-          for (let i = 0; i < this.params.noiseLayers; i += 1) {
-            const fork = noiseRng.fork();
-            offsets.push(new THREE.Vector3(
-              fork.nextFloat(-128, 128),
-              fork.nextFloat(-128, 128),
-              fork.nextFloat(-128, 128)
-            ));
-          }
-
-          const profile = this.deriveTerrainProfile(this.params.seed);
-
-          const generators = { baseNoise, ridgeNoise, warpNoiseX, warpNoiseY, warpNoiseZ, craterNoise };
-          const geometryByLevel = {};
-          PLANET_SURFACE_LOD_ORDER.forEach((levelKey) => {
-            const detail = this._getSurfaceDetailForLevel(levelKey);
-            geometryByLevel[levelKey] = this._buildRockyGeometry(detail, generators, profile, offsets);
-            this._replaceSurfaceGeometry(levelKey, geometryByLevel[levelKey]);
-          });
-
-          const texWidth = 256;
-          const texHeight = 128;
-          const splatData = new Uint8Array(texWidth * texHeight);
-          const dir = new THREE.Vector3();
-          for (let y = 0; y < texHeight; y++) {
-              const v = y / (texHeight - 1);
-              const lat = (v - 0.5) * Math.PI;
-              for (let x = 0; x < texWidth; x++) {
-                  const u = x / (texWidth - 1);
-                  const lon = (u - 0.5) * Math.PI * 2;
-                  dir.set(Math.cos(lon) * Math.cos(lat), Math.sin(lat), Math.sin(lon) * Math.cos(lat)).normalize();
-
-                  let elevation = 0;
-                  let amplitude = 1;
-                  let frequency = this.params.noiseFrequency;
-                  let totalAmplitude = 0;
-                  for (let l = 0; l < this.params.noiseLayers; l++) {
-                      const offset = offsets[l];
-                      const sx = dir.x * frequency + offset.x;
-                      const sy = dir.y * frequency + offset.y;
-                      const sz = dir.z * frequency + offset.z;
-                      elevation += baseNoise(sx, sy, sz) * amplitude;
-                      totalAmplitude += amplitude;
-                      amplitude *= this.params.persistence;
-                      frequency *= this.params.lacunarity;
-                  }
-                  if (totalAmplitude > 0) {
-                      elevation /= totalAmplitude;
-                  }
-                  const normalized = elevation * 0.5 + 0.5;
-                  splatData[y * texWidth + x] = Math.floor(THREE.MathUtils.smoothstep(normalized, 0.4, 0.6) * 255);
-              }
-          }
-          const splatTexture = new THREE.DataTexture(splatData, texWidth, texHeight, THREE.RedFormat, THREE.UnsignedByteType);
-          splatTexture.needsUpdate = true;
-
-          PLANET_SURFACE_LOD_ORDER.forEach((levelKey) => {
-            if (levelKey === 'mega') {
-                const rockTexture = generateRockTexture({ seed: this.params.seed });
-                const sandTexture = generateSandTexture({ seed: this.params.seed });
-
-                // Use MeshStandardMaterial for proper shadow support
-                const material = new THREE.MeshStandardMaterial({
-                    vertexColors: true,
-                    roughness: 0.82,
-                    metalness: 0.12,
-                    flatShading: false
+            // Enable and build the chunked LOD system
+            if (this.chunkedLODEnabled) {
+                if (this.chunkLOD) {
+                    this.chunkLOD.dispose();
+                }
+                this.chunkLOD = new ChunkedLODSphere(this, {
+                    maxLevel: 6,
+                    baseResolution: 9,
+                    splitDistanceK: 5.5,
+                    hysteresis: 1.5,
+                    fadeDurationMs: 180,
+                    skirtDepth: 0.004,
+                    chunkFadeSpread: this._lodChunkFadeSpread ?? 0.25
                 });
-                this._assignSurfaceMaterial(levelKey, material);
             } else {
+                // Fallback for when chunkedLOD is disabled: show the old system
+                if (this.chunkLOD) {
+                    this.chunkLOD.dispose();
+                    this.chunkLOD = null;
+                }
+                if (this.surfaceLOD) {
+                    this.surfaceLOD.visible = true;
+                }
+            }
+
+            const rng = new SeededRNG(this.params.seed);
+            const noiseRng = rng.fork();
+            const baseNoise = createNoise3D(() => noiseRng.next());
+            this.ridgeNoise = createNoise3D(() => noiseRng.next());
+            this.warpNoiseX = createNoise3D(() => noiseRng.next());
+            this.warpNoiseY = createNoise3D(() => noiseRng.next());
+            this.warpNoiseZ = createNoise3D(() => noiseRng.next());
+            this.craterNoise = createNoise3D(() => noiseRng.next());
+
+            const profile = this.deriveTerrainProfile(this.params.seed);
+            const offsets = [];
+            for (let i = 0; i < this.params.noiseLayers; i += 1) {
+                const fork = noiseRng.fork();
+                offsets.push(new THREE.Vector3(
+                    fork.nextFloat(-128, 128),
+                    fork.nextFloat(-128, 128),
+                    fork.nextFloat(-128, 128)
+                ));
+            }
+
+            // Note: _buildRockyGeometry is now primarily for the fallback LOD.
+            // The main geometry generation for rocky planets happens inside ChunkedLODSphere.
+            const generators = { baseNoise, ridgeNoise: baseNoise, warpNoiseX: baseNoise, warpNoiseY: baseNoise, warpNoiseZ: baseNoise, craterNoise: baseNoise };
+            PLANET_SURFACE_LOD_ORDER.forEach((levelKey) => {
+                const detail = this._getSurfaceDetailForLevel(levelKey);
+                const geometry = this._buildRockyGeometry(detail, generators, profile, offsets);
+                this._replaceSurfaceGeometry(levelKey, geometry);
                 this._assignSurfaceMaterial(levelKey, this.planetMaterial);
-            }
-          });
-          this.planetMesh = this.surfaceLODLevels.medium;
-
-
-          const oceanVisible = this.params.oceanLevel > 0.001 && this.params.noiseAmplitude > 0.0001;
-          const oceanScale = this.params.radius * 1.001;
-          const foamScale = this.params.radius * 1.003;
-          this.oceanMesh.visible = oceanVisible;
-          this.foamMesh.visible = oceanVisible && this.params.foamEnabled;
-          if (oceanVisible) {
-            this.oceanMesh.scale.setScalar(oceanScale);
-            this.foamMesh.scale.setScalar(foamScale);
-            this.oceanMesh.material.color.set(this.palette.ocean);
-            this.foamMesh.material.color.set(this.palette.foam);
-
-            const texWidth = 512;
-            const texHeight = 256;
-            const data = new Uint8Array(texWidth * texHeight * 4);
-            const dir = new THREE.Vector3();
-            const warpVecTex = new THREE.Vector3();
-
-            const ridgeFreq = profile.ridgeFrequency;
-            const ruggedPower = profile.ruggedPower;
-            const ridgeWeight = profile.ridgeWeight;
-            const billowWeight = profile.billowWeight;
-            const plateauPower = profile.plateauPower;
-            const sharpness = profile.sharpness;
-            const strStrength = profile.striationStrength;
-            const strFreq = profile.striationFrequency;
-            const strPhase = profile.striationPhase;
-            const equatorLift = profile.equatorLift;
-            const poleDrop = profile.poleDrop;
-            const craterFreq = profile.craterFrequency;
-            const craterThresh = profile.craterThreshold;
-            const craterDepth = profile.craterDepth;
-            const craterSharp = profile.craterSharpness;
-            const warpStrength = profile.warpStrength * 0.35;
-            const warpOffset = profile.warpOffset;
-            const craterOffset = profile.craterOffset;
-
-            const shorelineHalfWidth = Math.max(0.002, this.params.noiseAmplitude * 0.06);
-
-            for (let y = 0; y < texHeight; y += 1) {
-              const v = y / (texHeight - 1);
-              const lat = (v - 0.5) * Math.PI;
-              const cosLat = Math.cos(lat);
-              const sinLat = Math.sin(lat);
-              for (let x = 0; x < texWidth; x += 1) {
-                const u = x / (texWidth - 1);
-                const lon = (u - 0.5) * Math.PI * 2;
-                const cosLon = Math.cos(lon);
-                const sinLon = Math.sin(lon);
-                dir.set(cosLat * cosLon, sinLat, cosLat * sinLon);
-
-                let sampleDirX = dir.x;
-                let sampleDirY = dir.y;
-                let sampleDirZ = dir.z;
-                if (warpStrength > 0) {
-                  const fx = profile.warpFrequency;
-                  warpVecTex.set(
-                    warpNoiseX(sampleDirX * fx + warpOffset.x, sampleDirY * fx + warpOffset.y, sampleDirZ * fx + warpOffset.z),
-                    warpNoiseY(sampleDirX * fx + warpOffset.y, sampleDirY * fx + warpOffset.z, sampleDirZ * fx + warpOffset.x),
-                    warpNoiseZ(sampleDirX * fx + warpOffset.z, sampleDirY * fx + warpOffset.x, sampleDirZ * fx + warpOffset.y)
-                  );
-                  sampleDirX = (sampleDirX + warpVecTex.x * warpStrength);
-                  sampleDirY = (sampleDirY + warpVecTex.y * warpStrength);
-                  sampleDirZ = (sampleDirZ + warpVecTex.z * warpStrength);
-                  const invLen = 1 / Math.sqrt(sampleDirX * sampleDirX + sampleDirY * sampleDirY + sampleDirZ * sampleDirZ);
-                  sampleDirX *= invLen; sampleDirY *= invLen; sampleDirZ *= invLen;
-                }
-
-                let amplitude = 1;
-                let frequency = this.params.noiseFrequency;
-                let totalAmplitude = 0;
-                let sum = 0;
-                let ridgeSum = 0;
-                let billowSum = 0;
-                for (let layer = 0; layer < this.params.noiseLayers; layer += 1) {
-                  const o = offsets[layer];
-                  const sx = sampleDirX * frequency + o.x;
-                  const sy = sampleDirY * frequency + o.y;
-                  const sz = sampleDirZ * frequency + o.z;
-                  const s = baseNoise(sx, sy, sz);
-                  sum += s * amplitude;
-
-                  const r = ridgeNoise(sx * ridgeFreq, sy * ridgeFreq, sz * ridgeFreq);
-                  ridgeSum += (1 - Math.abs(r)) * amplitude;
-
-                  billowSum += Math.pow(Math.abs(s), ruggedPower) * amplitude;
-
-                  totalAmplitude += amplitude;
-                  amplitude *= this.params.persistence;
-                  frequency *= this.params.lacunarity;
-                }
-                if (totalAmplitude > 0) {
-                  sum /= totalAmplitude;
-                  ridgeSum /= totalAmplitude;
-                  billowSum /= totalAmplitude;
-                }
-
-                let elev = sum;
-                elev = THREE.MathUtils.lerp(elev, ridgeSum * 2 - 1, ridgeWeight);
-                elev = THREE.MathUtils.lerp(elev, billowSum * 2 - 1, billowWeight);
-                elev = Math.sign(elev) * Math.pow(Math.abs(elev), sharpness);
-                let normalized = elev * 0.5 + 0.5;
-                normalized = Math.pow(THREE.MathUtils.clamp(normalized, 0, 1), plateauPower);
-                if (strStrength > 0) {
-                  const str = Math.sin((sampleDirX + sampleDirZ) * strFreq + strPhase);
-                  normalized += str * strStrength;
-                }
-                if (equatorLift || poleDrop) {
-                  const latitude = Math.abs(sampleDirY);
-                  normalized += (1 - latitude) * equatorLift;
-                  normalized -= latitude * poleDrop;
-                }
-                const cSamp = craterNoise(sampleDirX * craterFreq + craterOffset.x, sampleDirY * craterFreq + craterOffset.y, sampleDirZ * craterFreq + craterOffset.z);
-                const cVal = (cSamp + 1) * 0.5;
-                if (cVal > craterThresh) {
-                  const cT = (cVal - craterThresh) / Math.max(1e-6, 1 - craterThresh);
-                  normalized -= Math.pow(cT, craterSharp) * craterDepth;
-                }
-                normalized = THREE.MathUtils.clamp(normalized, 0, 1);
-
-                const displacementHere = (normalized - this.params.oceanLevel) * this.params.noiseAmplitude;
-                const finalR = this.params.radius + displacementHere;
-                const distFromShore = Math.abs(finalR - this.params.radius);
-
-                let alpha = 1 - THREE.MathUtils.smoothstep(distFromShore, 0, shorelineHalfWidth);
-                alpha *= THREE.MathUtils.clamp(0.5 + Math.sign(displacementHere) * 0.5, 0, 1);
-                const hash = (Math.sin((x + 37) * 12.9898 + (y + 57) * 78.233) * 43758.5453) % 1;
-                alpha = THREE.MathUtils.clamp(alpha * (0.9 + 0.2 * hash), 0, 1);
-
-                const idx = (y * texWidth + x) * 4;
-                data[idx + 0] = 255;
-                data[idx + 1] = 255;
-                data[idx + 2] = 255;
-                data[idx + 3] = Math.round(alpha * 255);
-              }
-            }
-
-            if (this.foamTexture && this.foamTexture.dispose) {
-                this.foamTexture.dispose();
-            }
-            this.foamTexture = new THREE.DataTexture(data, texWidth, texHeight, THREE.RGBAFormat);
-            this.foamTexture.colorSpace = THREE.SRGBColorSpace;
-            this.foamTexture.needsUpdate = true;
-            this.foamTexture.wrapS = THREE.RepeatWrapping;
-            this.foamTexture.wrapT = THREE.ClampToEdgeWrapping;
-            this.foamTexture.magFilter = THREE.LinearFilter;
-            this.foamTexture.minFilter = THREE.LinearMipMapLinearFilter;
-
-            this.foamMesh.material.map = this.foamTexture;
-            this.foamMesh.material.alphaMap = this.foamTexture;
-            this.foamMesh.material.needsUpdate = true;
-          }
-
-          // --- Activer le LOD par chunks pour les planètes rocheuses ---
-          if (this.chunkedLODEnabled) {
-            // cacher l'ancien LOD global
-            if (this.surfaceLOD) {
-              this.surfaceLOD.visible = false;
-              // Empêcher tout auto-update ou fade de ce côté
-              this.setSmoothLODTransitions(false);
-            }
-
-            // reconstruire le chunk manager avec les params actuels
-            if (this.chunkLOD) { this.chunkLOD.dispose(); this.chunkLOD = null; }
-            this.chunkLOD = new ChunkedLODSphere(this, {
-              maxLevel: 6,
-              baseResolution: 9,  // Réduit pour plus de chunks
-              splitDistanceK: 5.5,
-              hysteresis: 1.5,
-              fadeDurationMs: 180,
-              skirtDepth: 0.004,
-              chunkFadeSpread: this._lodChunkFadeSpread ?? 0.25
             });
-          } else {
-            if (this.chunkLOD) { this.chunkLOD.dispose(); this.chunkLOD = null; }
-            if (this.surfaceLOD) {
-              this.surfaceLOD.visible = true;
-              this.setSmoothLODTransitions(true);
+            this.planetMesh = this.surfaceLODLevels.medium;
+
+            const oceanVisible = this.params.oceanLevel > 0.001 && this.params.noiseAmplitude > 0.0001;
+            const oceanScale = this.params.radius * 1.001;
+            const foamScale = this.params.radius * 1.003;
+            this.oceanMesh.visible = oceanVisible;
+            this.foamMesh.visible = oceanVisible && this.params.foamEnabled;
+            if (oceanVisible) {
+                this.oceanMesh.scale.setScalar(oceanScale);
+                this.foamMesh.scale.setScalar(foamScale);
+                this.oceanMesh.material.color.set(this.palette.ocean);
+                this.foamMesh.material.color.set(this.palette.foam);
+
+                // Regenerate foam texture only if needed
+                this.regenerateFoamTextureIfNeeded(profile, offsets, baseNoise);
             }
-          }
         }
 
         this._updateSurfaceLodDistances();
-        
-        // Apply smooth LOD transitions
-        this._applySmoothLODTransitions();
 
         const cloudScale = this.params.radius * (1 + Math.max(0.0, this.params.cloudHeight || 0.03));
         const atmosphereScale = this.params.radius * (1.06 + Math.max(0.0, (this.params.cloudHeight || 0.03)) * 0.8);
@@ -2058,8 +1593,10 @@ export class Planet {
           if (latitude > (1 - poleThreshold)) {
             const iceStrength = (latitude - (1 - poleThreshold)) / poleThreshold;
 
-            const iceNoise = createNoise3D(() => new SeededRNG(this.params.seed).next());
-            const noiseValue = iceNoise(
+            if (!this.icePoleNoise) {
+                this.icePoleNoise = createNoise3D(() => new SeededRNG(this.params.seed).next());
+            }
+            const noiseValue = this.icePoleNoise(
               vertexPosition.x * this.params.icePolesNoiseScale,
               vertexPosition.y * this.params.icePolesNoiseScale,
               vertexPosition.z * this.params.icePolesNoiseScale
@@ -2120,15 +1657,17 @@ export class Planet {
         const cloudScale = Math.max(0.1, this.params.radius * (1 + Math.max(0, this.params.cloudHeight || 0.03)));
         this.cloudsMesh.scale.setScalar(cloudScale);
 
-        this.cloudTextureDirty = true;
-        if (this.cloudTextureDirty || !this.cloudTexture) {
-          this.regenerateCloudTexture();
-        }
-        if (this.cloudTexture) {
-            this.cloudTexture.needsUpdate = true;
-            this.cloudsMaterial.map = this.cloudTexture;
-            this.cloudsMaterial.alphaMap = this.cloudTexture;
-            this.cloudsMaterial.needsUpdate = true;
+        const currentCloudParams = {
+            seed: this.params.seed,
+            noiseScale: this.params.cloudNoiseScale,
+            density: this.params.cloudDensity,
+            opacity: this.params.cloudsOpacity,
+            resolution: this.visualSettings?.noiseResolution
+        };
+
+        if (JSON.stringify(currentCloudParams) !== this.lastCloudParams) {
+            this.regenerateCloudTexture();
+            this.lastCloudParams = JSON.stringify(currentCloudParams);
         }
     }
 
@@ -2192,8 +1731,17 @@ export class Planet {
         tex.wrapS = THREE.RepeatWrapping;
         tex.wrapT = THREE.ClampToEdgeWrapping;
         tex.colorSpace = THREE.SRGBColorSpace;
+
+        if (this.cloudTexture) {
+            this.cloudTexture.dispose();
+        }
         this.cloudTexture = tex;
-        this.cloudTextureDirty = false;
+
+        if (this.cloudsMaterial) {
+            this.cloudsMaterial.map = this.cloudTexture;
+            this.cloudsMaterial.alphaMap = this.cloudTexture;
+            this.cloudsMaterial.needsUpdate = true;
+        }
     }
 
     generateGasGiantTexture(p, { resolutionScale = 1 } = {}) {
@@ -2799,6 +2347,165 @@ export class Planet {
     updateAurora() {
         if (!this.auroraNode) return;
         this.auroraNode.applyParams(true);
+    }
+
+    regenerateFoamTextureIfNeeded(profile, offsets, baseNoise) {
+        const { ridgeNoise, warpNoiseX, warpNoiseY, warpNoiseZ, craterNoise } = this;
+        const currentFoamParams = {
+            seed: this.params.seed,
+            oceanLevel: this.params.oceanLevel,
+            noiseAmplitude: this.params.noiseAmplitude,
+            noiseLayers: this.params.noiseLayers,
+            persistence: this.params.persistence,
+            lacunarity: this.params.lacunarity,
+            noiseFrequency: this.params.noiseFrequency,
+            profile: JSON.stringify(profile)
+        };
+
+        if (JSON.stringify(currentFoamParams) === this.lastFoamParams) {
+            return;
+        }
+
+        const texWidth = 512;
+        const texHeight = 256;
+        const data = new Uint8Array(texWidth * texHeight * 4);
+        const dir = new THREE.Vector3();
+        const warpVecTex = new THREE.Vector3();
+
+        const ridgeFreq = profile.ridgeFrequency;
+        const ruggedPower = profile.ruggedPower;
+        const ridgeWeight = profile.ridgeWeight;
+        const billowWeight = profile.billowWeight;
+        const plateauPower = profile.plateauPower;
+        const sharpness = profile.sharpness;
+        const strStrength = profile.striationStrength;
+        const strFreq = profile.striationFrequency;
+        const strPhase = profile.striationPhase;
+        const equatorLift = profile.equatorLift;
+        const poleDrop = profile.poleDrop;
+        const craterFreq = profile.craterFrequency;
+        const craterThresh = profile.craterThreshold;
+        const craterDepth = profile.craterDepth;
+        const craterSharp = profile.craterSharpness;
+        const warpStrength = profile.warpStrength * 0.35;
+        const warpOffset = profile.warpOffset;
+        const craterOffset = profile.craterOffset;
+
+        const shorelineHalfWidth = Math.max(0.002, this.params.noiseAmplitude * 0.06);
+
+        for (let y = 0; y < texHeight; y += 1) {
+          const v = y / (texHeight - 1);
+          const lat = (v - 0.5) * Math.PI;
+          const cosLat = Math.cos(lat);
+          const sinLat = Math.sin(lat);
+          for (let x = 0; x < texWidth; x += 1) {
+            const u = x / (texWidth - 1);
+            const lon = (u - 0.5) * Math.PI * 2;
+            const cosLon = Math.cos(lon);
+            const sinLon = Math.sin(lon);
+            dir.set(cosLat * cosLon, sinLat, cosLat * sinLon);
+
+            let sampleDirX = dir.x;
+            let sampleDirY = dir.y;
+            let sampleDirZ = dir.z;
+            if (warpStrength > 0) {
+              const fx = profile.warpFrequency;
+              warpVecTex.set(
+                warpNoiseX(sampleDirX * fx + warpOffset.x, sampleDirY * fx + warpOffset.y, sampleDirZ * fx + warpOffset.z),
+                warpNoiseY(sampleDirX * fx + warpOffset.y, sampleDirY * fx + warpOffset.z, sampleDirZ * fx + warpOffset.x),
+                warpNoiseZ(sampleDirX * fx + warpOffset.z, sampleDirY * fx + warpOffset.x, sampleDirZ * fx + warpOffset.y)
+              );
+              sampleDirX = (sampleDirX + warpVecTex.x * warpStrength);
+              sampleDirY = (sampleDirY + warpVecTex.y * warpStrength);
+              sampleDirZ = (sampleDirZ + warpVecTex.z * warpStrength);
+              const invLen = 1 / Math.sqrt(sampleDirX * sampleDirX + sampleDirY * sampleDirY + sampleDirZ * sampleDirZ);
+              sampleDirX *= invLen; sampleDirY *= invLen; sampleDirZ *= invLen;
+            }
+
+            let amplitude = 1;
+            let frequency = this.params.noiseFrequency;
+            let totalAmplitude = 0;
+            let sum = 0;
+            let ridgeSum = 0;
+            let billowSum = 0;
+            for (let layer = 0; layer < this.params.noiseLayers; layer += 1) {
+              const o = offsets[layer];
+              const sx = sampleDirX * frequency + o.x;
+              const sy = sampleDirY * frequency + o.y;
+              const sz = sampleDirZ * frequency + o.z;
+              const s = baseNoise(sx, sy, sz);
+              sum += s * amplitude;
+
+              const r = ridgeNoise(sx * ridgeFreq, sy * ridgeFreq, sz * ridgeFreq);
+              ridgeSum += (1 - Math.abs(r)) * amplitude;
+
+              billowSum += Math.pow(Math.abs(s), ruggedPower) * amplitude;
+
+              totalAmplitude += amplitude;
+              amplitude *= this.params.persistence;
+              frequency *= this.params.lacunarity;
+            }
+            if (totalAmplitude > 0) {
+              sum /= totalAmplitude;
+              ridgeSum /= totalAmplitude;
+              billowSum /= totalAmplitude;
+            }
+
+            let elev = sum;
+            elev = THREE.MathUtils.lerp(elev, ridgeSum * 2 - 1, ridgeWeight);
+            elev = THREE.MathUtils.lerp(elev, billowSum * 2 - 1, billowWeight);
+            elev = Math.sign(elev) * Math.pow(Math.abs(elev), sharpness);
+            let normalized = elev * 0.5 + 0.5;
+            normalized = Math.pow(THREE.MathUtils.clamp(normalized, 0, 1), plateauPower);
+            if (strStrength > 0) {
+              const str = Math.sin((sampleDirX + sampleDirZ) * strFreq + strPhase);
+              normalized += str * strStrength;
+            }
+            if (equatorLift || poleDrop) {
+              const latitude = Math.abs(sampleDirY);
+              normalized += (1 - latitude) * equatorLift;
+              normalized -= latitude * poleDrop;
+            }
+            const cSamp = craterNoise(sampleDirX * craterFreq + craterOffset.x, sampleDirY * craterFreq + craterOffset.y, sampleDirZ * craterFreq + craterOffset.z);
+            const cVal = (cSamp + 1) * 0.5;
+            if (cVal > craterThresh) {
+              const cT = (cVal - craterThresh) / Math.max(1e-6, 1 - craterThresh);
+              normalized -= Math.pow(cT, craterSharp) * craterDepth;
+            }
+            normalized = THREE.MathUtils.clamp(normalized, 0, 1);
+
+            const displacementHere = (normalized - this.params.oceanLevel) * this.params.noiseAmplitude;
+            const finalR = this.params.radius + displacementHere;
+            const distFromShore = Math.abs(finalR - this.params.radius);
+
+            let alpha = 1 - THREE.MathUtils.smoothstep(distFromShore, 0, shorelineHalfWidth);
+            alpha *= THREE.MathUtils.clamp(0.5 + Math.sign(displacementHere) * 0.5, 0, 1);
+            const hash = (Math.sin((x + 37) * 12.9898 + (y + 57) * 78.233) * 43758.5453) % 1;
+            alpha = THREE.MathUtils.clamp(alpha * (0.9 + 0.2 * hash), 0, 1);
+
+            const idx = (y * texWidth + x) * 4;
+            data[idx + 0] = 255;
+            data[idx + 1] = 255;
+            data[idx + 2] = 255;
+            data[idx + 3] = Math.round(alpha * 255);
+          }
+        }
+
+        if (this.foamTexture && this.foamTexture.dispose) {
+            this.foamTexture.dispose();
+        }
+        this.foamTexture = new THREE.DataTexture(data, texWidth, texHeight, THREE.RGBAFormat);
+        this.foamTexture.colorSpace = THREE.SRGBColorSpace;
+        this.foamTexture.needsUpdate = true;
+        this.foamTexture.wrapS = THREE.RepeatWrapping;
+        this.foamTexture.wrapT = THREE.ClampToEdgeWrapping;
+        this.foamTexture.magFilter = THREE.LinearFilter;
+        this.foamTexture.minFilter = THREE.LinearMipMapLinearFilter;
+
+        this.foamMesh.material.map = this.foamTexture;
+        this.foamMesh.material.alphaMap = this.foamTexture;
+        this.foamMesh.material.needsUpdate = true;
+        this.lastFoamParams = JSON.stringify(currentFoamParams);
     }
 }
 
