@@ -267,7 +267,7 @@ const CHUNK_LOD_DEFAULTS = {
   enabled: true,
   maxLevel: 6,                 // profondeur max de quadtree (≈ 90° / 2^L par face)
   baseResolution: 17,          // (n x n) vertices par chunk racine ; rester impair pour UV/centres
-  splitDistanceK: 6.5,         // tuning: plus grand → split plus tôt (plus de détails)
+  screenSpaceErrorTarget: 0.55, // taille écran (normalisée) déclenchant un split
   hysteresis: 1.35,            // anti-oscillation split/merge (merge = split / hysteresis)
   fadeDurationMs: 280,
   skirtDepth: 0.004,           // petites jupes anti-cracks (en fraction du radius)
@@ -279,8 +279,8 @@ const FACE_AXES = [
   // +X, -X, +Y, -Y, +Z, -Z
   { u:[0,0,  -1], v:[0,1,0],  n:[1,0,0] },   // +X
   { u:[0,0,   1], v:[0,1,0],  n:[-1,0,0] },  // -X
-  { u:[1,0,  0], v:[0,0,1],   n:[0,1,0] },   // +Y
-  { u:[1,0,  0], v:[0,0,-1],  n:[0,-1,0] },  // -Y
+  { u:[-1,0, 0], v:[0,0,1],   n:[0,1,0] },   // +Y (orientation corrigée)
+  { u:[-1,0, 0], v:[0,0,-1],  n:[0,-1,0] },  // -Y (orientation corrigée)
   { u:[1,0,  0], v:[0,1,0],   n:[0,0,1] },   // +Z
   { u:[-1,0, 0], v:[0,1,0],   n:[0,0,-1] },  // -Z
 ];
@@ -369,30 +369,24 @@ class CubeFaceChunk {
   }
 
   // renvoie true si devrait splitter
-  shouldSplit(camera) {
+  shouldSplit() {
     if (this.level >= this.manager.cfg.maxLevel) return false;
-    const camPos = camera.getWorldPosition(new THREE.Vector3());
+    const camPos = this.manager.getCameraWorldPos();
     const d = camPos.distanceTo(this.centerWorld);
-    // simple metric: si patch “projete” à l’écran dépasse un certain seuil
-    // approx taille-écran ~ (diamètre chunk / distance) * focal
-    const planet = this.manager.planet;
-    const R = this.manager.params.radius;
     const diameter = Math.max(0.001, 2 * this.radiusWorld);
-    const splitNear = R * this.manager.cfg.splitDistanceK * Math.pow(0.5, this.level);
-    // plus on est près que splitNear, plus on split
-    const metric = splitNear / Math.max(d, 1e-3);
+    const metric = this.manager.screenMetricForPatch(diameter, d);
     this.screenMetric = metric;
-    return metric > 1.0;
+    return metric > this.manager.cfg.screenSpaceErrorTarget;
   }
 
-  shouldMerge(camera) {
+  shouldMerge() {
     if (!this.isLeaf) return false; // merge decision occurs on parent handling children
-    const camPos = camera.getWorldPosition(new THREE.Vector3());
+    const camPos = this.manager.getCameraWorldPos();
     const d = camPos.distanceTo(this.centerWorld);
-    const R = this.manager.params.radius;
-    const splitNear = R * this.manager.cfg.splitDistanceK * Math.pow(0.5, this.level);
-    const metric = splitNear / Math.max(d, 1e-3);
-    return metric < (1.0 / this.manager.cfg.hysteresis);
+    const diameter = Math.max(0.001, 2 * this.radiusWorld);
+    const metric = this.manager.screenMetricForPatch(diameter, d);
+    const hysteresis = Math.max(1.001, this.manager.cfg.hysteresis || 1.0);
+    return metric < (this.manager.cfg.screenSpaceErrorTarget / hysteresis);
   }
 
   // split en 4 enfants (quadtree)
@@ -413,6 +407,9 @@ class CubeFaceChunk {
     const now = performance.now();
     this.children.forEach(c => {
       c.ensureMesh();
+      if (c.mesh) {
+        c.mesh.visible = true;
+      }
       c.isFadingIn = true;
       c.fadeStart = now;
       this.manager.planet._setLODFadeAlpha(c.mesh, 0);
@@ -431,11 +428,15 @@ class CubeFaceChunk {
     const now = performance.now();
     // fade in parent (if exists)
     if (this.mesh) {
+      this.mesh.visible = true;
       this.isFadingIn = true;
       this.fadeStart = now;
       this.manager.planet._setLODFadeAlpha(this.mesh, 0);
     } else {
       this.ensureMesh();
+      if (this.mesh) {
+        this.mesh.visible = true;
+      }
       this.isFadingIn = true;
       this.fadeStart = now;
     }
@@ -452,19 +453,20 @@ class CubeFaceChunk {
   tickFade() {
     const cfg = this.manager.cfg;
     const tNow = performance.now();
-    const ease = (t)=> (t<0?0:t>1?1:(t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2));
+    const ease = (t) => (t < 0 ? 0 : t > 1 ? 1 : (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2));
 
     if (this.isFadingIn && this.mesh) {
-      const t = (tNow - this.fadeStart)/cfg.fadeDurationMs;
-      this.manager.planet._setLODFadeProfile(this.mesh, { mode:'in', progress:ease(t), spread:this.manager.cfg.chunkFadeSpread, ease:1.2 });
-      
+      this.mesh.visible = true;
+      const t = (tNow - this.fadeStart) / cfg.fadeDurationMs;
+      this.manager.planet._setLODFadeProfile(this.mesh, { mode: 'in', progress: ease(t), spread: this.manager.cfg.chunkFadeSpread, ease: 1.2 });
+
       // Réduire l'overdraw : activer depthWrite dès que les enfants > 70%
       if (t >= 0.7 && this.mesh.material) {
         this.mesh.material.depthWrite = true;
       }
-      
-      if (t>=1) { 
-        this.isFadingIn = false; 
+
+      if (t >= 1) {
+        this.isFadingIn = false;
         this.manager.planet._setLODFadeAlpha(this.mesh, 1);
         // Finaliser avec opacité pleine
         if (this.mesh && this.mesh.material) {
@@ -475,15 +477,15 @@ class CubeFaceChunk {
       }
     }
     if (this.isFadingOut && this.mesh) {
-      const t = (tNow - this.fadeStart)/cfg.fadeDurationMs;
-      this.manager.planet._setLODFadeProfile(this.mesh, { mode:'out', progress:ease(t), spread:this.manager.cfg.chunkFadeSpread, ease:1.2 });
-      
+      const t = (tNow - this.fadeStart) / cfg.fadeDurationMs;
+      this.manager.planet._setLODFadeProfile(this.mesh, { mode: 'out', progress: ease(t), spread: this.manager.cfg.chunkFadeSpread, ease: 1.2 });
+
       // Réduire l'overdraw : masquer le parent dès que progress > 0.5
       if (t >= 0.5) {
         this.mesh.visible = false;
       }
-      
-      if (t>=1) {
+
+      if (t >= 1) {
         this.isFadingOut = false;
         if (this.mesh) {
           this.mesh.visible = false; // <- force
@@ -516,6 +518,8 @@ class ChunkedLODSphere {
   constructor(planet, cfg={}) {
     this.planet = planet;
     this.cfg = {...CHUNK_LOD_DEFAULTS, ...cfg};
+    this.cfg.screenSpaceErrorTarget = Math.max(0.1, this.cfg.screenSpaceErrorTarget ?? 0.55);
+    this.cfg.hysteresis = Math.max(1.0, this.cfg.hysteresis ?? 1.2);
     this.params = planet.params;
     this.group = new THREE.Group();
     this.group.name = 'ChunkedLODSphere';
@@ -528,6 +532,8 @@ class ChunkedLODSphere {
     this._lastOriginForBounds.copy(this.originWorld);
     this._lastBoundsT = 0;
     this._lastRotY = 0;
+    this._cameraWorldPos = new THREE.Vector3();
+    this._cameraInfo = { type: 'unknown', focal: 1, aspect: 1, height: 1 };
 
     // matériau partagé (vertexColors comme ton mesh rocky)
     this.material = new THREE.MeshStandardMaterial({
@@ -582,6 +588,42 @@ class ChunkedLODSphere {
         fork.nextFloat(-128,128)
       ));
     }
+  }
+
+  _updateCameraState(camera) {
+    if (!camera) return;
+    camera.getWorldPosition(this._cameraWorldPos);
+    if (camera.isPerspectiveCamera) {
+      const fovDeg = camera.fov ?? 60;
+      const fovRad = THREE.MathUtils.degToRad(THREE.MathUtils.clamp(fovDeg, 10, 170));
+      this._cameraInfo.type = 'perspective';
+      this._cameraInfo.focal = 1 / Math.tan(fovRad * 0.5);
+      this._cameraInfo.aspect = camera.aspect || 1;
+    } else if (camera.isOrthographicCamera) {
+      this._cameraInfo.type = 'orthographic';
+      this._cameraInfo.height = Math.max(1e-3, Math.abs(camera.top - camera.bottom));
+      this._cameraInfo.width = Math.max(1e-3, Math.abs(camera.right - camera.left));
+    } else {
+      this._cameraInfo.type = 'unknown';
+    }
+  }
+
+  getCameraWorldPos() {
+    return this._cameraWorldPos;
+  }
+
+  screenMetricForPatch(diameter, distance) {
+    const info = this._cameraInfo;
+    const safeDiameter = Math.max(1e-4, diameter);
+    if (info.type === 'perspective') {
+      const dist = Math.max(distance, 1e-3);
+      return (safeDiameter / dist) * info.focal;
+    }
+    if (info.type === 'orthographic') {
+      const denom = Math.max(info.height, 1e-3);
+      return safeDiameter / denom;
+    }
+    return safeDiameter / Math.max(distance, 1e-3);
   }
 
   // fabrique la géométrie du patch en grille quad (convertie en triangles)
@@ -754,6 +796,8 @@ class ChunkedLODSphere {
 
   // parcours + split/merge + fade
   update(camera) {
+    if (!camera) return;
+    this._updateCameraState(camera);
     // 0) si la planète a tourné ou bougé, rafraîchir les bounds des feuilles visibles
     if (this._needsRecomputeBounds()) {
       const stack = [...this.roots];
@@ -766,7 +810,7 @@ class ChunkedLODSphere {
     // 1) split pass
     const stack = [...this.roots];
     for (const node of stack) {
-      if (node.isLeaf && node.shouldSplit(camera)) {
+      if (node.isLeaf && node.shouldSplit()) {
         node.split();
       }
       if (node.children) stack.push(...node.children);
@@ -779,7 +823,7 @@ class ChunkedLODSphere {
       let allLeaf = true, allMerge = true;
       for (const c of node.children) {
         if (!c.isLeaf) { allLeaf = false; allMerge = false; break; }
-        if (!c.shouldMerge(camera)) allMerge = false;
+        if (!c.shouldMerge()) allMerge = false;
       }
       if (allLeaf && allMerge) {
         node.merge();
@@ -2051,8 +2095,8 @@ export class Planet {
             this.chunkLOD = new ChunkedLODSphere(this, {
               maxLevel: 5,
               baseResolution: 11,
-              splitDistanceK: 4.6,
-              hysteresis: 1.4,
+              screenSpaceErrorTarget: 0.55,
+              hysteresis: 1.45,
               fadeDurationMs: 220,
               skirtDepth: 0.0035,
               chunkFadeSpread: this._lodChunkFadeSpread ?? 0.25
