@@ -832,6 +832,20 @@ canvas {
   color: rgba(188, 210, 255, 0.78);
 }
 
+.debug-section {
+  margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid rgba(91, 126, 179, 0.15);
+}
+
+.debug-subtitle {
+  margin: 0 0 0.6rem 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(135, 169, 218, 0.85);
+}
+
 .debug-option {
   display: flex;
   align-items: center;

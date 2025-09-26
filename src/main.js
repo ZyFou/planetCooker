@@ -43,6 +43,12 @@ const debugMoonToggle = document.getElementById("debug-moon-vectors");
 const debugPlanetSpeedDisplay = document.getElementById("debug-planet-speed");
 const debugFpsDisplay = document.getElementById("debug-fps");
 const debugMoonSpeedList = document.getElementById("debug-moon-speed-list");
+
+// LOD Debug controls
+const debugLODEnabled = document.getElementById("debug-lod-enabled");
+const debugChunkHighlight = document.getElementById("debug-chunk-highlight");
+const debugRaycast = document.getElementById("debug-raycast");
+const debugLODMetrics = document.getElementById("debug-lod-metrics");
 const loadingOverlay = document.getElementById("loading");
 const debugHudFpsToggle = document.getElementById("debug-hud-fps");
 const cameraModeButton = document.getElementById("camera-mode");
@@ -762,6 +768,39 @@ if (debugMoonToggle) {
       debugMoonArrows.forEach((arrow) => { if (arrow) arrow.visible = false; });
     }
     updateDebugVectors();
+  });
+}
+
+// LOD Debug event listeners
+if (debugLODEnabled) {
+  debugLODEnabled.addEventListener("change", () => {
+    if (planet) {
+      planet.setDebugLODEnabled(debugLODEnabled.checked);
+    }
+  });
+}
+
+if (debugChunkHighlight) {
+  debugChunkHighlight.addEventListener("change", () => {
+    if (planet) {
+      planet.setDebugChunkHighlight(debugChunkHighlight.checked);
+    }
+  });
+}
+
+if (debugRaycast) {
+  debugRaycast.addEventListener("change", () => {
+    if (planet) {
+      planet.setDebugRaycast(debugRaycast.checked);
+    }
+  });
+}
+
+if (debugLODMetrics) {
+  debugLODMetrics.addEventListener("change", () => {
+    if (planet) {
+      planet.setDebugLODMetrics(debugLODMetrics.checked);
+    }
   });
 }
 

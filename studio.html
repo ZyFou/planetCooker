@@ -86,6 +86,45 @@
               </label> -->
               <span class="debug-metric">Speed: <span id="debug-planet-speed">0.000</span></span>
             </div>
+            
+            <!-- LOD Debug Section -->
+            <div class="debug-section">
+              <h3 class="debug-subtitle">LOD Debug</h3>
+              <div class="debug-option">
+                <label class="debug-toggle">
+                  <input type="checkbox" id="debug-lod-enabled" />
+                  <span>Enable LOD Debug</span>
+                </label>
+              </div>
+              <div class="debug-option">
+                <label class="debug-toggle">
+                  <input type="checkbox" id="debug-chunk-highlight" />
+                  <span>Highlight Chunks</span>
+                </label>
+              </div>
+              <div class="debug-option">
+                <label class="debug-toggle">
+                  <input type="checkbox" id="debug-raycast" />
+                  <span>Show Raycast</span>
+                </label>
+              </div>
+              <div class="debug-option">
+                <label class="debug-toggle">
+                  <input type="checkbox" id="debug-lod-metrics" />
+                  <span>Show LOD Metrics</span>
+                </label>
+              </div>
+              <div class="debug-option">
+                <span class="debug-metric">Active Chunks: <span id="debug-active-chunks">0</span></span>
+              </div>
+              <div class="debug-option">
+                <span class="debug-metric">LOD Level: <span id="debug-lod-level">medium</span></span>
+              </div>
+              <div class="debug-option">
+                <span class="debug-metric">Camera Distance: <span id="debug-camera-distance">0.00</span></span>
+              </div>
+            </div>
+            
             <div class="debug-option">
               <label class="debug-toggle">
                 <input type="checkbox" id="debug-moon-vectors" />
@@ -102,7 +141,7 @@
           <button id="reset-all" title="Reset to defaults">Reset All</button>
 
           </section>
-          <p class="hint">Use the sliders on the left to tweak the planet. Press H to hide/show the panel.</p>
+          <p class="hint">Use the sliders on the left to tweak the planet.</p>
         </section>
         <section id="scene">
           <!-- <div id="loading" hidden>

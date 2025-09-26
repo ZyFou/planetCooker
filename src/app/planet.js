@@ -973,6 +973,15 @@ export class Planet {
         this._foamTextureSignature = null;
         this._chunkOriginScratch = new THREE.Vector3();
 
+        // Debug system
+        this.debugLODEnabled = false;
+        this.debugChunkHighlight = false;
+        this.debugRaycast = false;
+        this.debugLODMetrics = false;
+        this.debugChunkMeshes = [];
+        this.debugRaycastLine = null;
+        this.debugInfoDisplay = null;
+
         this.planetSystem = new THREE.Group();
         this.scene.add(this.planetSystem);
 
@@ -1766,6 +1775,9 @@ export class Planet {
           this.chunkLOD.originWorld.copy(this.planetRoot.getWorldPosition(this._chunkOriginScratch));
           if (camera) this.chunkLOD.update(camera);
         }
+
+        // Debug visualizations
+        this.updateDebugVisualizations(camera);
 
         this._syncActiveSurfaceMesh();
         this._applySmoothLODTransitions();
@@ -3092,6 +3104,182 @@ export class Planet {
     updateAurora() {
         if (!this.auroraNode) return;
         this.auroraNode.applyParams(true);
+    }
+
+    // Debug methods
+    setDebugLODEnabled(enabled) {
+        this.debugLODEnabled = enabled;
+        if (!enabled) {
+            this.clearDebugVisualizations();
+        }
+    }
+
+    setDebugChunkHighlight(enabled) {
+        this.debugChunkHighlight = enabled;
+        if (!enabled) {
+            this.clearChunkHighlights();
+        }
+    }
+
+    setDebugRaycast(enabled) {
+        this.debugRaycast = enabled;
+        if (!enabled) {
+            this.clearRaycastVisualization();
+        }
+    }
+
+    setDebugLODMetrics(enabled) {
+        this.debugLODMetrics = enabled;
+        if (!enabled) {
+            this.clearLODMetricsDisplay();
+        }
+    }
+
+    clearDebugVisualizations() {
+        this.clearChunkHighlights();
+        this.clearRaycastVisualization();
+        this.clearLODMetricsDisplay();
+    }
+
+    clearChunkHighlights() {
+        this.debugChunkMeshes.forEach(mesh => {
+            if (mesh.parent) mesh.parent.remove(mesh);
+            if (mesh.geometry) mesh.geometry.dispose();
+            if (mesh.material) mesh.material.dispose();
+        });
+        this.debugChunkMeshes = [];
+    }
+
+    clearRaycastVisualization() {
+        if (this.debugRaycastLine && this.debugRaycastLine.parent) {
+            this.debugRaycastLine.parent.remove(this.debugRaycastLine);
+            if (this.debugRaycastLine.geometry) this.debugRaycastLine.geometry.dispose();
+            if (this.debugRaycastLine.material) this.debugRaycastLine.material.dispose();
+        }
+        this.debugRaycastLine = null;
+    }
+
+    clearLODMetricsDisplay() {
+        if (this.debugInfoDisplay && this.debugInfoDisplay.parent) {
+            this.debugInfoDisplay.parent.remove(this.debugInfoDisplay);
+        }
+        this.debugInfoDisplay = null;
+    }
+
+    updateDebugVisualizations(camera) {
+        if (!this.debugLODEnabled) return;
+
+        if (this.debugChunkHighlight) {
+            this.updateChunkHighlights();
+        }
+
+        if (this.debugRaycast) {
+            this.updateRaycastVisualization(camera);
+        }
+
+        if (this.debugLODMetrics) {
+            this.updateLODMetricsDisplay(camera);
+        }
+    }
+
+    updateChunkHighlights() {
+        this.clearChunkHighlights();
+        
+        if (!this.chunkLOD) return;
+
+        const chunks = this.collectAllChunks(this.chunkLOD.roots);
+        chunks.forEach(chunk => {
+            if (chunk.mesh && chunk.mesh.visible) {
+                const wireframe = new THREE.WireframeGeometry(chunk.mesh.geometry);
+                const material = new THREE.LineBasicMaterial({
+                    color: this.getChunkDebugColor(chunk),
+                    transparent: true,
+                    opacity: 0.6
+                });
+                const wireframeMesh = new THREE.LineSegments(wireframe, material);
+                wireframeMesh.position.copy(chunk.mesh.position);
+                wireframeMesh.rotation.copy(chunk.mesh.rotation);
+                wireframeMesh.scale.copy(chunk.mesh.scale);
+                this.scene.add(wireframeMesh);
+                this.debugChunkMeshes.push(wireframeMesh);
+            }
+        });
+    }
+
+    collectAllChunks(roots) {
+        const chunks = [];
+        const stack = [...roots];
+        while (stack.length > 0) {
+            const chunk = stack.pop();
+            chunks.push(chunk);
+            if (chunk.children) {
+                stack.push(...chunk.children);
+            }
+        }
+        return chunks;
+    }
+
+    getChunkDebugColor(chunk) {
+        // Color based on LOD level
+        const colors = [
+            0xff0000, // Level 0 - Red
+            0xff8800, // Level 1 - Orange
+            0xffff00, // Level 2 - Yellow
+            0x88ff00, // Level 3 - Lime
+            0x00ff00, // Level 4 - Green
+            0x00ff88, // Level 5 - Cyan
+            0x0088ff, // Level 6 - Blue
+        ];
+        return colors[Math.min(chunk.level, colors.length - 1)];
+    }
+
+    updateRaycastVisualization(camera) {
+        this.clearRaycastVisualization();
+
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+        
+        const direction = raycaster.ray.direction.clone();
+        const origin = raycaster.ray.origin.clone();
+        const end = origin.clone().add(direction.multiplyScalar(100));
+
+        const geometry = new THREE.BufferGeometry().setFromPoints([origin, end]);
+        const material = new THREE.LineBasicMaterial({
+            color: 0xff0000,
+            transparent: true,
+            opacity: 0.8
+        });
+        
+        this.debugRaycastLine = new THREE.Line(geometry, material);
+        this.scene.add(this.debugRaycastLine);
+    }
+
+    updateLODMetricsDisplay(camera) {
+        this.clearLODMetricsDisplay();
+
+        if (!this.chunkLOD) return;
+
+        const chunks = this.collectAllChunks(this.chunkLOD.roots);
+        const activeChunks = chunks.filter(chunk => chunk.mesh && chunk.mesh.visible);
+        
+        // Update debug info in HTML
+        const activeChunksElement = document.getElementById('debug-active-chunks');
+        const lodLevelElement = document.getElementById('debug-lod-level');
+        const cameraDistanceElement = document.getElementById('debug-camera-distance');
+
+        if (activeChunksElement) {
+            activeChunksElement.textContent = activeChunks.length;
+        }
+
+        if (lodLevelElement) {
+            lodLevelElement.textContent = this.activeSurfaceMode === 'chunk' ? 'chunked' : 
+                                        (this.lodTransitionManager?.currentLOD || 'medium');
+        }
+
+        if (cameraDistanceElement) {
+            const distance = camera.position.distanceTo(this.planetRoot.position);
+            cameraDistanceElement.textContent = distance.toFixed(2);
+        }
     }
 }
 
