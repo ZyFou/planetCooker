@@ -267,17 +267,19 @@ const CHUNK_LOD_DEFAULTS = {
   enabled: true,
   maxLevel: 6,                 // profondeur max de quadtree (≈ 90° / 2^L par face)
   baseResolution: 17,          // (n x n) vertices par chunk racine ; rester impair pour UV/centres
-  screenSpaceErrorTarget: 0.55, // taille écran (normalisée) déclenchant un split
-  hysteresis: 1.35,            // anti-oscillation split/merge (merge = split / hysteresis)
+  screenSpaceErrorTarget: 0.45, // taille écran (normalisée) déclenchant un split
+  hysteresis: 1.15,            // anti-oscillation split/merge (merge = split / hysteresis)
   fadeDurationMs: 280,
   skirtDepth: 0.004,           // petites jupes anti-cracks (en fraction du radius)
   chunkFadeSpread: 0.45,       // utilise ton _lodChunkFadeSpread
-  visibilityAlignment: 0.0,
-  splitAlignment: 0.08,
-  mergeAlignment: 0.04,
+  visibilityAlignment: 0.05,   // Higher threshold for stability
+  visibilityHysteresis: 0.7,   // More hysteresis for stability
+  splitAlignment: 0.12,        // Higher threshold to prevent close-range splitting
+  mergeAlignment: 0.08,        // Higher threshold to prevent close-range merging
   frontMetricScale: 1.35,
   sideMetricScale: 0.45,
-  alignmentMetricPower: 1.5
+  alignmentMetricPower: 1.5,
+  alignmentSmoothing: 0.15     // Faster smoothing for close-range stability
 };
 
 // map face index → base axes (cube -> sphere)
@@ -320,6 +322,8 @@ class CubeFaceChunk {
     this.radiusWorld = 0;        // bounding sphere approx pour ce patch
     this.surfaceNormal = new THREE.Vector3(0, 1, 0);
     this.cameraAlignment = 1;
+    this._smoothedAlignment = 1;
+    this._lastVisible = true;
   }
 
   dispose() {
@@ -394,19 +398,46 @@ class CubeFaceChunk {
     } else {
       toCamera.multiplyScalar(1 / dist);
     }
-    const alignment = Math.max(0, this.surfaceNormal.dot(toCamera));
-    this.cameraAlignment = alignment;
+    
+    // Calculate raw alignment
+    const rawAlignment = Math.max(0, this.surfaceNormal.dot(toCamera));
+    
+    // Distance-based stability: prevent flickering at very close ranges
+    const planetRadius = this.manager.params.radius;
+    const normalizedDist = dist / planetRadius;
+    const isVeryClose = normalizedDist < 1.5; // Within 1.5 planet radii
+    
+    // Adjust smoothing based on distance - more aggressive smoothing when very close
+    let smoothingFactor = this.manager.cfg.alignmentSmoothing;
+    if (isVeryClose) {
+      // Increase smoothing when very close to prevent flickering
+      smoothingFactor = Math.min(0.8, smoothingFactor * (2.0 + (1.5 - normalizedDist) * 2.0));
+    }
+    
+    this._smoothedAlignment = THREE.MathUtils.lerp(this._smoothedAlignment, rawAlignment, THREE.MathUtils.clamp(smoothingFactor, 0.01, 1));
+    this.cameraAlignment = this._smoothedAlignment;
 
     const diameter = Math.max(0.001, 2 * this.radiusWorld);
     const baseMetric = this.manager.screenMetricForPatch(diameter, dist);
     const cfg = this.manager.cfg;
-    const t = Math.pow(alignment, cfg.alignmentMetricPower);
+    const t = Math.pow(this.cameraAlignment, cfg.alignmentMetricPower);
     const facingScale = THREE.MathUtils.lerp(cfg.sideMetricScale, cfg.frontMetricScale, t);
     const metric = baseMetric * facingScale;
     this.screenMetric = metric;
 
     if (this.mesh && !this.isFadingOut) {
-      this.mesh.visible = alignment > cfg.visibilityAlignment;
+      const on = this.cameraAlignment > cfg.visibilityAlignment;
+      if (cfg.visibilityHysteresis != null) {
+        const hyst = THREE.MathUtils.clamp(cfg.visibilityHysteresis, 0, 0.95);
+        const thOn = cfg.visibilityAlignment;
+        const thOff = Math.max(0, thOn - (thOn * hyst));
+        const nextVisible = this._lastVisible ? (this.cameraAlignment > thOff) : (this.cameraAlignment > thOn);
+        this.mesh.visible = nextVisible;
+        this._lastVisible = nextVisible;
+      } else {
+        this.mesh.visible = on;
+        this._lastVisible = on;
+      }
     }
 
     return metric;
@@ -420,6 +451,17 @@ class CubeFaceChunk {
     if (this.cameraAlignment <= cfg.splitAlignment) {
       return false;
     }
+    
+    // Distance-based stability: prevent splitting at very close ranges
+    const planetRadius = this.manager.params.radius;
+    const normalizedDist = this.manager.getCameraWorldPos().distanceTo(this.centerWorld) / planetRadius;
+    const isVeryClose = normalizedDist < 1.2; // Within 1.2 planet radii
+    
+    if (isVeryClose) {
+      // Require much higher metric for splitting when very close
+      return metric > cfg.screenSpaceErrorTarget * 1.8;
+    }
+    
     return metric > cfg.screenSpaceErrorTarget;
   }
 
@@ -430,8 +472,21 @@ class CubeFaceChunk {
     if (this.cameraAlignment <= cfg.mergeAlignment) {
       return true;
     }
+    
+    // Distance-based stability: prevent merging at very close ranges
+    const planetRadius = this.manager.params.radius;
+    const normalizedDist = this.manager.getCameraWorldPos().distanceTo(this.centerWorld) / planetRadius;
+    const isVeryClose = normalizedDist < 1.2; // Within 1.2 planet radii
+    
     const hysteresis = Math.max(1.001, cfg.hysteresis || 1.0);
-    return metric < (cfg.screenSpaceErrorTarget / hysteresis);
+    let mergeThreshold = (cfg.screenSpaceErrorTarget / hysteresis) * 0.98;
+    
+    if (isVeryClose) {
+      // Require much lower metric for merging when very close (prevent merging)
+      mergeThreshold *= 0.3;
+    }
+    
+    return metric < mergeThreshold;
   }
 
   // split en 4 enfants (quadtree)
@@ -571,6 +626,9 @@ class ChunkedLODSphere {
     this.cfg = {...CHUNK_LOD_DEFAULTS, ...cfg};
     this.cfg.screenSpaceErrorTarget = Math.max(0.1, this.cfg.screenSpaceErrorTarget ?? 0.55);
     this.cfg.hysteresis = Math.max(1.0, this.cfg.hysteresis ?? 1.2);
+    this.cfg.visibilityAlignment = Math.max(0, this.cfg.visibilityAlignment ?? 0.02);
+    this.cfg.visibilityHysteresis = Math.max(0, this.cfg.visibilityHysteresis ?? 0.6);
+    this.cfg.alignmentSmoothing = THREE.MathUtils.clamp(this.cfg.alignmentSmoothing ?? 0.22, 0.01, 1);
     this.params = planet.params;
     this.group = new THREE.Group();
     this.group.name = 'ChunkedLODSphere';
@@ -876,6 +934,7 @@ class ChunkedLODSphere {
         if (!c.isLeaf) { allLeaf = false; allMerge = false; break; }
         if (!c.shouldMerge()) allMerge = false;
       }
+      // Be a bit more eager to merge to reduce high-res persistence when moving away
       if (allLeaf && allMerge) {
         node.merge();
       } else {
