@@ -600,10 +600,8 @@ class CubeFaceChunk {
       const t = (tNow - this.fadeStart) / cfg.fadeDurationMs;
       this.manager.planet._setLODFadeProfile(this.mesh, { mode: 'out', progress: ease(t), spread: this.manager.cfg.chunkFadeSpread, ease: 1.2 });
 
-      // Réduire l'overdraw : masquer le parent dès que progress > 0.5
-      if (t >= 0.5) {
-        this.mesh.visible = false;
-      }
+      // Ne pas masquer brutalement le parent à mi-transition pour éviter le clignotement
+      // L'alpha fade-out s'occupe de l'overdraw; on garde visible jusqu'à la fin.
 
       if (t >= 1) {
         this.isFadingOut = false;
@@ -1609,6 +1607,12 @@ export class Planet {
             const config = PLANET_SURFACE_LOD_CONFIG[levelKey] || PLANET_SURFACE_LOD_CONFIG.medium;
             level.distance = baseDistance * (config.distanceMultiplier ?? (index * 2));
         });
+
+        // Ensure last LOD never drops out: keep farthest level always eligible
+        const last = this.surfaceLOD.levels[this.surfaceLOD.levels.length - 1];
+        if (last) {
+            last.distance = Number.POSITIVE_INFINITY;
+        }
     }
 
     _syncActiveSurfaceMesh() {
