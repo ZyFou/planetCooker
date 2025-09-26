@@ -112,14 +112,14 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x05070f);
 
 const camera = new THREE.PerspectiveCamera(55, sceneContainer.clientWidth / sceneContainer.clientHeight, 0.1, 500);
-camera.position.set(0, 2.4, 8.5);
+camera.position.set(0, 5, 15);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.045;
 controls.rotateSpeed = 0.7;
-controls.minDistance = 2;
-controls.maxDistance = 80;
+controls.minDistance = 3;
+controls.maxDistance = 120;
 if (previewMode) {
   controls.enablePan = false;
   controls.enableZoom = false;

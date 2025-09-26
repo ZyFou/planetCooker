@@ -267,19 +267,22 @@ const CHUNK_LOD_DEFAULTS = {
   enabled: true,
   maxLevel: 6,                 // profondeur max de quadtree (≈ 90° / 2^L par face)
   baseResolution: 17,          // (n x n) vertices par chunk racine ; rester impair pour UV/centres
-  screenSpaceErrorTarget: 0.45, // taille écran (normalisée) déclenchant un split
-  hysteresis: 1.15,            // anti-oscillation split/merge (merge = split / hysteresis)
-  fadeDurationMs: 280,
+  screenSpaceErrorTarget: 1.2, // taille écran (normalisée) déclenchant un split - très permissif
+  hysteresis: 1.1,             // anti-oscillation split/merge (merge = split / hysteresis)
+  fadeDurationMs: 300,         // fade normal
   skirtDepth: 0.004,           // petites jupes anti-cracks (en fraction du radius)
   chunkFadeSpread: 0.45,       // utilise ton _lodChunkFadeSpread
-  visibilityAlignment: 0.05,   // Higher threshold for stability
-  visibilityHysteresis: 0.7,   // More hysteresis for stability
-  splitAlignment: 0.12,        // Higher threshold to prevent close-range splitting
-  mergeAlignment: 0.08,        // Higher threshold to prevent close-range merging
-  frontMetricScale: 1.35,
-  sideMetricScale: 0.45,
-  alignmentMetricPower: 1.5,
-  alignmentSmoothing: 0.15     // Faster smoothing for close-range stability
+  visibilityAlignment: 0.001,  // très permissif pour l'affichage
+  visibilityHysteresis: 0.3,   // moins de stabilité mais plus de chunks visibles
+  splitAlignment: 0.01,        // très permissif pour les splits
+  mergeAlignment: 0.005,       // très permissif pour les merges
+  frontMetricScale: 2.0,       // augmenté pour plus de chunks
+  sideMetricScale: 0.2,        // réduit pour plus de chunks
+  alignmentMetricPower: 2.0,   // augmenté pour plus de chunks
+  alignmentSmoothing: 0.05,    // moins de lissage pour plus de réactivité
+  distanceBasedScaling: true,  // réactivé avec des seuils plus permissifs
+  minDistance: 1.0,            // distance minimale avant scaling
+  maxDistance: 20.0            // distance maximale pour scaling
 };
 
 // map face index → base axes (cube -> sphere)
@@ -416,16 +419,37 @@ class CubeFaceChunk {
     
     this._smoothedAlignment = THREE.MathUtils.lerp(this._smoothedAlignment, rawAlignment, THREE.MathUtils.clamp(smoothingFactor, 0.01, 1));
     this.cameraAlignment = this._smoothedAlignment;
+    
+    // Store distance for distance-based scaling
+    this._cameraDistance = dist;
 
     const diameter = Math.max(0.001, 2 * this.radiusWorld);
-    const baseMetric = this.manager.screenMetricForPatch(diameter, dist);
+    let baseMetric = this.manager.screenMetricForPatch(diameter, dist);
     const cfg = this.manager.cfg;
+    
+    // Distance-based scaling for better LOD management
+    if (cfg.distanceBasedScaling) {
+      const planetRadius = this.manager.params.radius;
+      const normalizedDist = dist / planetRadius;
+      
+      // Progressive scaling based on distance
+      if (normalizedDist > cfg.maxDistance) {
+        baseMetric *= 0.2; // Very low detail at far distances
+      } else if (normalizedDist > cfg.minDistance) {
+        // Gradual scaling between min and max distance
+        const scale = THREE.MathUtils.lerp(1.0, 0.2, (normalizedDist - cfg.minDistance) / (cfg.maxDistance - cfg.minDistance));
+        baseMetric *= scale;
+      }
+      // At close distances (normalizedDist < minDistance), keep full detail
+    }
+    
     const t = Math.pow(this.cameraAlignment, cfg.alignmentMetricPower);
     const facingScale = THREE.MathUtils.lerp(cfg.sideMetricScale, cfg.frontMetricScale, t);
     const metric = baseMetric * facingScale;
     this.screenMetric = metric;
 
     if (this.mesh && !this.isFadingOut) {
+      // Much more permissive visibility - show chunks even with low alignment
       const on = this.cameraAlignment > cfg.visibilityAlignment;
       if (cfg.visibilityHysteresis != null) {
         const hyst = THREE.MathUtils.clamp(cfg.visibilityHysteresis, 0, 0.95);
@@ -437,6 +461,12 @@ class CubeFaceChunk {
       } else {
         this.mesh.visible = on;
         this._lastVisible = on;
+      }
+      
+      // Force visibility for root chunks to ensure something is always visible
+      if (this.level === 0) {
+        this.mesh.visible = true;
+        this._lastVisible = true;
       }
     }
 
@@ -663,6 +693,13 @@ class ChunkedLODSphere {
       const root = new CubeFaceChunk(this, f, { umin:-1,umax:1,vmin:-1,vmax:1 }, 0, null);
       root.ensureMesh();  // visible via fade
       this.planet._setLODFadeAlpha(root.mesh, 1);
+      
+      // Force visibility for root chunks
+      if (root.mesh) {
+        root.mesh.visible = true;
+        root._lastVisible = true;
+      }
+      
       this.roots.push(root);
     }
   }
@@ -903,11 +940,42 @@ class ChunkedLODSphere {
     return false;
   }
 
+  _forceBoundsUpdate() {
+    const stack = [...this.roots];
+    for (const n of stack) {
+      if (n.mesh && (n.isLeaf || n.mesh.visible)) n.computeBoundsWorld();
+      if (n.children) stack.push(...n.children);
+    }
+  }
+
+  // Ensure at least some chunks are always visible
+  _ensureVisibility() {
+    const all = [...this.roots];
+    for (const n of all) {
+      if (n.children) all.push(...n.children);
+    }
+    
+    const visibleChunks = all.filter(n => n.mesh && n.mesh.visible).length;
+    if (visibleChunks === 0 && all.length > 0) {
+      // Force root chunks to be visible
+      this.roots.forEach(root => {
+        if (root.mesh) {
+          root.mesh.visible = true;
+          root._lastVisible = true;
+        }
+      });
+    }
+  }
+
   // parcours + split/merge + fade
   update(camera) {
     if (!camera) return;
     this._updateCameraState(camera);
-    // 0) si la planète a tourné ou bougé, rafraîchir les bounds des feuilles visibles
+    
+    // 0) Update group matrix to follow planet rotation
+    this.group.updateMatrixWorld(true);
+    
+    // 1) si la planète a tourné ou bougé, rafraîchir les bounds des feuilles visibles
     if (this._needsRecomputeBounds()) {
       const stack = [...this.roots];
       for (const n of stack) {
@@ -942,11 +1010,120 @@ class ChunkedLODSphere {
       }
     }
 
-    // 3) tick fades
+    // 3) tick fades and cleanup invisible chunks
     const all = [...this.roots];
     for (const n of all) {
       n.tickFade();
       if (n.children) all.push(...n.children);
+    }
+    
+    // Debug: count visible chunks
+    const visibleChunks = all.filter(n => n.mesh && n.mesh.visible).length;
+    if (visibleChunks === 0 && all.length > 0) {
+      console.log('No chunks visible! Total chunks:', all.length);
+      console.log('Camera position:', this.getCameraWorldPos());
+      console.log('Planet radius:', this.params.radius);
+      
+      // Debug each chunk
+      all.forEach((chunk, i) => {
+        if (chunk.mesh) {
+          console.log(`Chunk ${i}:`, {
+            hasMesh: !!chunk.mesh,
+            visible: chunk.mesh.visible,
+            alignment: chunk.cameraAlignment,
+            level: chunk.level,
+            center: chunk.centerWorld,
+            radius: chunk.radiusWorld
+          });
+        }
+      });
+      
+      // Fallback: force at least one chunk to be visible
+      console.log('Forcing root chunks to be visible as fallback');
+      this.roots.forEach(root => {
+        if (root.mesh) {
+          root.mesh.visible = true;
+          root._lastVisible = true;
+        }
+      });
+    }
+    
+    // 4) Ensure visibility and cleanup
+    this._ensureVisibility();
+    this._cleanupInvisibleChunks();
+  }
+
+  _cleanupInvisibleChunks() {
+    const maxDistance = this.params.radius * 10; // 10 planet radii - much more permissive
+    const cameraPos = this.getCameraWorldPos();
+    
+    const cleanupStack = [...this.roots];
+    while (cleanupStack.length > 0) {
+      const chunk = cleanupStack.pop();
+      
+      if (chunk.children) {
+        cleanupStack.push(...chunk.children);
+      }
+      
+      if (chunk.mesh && chunk.centerWorld) {
+        const distance = cameraPos.distanceTo(chunk.centerWorld);
+        
+        // Only remove chunks that are extremely far away
+        if (distance > maxDistance) {
+          chunk.dispose();
+          continue;
+        }
+        
+        // Much more conservative cleanup - only after 10 seconds
+        if (!chunk.mesh.visible && chunk._invisibleTime) {
+          chunk._invisibleTime++;
+          if (chunk._invisibleTime > 600) { // 10 seconds at 60fps
+            chunk.dispose();
+            continue;
+          }
+        } else if (!chunk.mesh.visible) {
+          chunk._invisibleTime = 1;
+        } else {
+          chunk._invisibleTime = 0;
+        }
+      }
+    }
+  }
+
+  // Optimize global scale for better chunk management
+  optimizeGlobalScale() {
+    const planetRadius = this.params.radius;
+    
+    // Scale up the planet for better chunk management
+    if (planetRadius < 5.0) {
+      const scaleFactor = 5.0 / planetRadius;
+      this.params.radius *= scaleFactor;
+      
+      // Update all related scales
+      if (this.planet.oceanMesh) {
+        this.planet.oceanMesh.scale.multiplyScalar(scaleFactor);
+      }
+      if (this.planet.foamMesh) {
+        this.planet.foamMesh.scale.multiplyScalar(scaleFactor);
+      }
+      if (this.planet.cloudsMesh) {
+        this.planet.cloudsMesh.scale.multiplyScalar(scaleFactor);
+      }
+      if (this.planet.atmosphereMesh) {
+        this.planet.atmosphereMesh.scale.multiplyScalar(scaleFactor);
+      }
+      if (this.planet.coreMesh) {
+        this.planet.coreMesh.scale.multiplyScalar(scaleFactor);
+      }
+      
+      // Update ring scales
+      this.planet.ringMeshes.forEach(ring => {
+        if (ring) {
+          ring.scale.multiplyScalar(scaleFactor);
+        }
+      });
+      
+      console.log(`Planet scale optimized: radius ${planetRadius} -> ${this.params.radius}`);
     }
   }
 }
@@ -1774,6 +1951,11 @@ export class Planet {
         if (this.chunkLOD) {
           this.chunkLOD.originWorld.copy(this.planetRoot.getWorldPosition(this._chunkOriginScratch));
           if (camera) this.chunkLOD.update(camera);
+          
+          // Force chunk bounds update on rotation to prevent flickering
+          if (this.chunkLOD._needsRecomputeBounds()) {
+            this.chunkLOD._forceBoundsUpdate();
+          }
         }
 
         // Debug visualizations
@@ -2215,14 +2397,21 @@ export class Planet {
           if (this.chunkedLODEnabled) {
             if (this.chunkLOD) { this.chunkLOD.dispose(); this.chunkLOD = null; }
             this.chunkLOD = new ChunkedLODSphere(this, {
-              maxLevel: 5,
-              baseResolution: 11,
-              screenSpaceErrorTarget: 0.55,
-              hysteresis: 1.45,
-              fadeDurationMs: 220,
-              skirtDepth: 0.0035,
-              chunkFadeSpread: this._lodChunkFadeSpread ?? 0.25
+              maxLevel: 4,
+              baseResolution: 13,
+              screenSpaceErrorTarget: 0.8,
+              hysteresis: 1.2,
+              fadeDurationMs: 300,
+              skirtDepth: 0.004,
+              chunkFadeSpread: this._lodChunkFadeSpread ?? 0.25,
+              visibilityAlignment: 0.01,
+              splitAlignment: 0.05,
+              mergeAlignment: 0.02
             });
+            
+            // Optimize global scale for better chunk management (temporarily disabled)
+            // this.chunkLOD.optimizeGlobalScale();
+            
             this.activeSurfaceMode = 'chunk';
             if (this.surfaceLOD) {
               this.surfaceLOD.visible = false;
