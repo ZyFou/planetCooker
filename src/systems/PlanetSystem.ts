@@ -2,9 +2,12 @@ import * as THREE from "three";
 import { Planet } from "../app/planet.js";
 import { SeededRNG } from "../app/utils.js";
 
+const _STAR_WORLD = new THREE.Vector3();
+const _STAR_LOCAL = new THREE.Vector3();
+
 export type PlanetOrbitParams = {
   id: string;
-  seed: number;
+  seed: number | string;
   preset: string | null;
   radius: number;
   semiMajorAxis: number;
@@ -47,7 +50,7 @@ function uuidv4() {
   const rng = new SeededRNG(Math.random() * 1e9);
   const segments: string[] = [];
   for (let i = 0; i < 4; i++) {
-    segments.push(Math.floor(rng.random() * 0xffffffff).toString(16).padStart(8, "0"));
+    segments.push(Math.floor(rng.next() * 0xffffffff).toString(16).padStart(8, "0"));
   }
   return `${segments[0]}-${segments[1].slice(0, 4)}-${segments[2].slice(0, 4)}-${segments[3].slice(0, 4)}-${segments[1].slice(4)}${segments[2].slice(4)}${segments[3].slice(4)}`;
 }
@@ -66,6 +69,7 @@ export class PlanetSystem {
   orbitGizmosVisible = true;
   controls?: any;
   systemCameraState: { position: THREE.Vector3; target: THREE.Vector3 } | null = null;
+  currentPlanetId: string | null = null;
 
   constructor(
     scene: THREE.Scene,
@@ -88,6 +92,24 @@ export class PlanetSystem {
       this.scene.remove(this.sun.sunGroup);
       this.starAnchor.add(this.sun.sunGroup);
     }
+  }
+
+  private getStarLocalPosition(target = _STAR_LOCAL) {
+    if (this.sun?.sunGroup) {
+      target.copy(this.sun.sunGroup.position ?? target.set(0, 0, 0));
+    } else {
+      target.set(0, 0, 0);
+    }
+    return target;
+  }
+
+  getStarWorldPosition(target = _STAR_WORLD) {
+    if (this.sun?.sunGroup?.getWorldPosition) {
+      this.sun.sunGroup.getWorldPosition(target);
+    } else {
+      target.set(0, 0, 0);
+    }
+    return target;
   }
 
   attachControls(controls: any) {
@@ -142,6 +164,7 @@ export class PlanetSystem {
 
     this.planets.set(entryId, entry);
     this.order.push(entryId);
+    this.currentPlanetId = entryId;
     return entry;
   }
 
@@ -151,15 +174,19 @@ export class PlanetSystem {
     guiControllers: Record<string, any>;
     visualSettings: Record<string, any>;
     orbitParams?: Partial<PlanetOrbitParams>;
+    planetState?: Record<string, any>;
   }) {
     const id = uuidv4();
-    const stateClone = structuredClone(options.baseState ?? {});
+    const baseState = options.planetState ?? options.baseState ?? {};
+    const stateClone = structuredClone(baseState);
     const pivot = new THREE.Object3D();
     pivot.name = `PlanetPivot_${id}`;
+    const starPosition = this.getStarLocalPosition();
+    pivot.position.copy(starPosition);
 
     const orbitParams: PlanetOrbitParams = {
       id,
-      seed: options.orbitParams?.seed ?? Math.floor(Math.random() * 1e9),
+      seed: options.orbitParams?.seed ?? stateClone?.seed ?? Math.floor(Math.random() * 1e9),
       preset: options.orbitParams?.preset ?? stateClone?.preset ?? null,
       radius: options.orbitParams?.radius ?? stateClone?.radius ?? 1,
       semiMajorAxis: options.orbitParams?.semiMajorAxis ?? 8 + this.planets.size * 4,
@@ -223,6 +250,9 @@ export class PlanetSystem {
     entry.planet?.dispose?.();
     this.planets.delete(id);
     this.order = this.order.filter((pid) => pid !== id);
+    if (this.currentPlanetId === id) {
+      this.currentPlanetId = this.order[0] ?? null;
+    }
   }
 
   duplicatePlanet(id: string) {
@@ -246,10 +276,13 @@ export class PlanetSystem {
   regeneratePlanet(id: string, seed: number | null) {
     const entry = this.planets.get(id);
     if (!entry) return;
-    const newSeed = typeof seed === "number" ? seed : Math.floor(Math.random() * 1e9);
+    const newSeed =
+      typeof seed === "number" || typeof seed === "string"
+        ? seed
+        : Math.floor(Math.random() * 1e9);
     entry.params.seed = newSeed;
-    entry.stateSnapshot.seed = newSeed;
-    entry.planet.params.seed = newSeed;
+    if (entry.stateSnapshot) entry.stateSnapshot.seed = newSeed;
+    if (entry.planet?.params) entry.planet.params.seed = newSeed;
     entry.planet.rebuildPlanet?.();
   }
 
@@ -298,12 +331,20 @@ export class PlanetSystem {
 
   setViewMode(mode: "close" | "system") {
     this.viewMode = mode;
+    if (mode === "system") {
+      this.currentPlanetId = null;
+    }
   }
 
   focusPlanet(id: string) {
     const entry = this.planets.get(id);
     if (!entry) return;
+    this.currentPlanetId = id;
     this.focusHandler?.(entry.mesh, { id });
+  }
+
+  getCurrentPlanetId() {
+    return this.currentPlanetId ?? this.order[0] ?? null;
   }
 
   toggleOrbitGizmos(visible: boolean) {
@@ -313,8 +354,86 @@ export class PlanetSystem {
     });
   }
 
+  updatePrimarySnapshot(state: Record<string, any>, moons: any[]) {
+    const primaryId = this.order[0];
+    if (!primaryId) return;
+    const primary = this.planets.get(primaryId);
+    if (!primary) return;
+    primary.stateSnapshot = structuredClone(state ?? {});
+    primary.moons = (moons ?? []).map((moon) => ({ ...moon }));
+    if (state?.radius !== undefined) primary.params.radius = state.radius;
+    if (state?.rotationSpeed !== undefined) primary.params.spinSpeed = state.rotationSpeed;
+    if (state?.seed !== undefined) primary.params.seed = state.seed;
+    if (state?.preset !== undefined) primary.params.preset = state.preset ?? null;
+    if (state?.planetType !== undefined) primary.params.type = state.planetType;
+  }
+
+  applyPlanetState(
+    id: string,
+    state: Record<string, any>,
+    moonSettings: any[],
+    orbitOverrides: Partial<PlanetOrbitParams> = {},
+  ) {
+    const entry = this.planets.get(id);
+    if (!entry || entry.isPrimary) return;
+
+    const snapshot = structuredClone(state ?? {});
+    entry.stateSnapshot = snapshot;
+    entry.moons = (moonSettings ?? []).map((moon) => ({ ...moon }));
+
+    entry.params.radius = orbitOverrides.radius ?? snapshot.radius ?? entry.params.radius;
+    entry.params.spinSpeed = orbitOverrides.spinSpeed ?? snapshot.rotationSpeed ?? entry.params.spinSpeed;
+    if (orbitOverrides.seed !== undefined || snapshot.seed !== undefined) {
+      entry.params.seed = orbitOverrides.seed ?? snapshot.seed;
+    }
+    if (orbitOverrides.preset !== undefined || snapshot.preset !== undefined) {
+      entry.params.preset = (orbitOverrides.preset ?? snapshot.preset) ?? null;
+    }
+    if (orbitOverrides.type !== undefined || snapshot.planetType !== undefined) {
+      entry.params.type = orbitOverrides.type ?? snapshot.planetType;
+    }
+    if (orbitOverrides.inclination !== undefined || snapshot.inclination !== undefined) {
+      entry.params.inclination = orbitOverrides.inclination ?? snapshot.inclination ?? entry.params.inclination;
+      entry.pivot.rotation.x = entry.params.inclination;
+    }
+    if (snapshot.phase !== undefined && typeof snapshot.phase === "number") {
+      entry.params.phase = snapshot.phase;
+      entry.theta = snapshot.phase;
+    }
+    if (orbitOverrides.phase !== undefined) {
+      entry.theta = orbitOverrides.phase;
+      entry.params.phase = orbitOverrides.phase;
+    }
+
+    entry.planet?.dispose?.();
+
+    const planet = this.factory({
+      scene: this.scene,
+      params: { ...snapshot },
+      moonSettings: entry.moons,
+      guiControllers: {},
+      visualSettings: {},
+      sun: this.sun,
+    });
+
+    const mesh = (planet as any).planetSystem ?? planet.planetRoot ?? new THREE.Group();
+    if (mesh.parent) mesh.parent.remove(mesh);
+    mesh.position.set(entry.params.semiMajorAxis, 0, 0);
+
+    entry.pivot.remove(entry.mesh);
+    entry.pivot.add(mesh);
+
+    entry.mesh = mesh;
+    entry.planet = planet;
+    entry.planet.params.rotationSpeed = entry.params.spinSpeed;
+  }
+
   update(delta: number, simulationDelta: number = delta) {
+    const starLocal = this.getStarLocalPosition();
     this.planets.forEach((entry) => {
+      if (!entry.isPrimary) {
+        entry.pivot.position.copy(starLocal);
+      }
       entry.theta += entry.params.orbitalSpeed * simulationDelta * this.timeScale;
       const a = entry.params.semiMajorAxis;
       const x = a * Math.cos(entry.theta);

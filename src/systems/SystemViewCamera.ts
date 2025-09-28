@@ -6,7 +6,11 @@ export type SystemViewFrame = {
   distance: number;
 };
 
-export function computeSystemViewCamera(planets: { semiMajorAxis: number; radius: number }[], tilt = THREE.MathUtils.degToRad(30)) {
+export function computeSystemViewCamera(
+  planets: { semiMajorAxis: number; radius: number }[],
+  starPosition: THREE.Vector3,
+  tilt = THREE.MathUtils.degToRad(30),
+) {
   const maxExtent = planets.reduce((max, planet) => {
     const extent = (planet?.semiMajorAxis ?? 0) + (planet?.radius ?? 0);
     return Math.max(max, extent);
@@ -15,8 +19,9 @@ export function computeSystemViewCamera(planets: { semiMajorAxis: number; radius
   const height = Math.sin(tilt) * distance;
   const horizontal = Math.cos(tilt) * distance;
 
-  const position = new THREE.Vector3(horizontal, height, horizontal);
-  const target = new THREE.Vector3(0, 0, 0);
+  const offset = new THREE.Vector3(horizontal, height, horizontal);
+  const position = starPosition.clone().add(offset);
+  const target = starPosition.clone();
 
   return { position, target, distance } satisfies SystemViewFrame;
 }
