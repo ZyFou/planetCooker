@@ -12,9 +12,108 @@ import { encodeShare as encodeShareExt, decodeShare as decodeShareExt, saveConfi
 import { initOnboarding, showOnboarding } from "./app/onboarding.js";
 import { Planet } from "./app/planet.js";
 import { Sun } from "./app/sun.js";
+import { SystemViewControls } from "./systems/SystemViewControls.js";
+import { PlanetSystem } from "./systems/PlanetSystem.js";
+import { SystemPanel } from "./ui/SystemPanel.js";
 
 let planet;
 let sun;
+let planetSystem;
+let systemPanel;
+let systemViewControls;
+let systemRoot;
+let systemSun;
+let systemOrbitRoot;
+let currentSystemViewMode = "close";
+
+function bootstrapSystemPlanets() {
+  if (!planetSystem) return;
+  if (planetSystem.getPlanets().length > 0) return;
+  const baseSeed = Math.floor(Math.random() * 0xffffffff);
+  const defaults = [
+    {
+      type: "rocky",
+      radius: 0.65,
+      semiMajorAxis: 6,
+      orbitalSpeed: 0.52,
+      spinSpeed: 0.35,
+      phase: 0,
+      inclination: 0,
+    },
+    {
+      type: "gas",
+      radius: 1.45,
+      semiMajorAxis: 12,
+      orbitalSpeed: 0.3,
+      spinSpeed: 0.2,
+      phase: Math.PI * 0.5,
+      inclination: 0.18,
+    },
+    {
+      type: "rocky",
+      radius: 0.9,
+      semiMajorAxis: 19,
+      orbitalSpeed: 0.18,
+      spinSpeed: 0.45,
+      phase: Math.PI * 0.9,
+      inclination: -0.22,
+    },
+  ];
+  defaults.forEach((params, index) => {
+    planetSystem.addPlanet({
+      ...params,
+      seed: baseSeed + index * 997,
+    });
+  });
+}
+
+function setSystemViewMode(mode, { source } = {}) {
+  const nextMode = mode === "system" ? "system" : "close";
+  if (currentSystemViewMode === nextMode && source === "panel") {
+    return;
+  }
+  currentSystemViewMode = nextMode;
+  if (planetSystem) {
+    planetSystem.setViewMode(nextMode);
+  }
+  if (systemRoot) {
+    systemRoot.visible = nextMode === "system";
+  }
+  if (nextMode === "system") {
+    if (planet?.planetRoot) planet.planetRoot.visible = false;
+    if (sun?.sunVisual) sun.sunVisual.visible = false;
+  } else {
+    if (planet?.planetRoot) planet.planetRoot.visible = true;
+    if (sun?.sunVisual) sun.sunVisual.visible = true;
+  }
+  if (source !== "panel") {
+    systemPanel?.refresh();
+  }
+}
+
+function applySystemShare(data) {
+  if (!planetSystem) return;
+  const existing = planetSystem.getPlanets();
+  existing.forEach((planet) => planetSystem.removePlanet(planet.id));
+  if (Array.isArray(data?.systemPlanets)) {
+    data.systemPlanets.forEach((planet) => {
+      planetSystem.addPlanet({ ...planet });
+    });
+  } else {
+    bootstrapSystemPlanets();
+  }
+  if (typeof data?.systemTimeScale === "number") {
+    planetSystem.setSystemTimeScale(data.systemTimeScale);
+  } else {
+    planetSystem.setSystemTimeScale(1);
+  }
+  if (typeof data?.systemOrbitGizmos === "boolean") {
+    planetSystem.toggleOrbitGizmos(data.systemOrbitGizmos);
+  } else {
+    planetSystem.toggleOrbitGizmos(false);
+  }
+  setSystemViewMode("close");
+}
 
 const debounceShare = debounce(() => {
   if (!shareDirty) return;
@@ -93,6 +192,11 @@ if (!controlsContainer) {
   throw new Error("Missing controls container element");
 }
 
+const systemPanelMount = document.createElement("div");
+systemPanelMount.id = "system-panel-root";
+systemPanelMount.className = "system-panel__mount";
+controlsContainer.parentElement?.insertBefore(systemPanelMount, controlsContainer.nextSibling);
+
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(sceneContainer.clientWidth, sceneContainer.clientHeight);
@@ -120,6 +224,60 @@ if (previewMode) {
   controls.autoRotate = true;
   controls.autoRotateSpeed = 0.35;
 }
+
+systemRoot = new THREE.Group();
+systemRoot.name = "system-view-root";
+systemRoot.visible = false;
+scene.add(systemRoot);
+
+systemOrbitRoot = new THREE.Object3D();
+systemOrbitRoot.name = "system-orbits";
+systemRoot.add(systemOrbitRoot);
+
+const systemAmbient = new THREE.AmbientLight(0x404060, 0.65);
+systemRoot.add(systemAmbient);
+
+const systemSunGroup = new THREE.Group();
+systemSunGroup.name = "system-sun-group";
+systemRoot.add(systemSunGroup);
+
+const systemSunGeometry = new THREE.SphereGeometry(1.5, 32, 16);
+const systemSunMaterial = new THREE.MeshBasicMaterial({ color: 0xffd27f });
+systemSun = new THREE.Mesh(systemSunGeometry, systemSunMaterial);
+systemSun.name = "system-sun";
+systemSunGroup.add(systemSun);
+
+const systemSunHalo = new THREE.Mesh(
+  new THREE.SphereGeometry(1.7, 24, 12),
+  new THREE.MeshBasicMaterial({ color: 0xfff0bb, transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending }),
+);
+systemSunHalo.name = "system-sun-halo";
+systemSunGroup.add(systemSunHalo);
+
+const systemSunLight = new THREE.PointLight(0xffddaa, 1.6, 250);
+systemSunLight.name = "system-sun-light";
+systemSunGroup.add(systemSunLight);
+
+systemViewControls = new SystemViewControls(camera, controls, {
+  transitionDuration: 1.2,
+  systemDistanceMultiplier: 2.6,
+  cameraFarSystem: 1500,
+});
+planetSystem = new PlanetSystem({ root: systemRoot, sun: systemOrbitRoot, viewControls: systemViewControls });
+bootstrapSystemPlanets();
+
+systemPanel = new SystemPanel(systemPanelMount, {
+  system: planetSystem,
+  onViewModeChange: (mode) => {
+    setSystemViewMode(mode, { source: "panel" });
+  },
+  onRequestRefresh: () => {
+    if (planetSystem.getViewMode() === "system" && systemViewControls) {
+      systemViewControls.fitCameraToSystem(planetSystem.getPlanets());
+    }
+  },
+});
+setSystemViewMode("close");
 
 // Photo mode state
 let isPhotoMode = false;
@@ -1027,6 +1185,7 @@ async function initFromHash() {
         } finally {
           isApplyingPreset = false;
         }
+        applySystemShare(data);
         // After a successful API load, keep the hash format for better reload handling
         try {
           history.replaceState(null, "", `#${currentShareId}`);
@@ -1081,6 +1240,7 @@ async function initFromHash() {
         } finally {
           isApplyingPreset = false;
         }
+        applySystemShare(loadedData);
         // Keep hash format for better reload handling
         try {
           if (currentHashIsApiId && currentShareId) {
@@ -1243,6 +1403,9 @@ function animate(timestamp) {
 
   sun.update(delta, simulationDelta, camera);
   planet.update(delta, simulationDelta, camera);
+  if (planetSystem) {
+    planetSystem.update(delta);
+  }
 
   if (starField && starField.material && starField.material.uniforms) {
     starField.rotation.y += delta * 0.002;
@@ -1736,19 +1899,36 @@ function buildSharePayload() {
     shareKeys.forEach((key) => {
       data[key] = params[key];
     });
-    if (Array.isArray(params.rings)) {
-      data.rings = params.rings.map((r) => ({
-        style: r.style, color: r.color, start: r.start, end: r.end,
-        opacity: r.opacity, noiseScale: r.noiseScale, noiseStrength: r.noiseStrength,
-        spinSpeed: r.spinSpeed, brightness: r.brightness
-      }));
-      data.ringCount = params.ringCount ?? params.rings.length;
-    }
-    const moons = moonSettings.slice(0, params.moonCount).map((moon) => ({
-      size: moon.size, distance: moon.distance, orbitSpeed: moon.orbitSpeed,
-      inclination: moon.inclination, color: moon.color, phase: moon.phase,
-      eccentricity: moon.eccentricity
+  if (Array.isArray(params.rings)) {
+    data.rings = params.rings.map((r) => ({
+      style: r.style, color: r.color, start: r.start, end: r.end,
+      opacity: r.opacity, noiseScale: r.noiseScale, noiseStrength: r.noiseStrength,
+      spinSpeed: r.spinSpeed, brightness: r.brightness
     }));
+    data.ringCount = params.ringCount ?? params.rings.length;
+  }
+  if (planetSystem) {
+    const sharedPlanets = planetSystem.getPlanets().map((planet) => ({
+      id: planet.id,
+      seed: planet.seed,
+      type: planet.type,
+      radius: planet.radius,
+      semiMajorAxis: planet.semiMajorAxis,
+      orbitalSpeed: planet.orbitalSpeed,
+      phase: planet.phase,
+      inclination: planet.inclination,
+      spinSpeed: planet.spinSpeed,
+      materialPreset: planet.materialPreset ?? null,
+    }));
+    data.systemPlanets = sharedPlanets;
+    data.systemTimeScale = planetSystem.getTimeScale();
+    data.systemOrbitGizmos = planetSystem.areOrbitGizmosVisible();
+  }
+  const moons = moonSettings.slice(0, params.moonCount).map((moon) => ({
+    size: moon.size, distance: moon.distance, orbitSpeed: moon.orbitSpeed,
+    inclination: moon.inclination, color: moon.color, phase: moon.phase,
+    eccentricity: moon.eccentricity
+  }));
     return { version: 1, preset: params.preset, data, moons };
 }
 

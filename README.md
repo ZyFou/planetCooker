@@ -28,3 +28,52 @@ A browser-based procedural planet generator built with Three.js. Create stylised
 - The UI uses lil-gui; controls update only after slider release for heavy operations like mesh regeneration.
 - Tested with Three.js r162. Future upgrades should keep dependency versions synchronized in `main.js`.
 
+## Multi-Planet System API
+
+The studio now includes a light-weight orbital system manager that can render dozens of simplified planets while keeping the close-up planet workflow intact.
+
+```js
+import { PlanetSystem } from "./systems/PlanetSystem.js";
+import { SystemViewControls } from "./systems/SystemViewControls.js";
+
+const systemRoot = new THREE.Group();
+scene.add(systemRoot);
+
+const viewControls = new SystemViewControls(camera, orbitControls, {
+  transitionDuration: 1.2,
+  systemDistanceMultiplier: 2.6,
+  cameraFarSystem: 1500,
+});
+
+const planetSystem = new PlanetSystem({
+  root: systemRoot,
+  sun: systemRoot,
+  viewControls,
+});
+
+planetSystem.addPlanet({
+  type: "rocky",
+  seed: 12345,
+  radius: 0.75,
+  semiMajorAxis: 8,
+  orbitalSpeed: 0.32,
+  phase: Math.PI / 3,
+  inclination: 0.1,
+  spinSpeed: 0.4,
+});
+
+function animate(dt) {
+  planetSystem.update(dt);
+  renderer.render(scene, camera);
+}
+```
+
+`PlanetSystem` implements the full API surfaced to the GUI:
+
+- `addPlanet`, `updatePlanet`, `removePlanet`, `getPlanets`
+- `setSystemTimeScale`, `getTimeScale`
+- `setViewMode`, `getViewMode`
+- `toggleOrbitGizmos`, `areOrbitGizmosVisible`
+
+System-wide camera transitions and distance limits are handled by `SystemViewControls`. The accompanying `SystemPanel` (mounts under the existing control panel) exposes add/duplicate/delete actions, per-planet sliders, a global time-scale control, view toggles, and orbit gizmo switching. Share codes now embed the full multi-planet payload, so loading a code rebuilds the entire system before restoring the close-up planet.
+
