@@ -277,7 +277,13 @@ const CHUNK_LOD_DEFAULTS = {
   distanceBasedScaling: true,      // scaling automatique selon la distance
   minDistance: 1.0,                // distance minimale avant scaling
   maxDistance: 18.0,               // distance maximale pour scaling
+  distanceFalloffMin: 0.15,        // ratio min appliqué au metric à très grande distance
+  mergeThresholdBoost: 1.4,        // amplification du seuil de merge quand la caméra est lointaine
+  minEffectiveRadius: 6,           // rayon minimal utilisé pour la logique de distance (évite les mini-planètes trop nerveuses)
+  parentFadeHoldRatio: 0.6,        // portion du fadeDuration où l'ancien chunk reste opaque avant de disparaître
+  parentFadeHoldMs: null,          // override optionnel pour la durée de hold explicite
   cleanupDistanceMultiplier: 12,   // distance (en rayons) pour purge des chunks invisibles
+  cleanupDistanceMinWorld: 400,    // distance absolue minimale avant purge des chunks invisibles
   cleanupDelayFrames: 480,         // nb de frames invisibles avant purge (~8s à 60fps)
   staticCameraThresholdRatio: 0.01, // tolérance de mouvement caméra (en fraction du rayon)
   staticRotationThreshold: THREE.MathUtils.degToRad(1.2), // rotation minimale avant recalcul des bounds
@@ -318,6 +324,7 @@ class CubeFaceChunk {
     this.isFadingIn = false;
     this.isFadingOut = false;
     this.fadeStart = 0;
+    this.fadeHold = 0;
     this.isLeaf = true;
     this.screenMetric = 0;
     this.centerWorld = new THREE.Vector3();
@@ -336,6 +343,9 @@ class CubeFaceChunk {
       this.children.forEach(c => c.dispose());
       this.children = null;
     }
+    this.isFadingIn = false;
+    this.isFadingOut = false;
+    this.fadeHold = 0;
   }
 
   // crée/maj géométrie du chunk
@@ -399,13 +409,17 @@ class CubeFaceChunk {
     const cfg = this.manager.cfg;
 
     if (cfg.distanceBasedScaling) {
-      const planetRadius = this.manager.params.radius;
-      const normalizedDist = dist / planetRadius;
-      if (normalizedDist > cfg.maxDistance) {
-        metric *= 0.25;
-      } else if (normalizedDist > cfg.minDistance) {
-        const falloff = (normalizedDist - cfg.minDistance) / Math.max(1e-5, cfg.maxDistance - cfg.minDistance);
-        metric *= THREE.MathUtils.lerp(1, 0.25, THREE.MathUtils.clamp(falloff, 0, 1));
+      const effectiveRadius = this.manager.getEffectiveRadius();
+      const normalizedDist = dist / Math.max(1e-5, effectiveRadius);
+      const minRange = Math.max(0.01, cfg.minDistance ?? 1);
+      const maxRange = Math.max(minRange + 0.01, cfg.maxDistance ?? (minRange + 1));
+      const minScale = THREE.MathUtils.clamp(cfg.distanceFalloffMin ?? 0.1, 0, 1);
+
+      if (normalizedDist > maxRange) {
+        metric *= minScale;
+      } else if (normalizedDist > minRange) {
+        const falloff = (normalizedDist - minRange) / Math.max(1e-5, maxRange - minRange);
+        metric *= THREE.MathUtils.lerp(1, minScale, THREE.MathUtils.clamp(falloff, 0, 1));
       }
     }
 
@@ -418,7 +432,8 @@ class CubeFaceChunk {
     if (this.level >= this.manager.cfg.maxLevel) return false;
     const cfg = this.manager.cfg;
     const metric = this._updateScreenMetric();
-    const maxDistance = this.manager.params.radius * cfg.splitDistanceMultiplier;
+    const effectiveRadius = this.manager.getEffectiveRadius();
+    const maxDistance = effectiveRadius * cfg.splitDistanceMultiplier;
     if (this._cameraDistance > maxDistance) return false;
     return metric > cfg.screenSpaceErrorTarget;
   }
@@ -429,8 +444,20 @@ class CubeFaceChunk {
     const metric = this._updateScreenMetric();
     const hysteresis = Math.max(1.001, cfg.hysteresis || 1.0);
     const mergeThreshold = cfg.screenSpaceErrorTarget / hysteresis;
-    if (this._cameraDistance > this.manager.params.radius * cfg.mergeDistanceMultiplier) {
+    const effectiveRadius = this.manager.getEffectiveRadius();
+    if (this._cameraDistance > effectiveRadius * cfg.mergeDistanceMultiplier) {
       return true;
+    }
+    if (cfg.distanceBasedScaling) {
+      const minRange = Math.max(0.01, cfg.minDistance ?? 1);
+      const maxRange = Math.max(minRange + 0.01, cfg.maxDistance ?? (minRange + 1));
+      const normalizedDist = this._cameraDistance / Math.max(1e-5, effectiveRadius);
+      const falloff = THREE.MathUtils.clamp((normalizedDist - minRange) / Math.max(1e-5, maxRange - minRange), 0, 1);
+      const boost = THREE.MathUtils.lerp(1, Math.max(1, cfg.mergeThresholdBoost ?? 1.0), falloff);
+      if (metric < mergeThreshold * boost) {
+        return true;
+      }
+      return false;
     }
     return metric < mergeThreshold;
   }
@@ -458,12 +485,16 @@ class CubeFaceChunk {
       }
       c.isFadingIn = true;
       c.fadeStart = now;
+      c.fadeHold = 0;
       this.manager.planet._setLODFadeAlpha(c.mesh, 0);
     });
 
     if (this.mesh) {
       this.isFadingOut = true;
       this.fadeStart = now;
+      const holdRatio = THREE.MathUtils.clamp(this.manager.cfg.parentFadeHoldRatio ?? 0, 0, 0.95);
+      const holdMs = this.manager.cfg.parentFadeHoldMs ?? (this.manager.cfg.fadeDurationMs * holdRatio);
+      this.fadeHold = Math.max(0, holdMs);
       this.manager.planet._setLODFadeAlpha(this.mesh, 1);
     }
   }
@@ -477,6 +508,7 @@ class CubeFaceChunk {
       this.mesh.visible = true;
       this.isFadingIn = true;
       this.fadeStart = now;
+      this.fadeHold = 0;
       this.manager.planet._setLODFadeAlpha(this.mesh, 0);
     } else {
       this.ensureMesh();
@@ -485,12 +517,14 @@ class CubeFaceChunk {
       }
       this.isFadingIn = true;
       this.fadeStart = now;
+      this.fadeHold = 0;
     }
     // fade out children
     this.children.forEach(c => {
       if (c.mesh) {
         c.isFadingOut = true;
         c.fadeStart = now;
+        c.fadeHold = 0;
         this.manager.planet._setLODFadeAlpha(c.mesh, 1);
       }
     });
@@ -523,21 +557,27 @@ class CubeFaceChunk {
       }
     }
     if (this.isFadingOut && this.mesh) {
-      const t = (tNow - this.fadeStart) / cfg.fadeDurationMs;
-      this.manager.planet._setLODFadeProfile(this.mesh, { mode: 'out', progress: ease(t), spread: this.manager.cfg.chunkFadeSpread, ease: 1.2 });
+      const hold = Math.max(0, this.fadeHold || 0);
+      const elapsed = tNow - this.fadeStart;
 
-      // Ne pas masquer brutalement le parent à mi-transition pour éviter le clignotement
-      // L'alpha fade-out s'occupe de l'overdraw; on garde visible jusqu'à la fin.
+      if (elapsed < hold) {
+        this.mesh.visible = true;
+        this.manager.planet._setLODFadeProfile(this.mesh, { mode: 'set', alpha: 1, spread: this.manager.cfg.chunkFadeSpread, ease: 1.0 });
+      } else {
+        const t = (elapsed - hold) / cfg.fadeDurationMs;
+        this.manager.planet._setLODFadeProfile(this.mesh, { mode: 'out', progress: ease(t), spread: this.manager.cfg.chunkFadeSpread, ease: 1.2 });
 
-      if (t >= 1) {
-        this.isFadingOut = false;
-        if (this.mesh) {
-          this.mesh.visible = false; // <- force
-          const m = this.mesh;
-          this.mesh = null;
-          this._lastVisible = false;
-          if (m.geometry) m.geometry.dispose();
-          m.removeFromParent();
+        if (t >= 1) {
+          this.isFadingOut = false;
+          this.fadeHold = 0;
+          if (this.mesh) {
+            this.mesh.visible = false; // <- force
+            const m = this.mesh;
+            this.mesh = null;
+            this._lastVisible = false;
+            if (m.geometry) m.geometry.dispose();
+            m.removeFromParent();
+          }
         }
       }
     }
@@ -738,6 +778,11 @@ class ChunkedLODSphere {
 
   getCameraWorldPos() {
     return this._cameraWorldPos;
+  }
+
+  getEffectiveRadius() {
+    const minRadius = Math.max(0, this.cfg.minEffectiveRadius ?? 0);
+    return Math.max(this.params.radius, minRadius);
   }
 
   screenMetricForPatch(diameter, distance) {
@@ -1083,7 +1128,10 @@ class ChunkedLODSphere {
 
   _cleanupInvisibleChunks() {
     const cameraPos = this.getCameraWorldPos();
-    const maxDistance = this.params.radius * Math.max(2, this.cfg.cleanupDistanceMultiplier);
+    const effectiveRadius = this.getEffectiveRadius();
+    const baseCleanup = effectiveRadius * Math.max(2, this.cfg.cleanupDistanceMultiplier);
+    const minCleanup = Math.max(0, this.cfg.cleanupDistanceMinWorld ?? 0);
+    const maxDistance = Math.max(baseCleanup, minCleanup);
     const cleanupStack = [...this.roots];
 
     while (cleanupStack.length > 0) {
@@ -1091,6 +1139,10 @@ class ChunkedLODSphere {
 
       if (chunk.children) {
         cleanupStack.push(...chunk.children);
+      }
+
+      if (chunk.level === 0) {
+        continue;
       }
 
       if (!chunk.mesh || !chunk.centerWorld) {
