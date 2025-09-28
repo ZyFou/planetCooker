@@ -265,29 +265,23 @@ const PLANET_SURFACE_LOD_CONFIG = {
 
 const CHUNK_LOD_DEFAULTS = {
   enabled: true,
-  maxLevel: 6,                     // profondeur max de quadtree (≈ 90° / 2^L par face)
-  baseResolution: 13,              // (n x n) vertices par chunk racine ; rester impair pour UV/centres
-  screenSpaceErrorTarget: 0.75,    // taille écran (normalisée) déclenchant un split
-  hysteresis: 1.05,                // anti-oscillation split/merge (merge = split / hysteresis)
+  maxLevel: 4,                     // profondeur max de quadtree (≈ 90° / 2^L par face)
+  baseResolution: 9,               // (n x n) vertices par chunk racine ; rester impair pour UV/centres
+  screenSpaceErrorTarget: 1.6,     // taille écran (normalisée) déclenchant un split
+  hysteresis: 1.25,                // anti-oscillation split/merge (merge = split / hysteresis)
   fadeDurationMs: 220,             // fade normal
   skirtDepth: 0.004,               // petites jupes anti-cracks (en fraction du radius)
   chunkFadeSpread: 0.35,           // utilise ton _lodChunkFadeSpread
-  visibilityAlignment: 0.0025,     // seuil d'alignement minimal pour affichage
-  visibilityHysteresis: 0.15,      // hysteresis absolu sur le seuil de visibilité
-  splitAlignment: 0.006,           // seuil d'alignement pour split
-  mergeAlignment: 0.003,           // seuil d'alignement pour merge
-  frontMetricScale: 1.6,           // pondération pour les faces orientées caméra
-  sideMetricScale: 0.25,           // pondération pour les faces latérales
-  alignmentMetricPower: 1.6,       // influence de l'alignement sur le metric
-  alignmentSmoothing: 0.12,        // lissage de l'alignement caméra/surface
+  splitDistanceMultiplier: 6,      // distance max (en rayons) avant d'autoriser le split
+  mergeDistanceMultiplier: 7.5,    // distance au-delà de laquelle on force un merge
   distanceBasedScaling: true,      // scaling automatique selon la distance
   minDistance: 1.0,                // distance minimale avant scaling
   maxDistance: 18.0,               // distance maximale pour scaling
   cleanupDistanceMultiplier: 12,   // distance (en rayons) pour purge des chunks invisibles
   cleanupDelayFrames: 480,         // nb de frames invisibles avant purge (~8s à 60fps)
-  staticCameraThresholdRatio: 0.003, // tolérance de mouvement caméra (en fraction du rayon)
-  staticRotationThreshold: THREE.MathUtils.degToRad(0.35), // rotation minimale avant recalcul des bounds
-  staticUpdateIntervalMs: 140      // intervalle max entre mises à jour complètes quand la scène est statique
+  staticCameraThresholdRatio: 0.01, // tolérance de mouvement caméra (en fraction du rayon)
+  staticRotationThreshold: THREE.MathUtils.degToRad(1.2), // rotation minimale avant recalcul des bounds
+  staticUpdateIntervalMs: 220      // intervalle max entre mises à jour complètes quand la scène est statique
 };
 
 // map face index → base axes (cube -> sphere)
@@ -328,10 +322,8 @@ class CubeFaceChunk {
     this.screenMetric = 0;
     this.centerWorld = new THREE.Vector3();
     this.radiusWorld = 0;        // bounding sphere approx pour ce patch
-    this.surfaceNormal = new THREE.Vector3(0, 1, 0);
-    this.cameraAlignment = 1;
-    this._smoothedAlignment = 1;
     this._lastVisible = true;
+    this._cameraDistance = Infinity;
   }
 
   dispose() {
@@ -393,73 +385,31 @@ class CubeFaceChunk {
     const halfDU = (umax-umin)*0.5, halfDV = (vmax-vmin)*0.5;
     const angular = Math.max(halfDU, halfDV) * (Math.PI/2); // chaque face couvre 90°
     this.radiusWorld = Math.max(angular * R, 0.001);
-    this.surfaceNormal.copy(this.centerWorld).sub(this.manager.originWorld);
-    const len = this.surfaceNormal.length();
-    if (len > 1e-6) {
-      this.surfaceNormal.multiplyScalar(1 / len);
-    } else {
-      this.surfaceNormal.set(0, 1, 0);
-    }
   }
 
   _updateScreenMetric() {
     const camPos = this.manager.getCameraWorldPos();
     const toCamera = CubeFaceChunk._tmpToCamera;
     toCamera.copy(camPos).sub(this.centerWorld);
-    let dist = toCamera.length();
-    if (dist < 1e-5) {
-      dist = 1e-5;
-      toCamera.copy(this.surfaceNormal);
-    } else {
-      toCamera.multiplyScalar(1 / dist);
-    }
-    
-    // Calculate raw alignment
-    const rawAlignment = Math.max(0, this.surfaceNormal.dot(toCamera));
-    
-    // Distance-based stability: prevent flickering at very close ranges
-    const planetRadius = this.manager.params.radius;
-    const normalizedDist = dist / planetRadius;
-    const isVeryClose = normalizedDist < 1.5; // Within 1.5 planet radii
-    
-    // Adjust smoothing based on distance - more aggressive smoothing when very close
-    let smoothingFactor = this.manager.cfg.alignmentSmoothing;
-    if (isVeryClose) {
-      // Increase smoothing when very close to prevent flickering
-      smoothingFactor = Math.min(0.8, smoothingFactor * (2.0 + (1.5 - normalizedDist) * 2.0));
-    }
-    
-    this._smoothedAlignment = THREE.MathUtils.lerp(this._smoothedAlignment, rawAlignment, THREE.MathUtils.clamp(smoothingFactor, 0.01, 1));
-    this.cameraAlignment = this._smoothedAlignment;
-    
-    // Store distance for distance-based scaling
+    const dist = Math.max(toCamera.length(), 1e-5);
     this._cameraDistance = dist;
 
     const diameter = Math.max(0.001, 2 * this.radiusWorld);
-    let baseMetric = this.manager.screenMetricForPatch(diameter, dist);
+    let metric = this.manager.screenMetricForPatch(diameter, dist);
     const cfg = this.manager.cfg;
-    
-    // Distance-based scaling for better LOD management
+
     if (cfg.distanceBasedScaling) {
       const planetRadius = this.manager.params.radius;
       const normalizedDist = dist / planetRadius;
-      
-      // Progressive scaling based on distance
       if (normalizedDist > cfg.maxDistance) {
-        baseMetric *= 0.2; // Very low detail at far distances
+        metric *= 0.25;
       } else if (normalizedDist > cfg.minDistance) {
-        // Gradual scaling between min and max distance
-        const scale = THREE.MathUtils.lerp(1.0, 0.2, (normalizedDist - cfg.minDistance) / (cfg.maxDistance - cfg.minDistance));
-        baseMetric *= scale;
+        const falloff = (normalizedDist - cfg.minDistance) / Math.max(1e-5, cfg.maxDistance - cfg.minDistance);
+        metric *= THREE.MathUtils.lerp(1, 0.25, THREE.MathUtils.clamp(falloff, 0, 1));
       }
-      // At close distances (normalizedDist < minDistance), keep full detail
     }
-    
-    const t = Math.pow(this.cameraAlignment, cfg.alignmentMetricPower);
-    const facingScale = THREE.MathUtils.lerp(cfg.sideMetricScale, cfg.frontMetricScale, t);
-    const metric = baseMetric * facingScale;
-    this.screenMetric = metric;
 
+    this.screenMetric = metric;
     return metric;
   }
 
@@ -468,20 +418,8 @@ class CubeFaceChunk {
     if (this.level >= this.manager.cfg.maxLevel) return false;
     const cfg = this.manager.cfg;
     const metric = this._updateScreenMetric();
-    if (this.cameraAlignment <= cfg.splitAlignment) {
-      return false;
-    }
-    
-    // Distance-based stability: prevent splitting at very close ranges
-    const planetRadius = this.manager.params.radius;
-    const normalizedDist = this.manager.getCameraWorldPos().distanceTo(this.centerWorld) / planetRadius;
-    const isVeryClose = normalizedDist < 1.2; // Within 1.2 planet radii
-    
-    if (isVeryClose) {
-      // Require much higher metric for splitting when very close
-      return metric > cfg.screenSpaceErrorTarget * 1.8;
-    }
-    
+    const maxDistance = this.manager.params.radius * cfg.splitDistanceMultiplier;
+    if (this._cameraDistance > maxDistance) return false;
     return metric > cfg.screenSpaceErrorTarget;
   }
 
@@ -489,23 +427,11 @@ class CubeFaceChunk {
     if (!this.isLeaf) return false; // merge decision occurs on parent handling children
     const cfg = this.manager.cfg;
     const metric = this._updateScreenMetric();
-    if (this.cameraAlignment <= cfg.mergeAlignment) {
+    const hysteresis = Math.max(1.001, cfg.hysteresis || 1.0);
+    const mergeThreshold = cfg.screenSpaceErrorTarget / hysteresis;
+    if (this._cameraDistance > this.manager.params.radius * cfg.mergeDistanceMultiplier) {
       return true;
     }
-    
-    // Distance-based stability: prevent merging at very close ranges
-    const planetRadius = this.manager.params.radius;
-    const normalizedDist = this.manager.getCameraWorldPos().distanceTo(this.centerWorld) / planetRadius;
-    const isVeryClose = normalizedDist < 1.2; // Within 1.2 planet radii
-    
-    const hysteresis = Math.max(1.001, cfg.hysteresis || 1.0);
-    let mergeThreshold = (cfg.screenSpaceErrorTarget / hysteresis) * 0.98;
-    
-    if (isVeryClose) {
-      // Require much lower metric for merging when very close (prevent merging)
-      mergeThreshold *= 0.3;
-    }
-    
     return metric < mergeThreshold;
   }
 
@@ -609,6 +535,7 @@ class CubeFaceChunk {
           this.mesh.visible = false; // <- force
           const m = this.mesh;
           this.mesh = null;
+          this._lastVisible = false;
           if (m.geometry) m.geometry.dispose();
           m.removeFromParent();
         }
@@ -616,25 +543,8 @@ class CubeFaceChunk {
     }
 
     if (!this.isFadingIn && !this.isFadingOut && this.mesh) {
-      const cfg = this.manager.cfg;
-      if (cfg.visibilityHysteresis != null) {
-        const thresholdOn = cfg.visibilityAlignment;
-        const thresholdOff = Math.max(0, thresholdOn - cfg.visibilityHysteresis);
-        const stayVisible = this._lastVisible && this.cameraAlignment >= thresholdOff;
-        const becomeVisible = !this._lastVisible && this.cameraAlignment >= thresholdOn;
-        const visible = stayVisible || becomeVisible;
-        this.mesh.visible = visible;
-        this._lastVisible = visible;
-      } else {
-        const visible = this.cameraAlignment >= cfg.visibilityAlignment;
-        this.mesh.visible = visible;
-        this._lastVisible = visible;
-      }
-
-      if (this.level === 0) {
-        this.mesh.visible = true;
-        this._lastVisible = true;
-      }
+      this.mesh.visible = true;
+      this._lastVisible = true;
     }
 
     if (!this.isLeaf && this.children) {
@@ -661,9 +571,8 @@ class ChunkedLODSphere {
     this.cfg = {...CHUNK_LOD_DEFAULTS, ...cfg};
     this.cfg.screenSpaceErrorTarget = Math.max(0.1, this.cfg.screenSpaceErrorTarget ?? 0.55);
     this.cfg.hysteresis = Math.max(1.0, this.cfg.hysteresis ?? 1.2);
-    this.cfg.visibilityAlignment = Math.max(0, this.cfg.visibilityAlignment ?? 0.02);
-    this.cfg.visibilityHysteresis = Math.max(0, this.cfg.visibilityHysteresis ?? 0.6);
-    this.cfg.alignmentSmoothing = THREE.MathUtils.clamp(this.cfg.alignmentSmoothing ?? 0.22, 0.01, 1);
+    this.cfg.splitDistanceMultiplier = Math.max(1, this.cfg.splitDistanceMultiplier ?? 6);
+    this.cfg.mergeDistanceMultiplier = Math.max(this.cfg.splitDistanceMultiplier, this.cfg.mergeDistanceMultiplier ?? 7.5);
     this.params = planet.params;
     this.group = new THREE.Group();
     this.group.name = 'ChunkedLODSphere';
@@ -2520,15 +2429,14 @@ export class Planet {
             if (this.chunkLOD) { this.chunkLOD.dispose(); this.chunkLOD = null; }
             this.chunkLOD = new ChunkedLODSphere(this, {
               maxLevel: 4,
-              baseResolution: 13,
-              screenSpaceErrorTarget: 0.8,
-              hysteresis: 1.2,
+              baseResolution: 9,
+              screenSpaceErrorTarget: 1.6,
+              hysteresis: 1.25,
               fadeDurationMs: 300,
               skirtDepth: 0.004,
               chunkFadeSpread: this._lodChunkFadeSpread ?? 0.25,
-              visibilityAlignment: 0.01,
-              splitAlignment: 0.05,
-              mergeAlignment: 0.02
+              splitDistanceMultiplier: 6,
+              mergeDistanceMultiplier: 8
             });
             
             // Optimize global scale for better chunk management (temporarily disabled)
