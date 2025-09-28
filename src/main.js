@@ -12,9 +12,27 @@ import { encodeShare as encodeShareExt, decodeShare as decodeShareExt, saveConfi
 import { initOnboarding, showOnboarding } from "./app/onboarding.js";
 import { Planet } from "./app/planet.js";
 import { Sun } from "./app/sun.js";
+import { PlanetSystem } from "./systems/PlanetSystem.ts";
+import { computeSystemViewCamera } from "./systems/SystemViewCamera.ts";
+import systemPanelTemplate from "./ui/SystemPanel.html?raw";
+import { mountSystemPanel } from "./ui/SystemPanel.js";
 
 let planet;
 let sun;
+let planetSystem;
+let systemPanel;
+let systemViewMode = "close";
+const systemViewCache = {
+  position: new THREE.Vector3(),
+  target: new THREE.Vector3(),
+};
+let planetSystemApi;
+const clone = (value) => {
+  if (typeof structuredClone === "function") {
+    return structuredClone(value);
+  }
+  return JSON.parse(JSON.stringify(value));
+};
 
 const debounceShare = debounce(() => {
   if (!shareDirty) return;
@@ -74,6 +92,14 @@ const ringDetailValue = document.getElementById("ring-detail-value");
 const photoToggleButton = document.getElementById("photo-toggle");
 const photoShutterButton = document.getElementById("photo-shutter");
 const previewMode = new URLSearchParams(window.location.search).get("preview") === "1";
+if (typeof systemPanelTemplate === "string") {
+  const templateWrapper = document.createElement("div");
+  templateWrapper.innerHTML = systemPanelTemplate.trim();
+  const tpl = templateWrapper.firstElementChild;
+  if (tpl instanceof HTMLTemplateElement && !document.getElementById("system-panel-template")) {
+    document.body.appendChild(tpl);
+  }
+}
 if (previewMode) {
   document.body.classList.add("preview-mode");
 }
@@ -92,6 +118,11 @@ if (!sceneContainer) {
 if (!controlsContainer) {
   throw new Error("Missing controls container element");
 }
+
+const systemPanelContainer = document.createElement("div");
+systemPanelContainer.id = "system-panel-container";
+systemPanelContainer.className = "system-panel-container";
+infoPanel?.appendChild(systemPanelContainer);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -114,6 +145,32 @@ controls.dampingFactor = 0.045;
 controls.rotateSpeed = 0.7;
 controls.minDistance = 2;
 controls.maxDistance = 80;
+const ORBIT_SEGMENTS = 128;
+function createOrbitLine(radius) {
+  const points = new Float32Array(ORBIT_SEGMENTS * 3);
+  for (let i = 0; i < ORBIT_SEGMENTS; i++) {
+    const angle = (i / ORBIT_SEGMENTS) * Math.PI * 2;
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
+    const offset = i * 3;
+    points[offset] = x;
+    points[offset + 1] = 0.001;
+    points[offset + 2] = z;
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
+  geometry.computeBoundingSphere();
+  const material = new THREE.LineBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.35,
+    depthWrite: false,
+  });
+  const line = new THREE.LineLoop(geometry, material);
+  line.frustumCulled = false;
+  line.name = "OrbitGizmo";
+  return line;
+}
 if (previewMode) {
   controls.enablePan = false;
   controls.enableZoom = false;
@@ -192,6 +249,84 @@ function exitPhotoMode() {
   setTimeout(() => {
     try { window.location.reload(); } catch {}
   }, 0);
+}
+
+function createPlanetSystemApi() {
+  return {
+    addPlanet: () => {
+      if (!planetSystem) return null;
+      return planetSystem.addPlanet({
+        baseState: clone(params),
+        moonSettings: moonSettings.slice(0, params.moonCount).map((moon) => clone(moon)),
+        guiControllers,
+        visualSettings,
+      });
+    },
+    duplicatePlanet: (id) => {
+      if (!planetSystem) return null;
+      return planetSystem.duplicatePlanet(id);
+    },
+    removePlanet: (id) => {
+      if (!planetSystem) return;
+      const remaining = planetSystem.getPlanets().filter((planet) => planet.id !== id).length;
+      if (remaining < 1) return;
+      planetSystem.removePlanet(id);
+    },
+    regeneratePlanet: (id) => planetSystem?.regeneratePlanet(id, null),
+    updatePlanet: (id, patch) => planetSystem?.updatePlanet(id, patch),
+    getPlanets: () => planetSystem?.getPlanets() ?? [],
+    focusPlanet: (id) => {
+      if (!planetSystem) return;
+      systemViewMode = "close";
+      planetSystem.setViewMode("close");
+      planetSystem.focusPlanet(id);
+    },
+    toggleOrbitGizmos: (visible) => planetSystem?.toggleOrbitGizmos(visible),
+    setTimeScale: (scale) => planetSystem?.setTimeScale(scale ?? 1),
+    setViewMode: (mode) => {
+      if (!planetSystem) return;
+      if (mode === systemViewMode) return;
+      if (mode === "system") {
+        systemViewCache.position.copy(camera.position);
+        systemViewCache.target.copy(controls.target);
+        controls.enablePan = false;
+        controls.minDistance = 4;
+        controls.maxDistance = 200;
+      } else {
+        camera.position.copy(systemViewCache.position);
+        controls.target.copy(systemViewCache.target);
+        if (!previewMode) {
+          controls.enablePan = true;
+        }
+        controls.minDistance = 2;
+        controls.maxDistance = 80;
+      }
+      systemViewMode = mode;
+      planetSystem.setViewMode(mode);
+    },
+    toggleViewMode: () => {
+      if (!planetSystem) return systemViewMode;
+      const nextMode = systemViewMode === "system" ? "close" : "system";
+      if (nextMode === "system") {
+        systemViewCache.position.copy(camera.position);
+        systemViewCache.target.copy(controls.target);
+        controls.enablePan = false;
+        controls.minDistance = 4;
+        controls.maxDistance = 200;
+      } else {
+        camera.position.copy(systemViewCache.position);
+        controls.target.copy(systemViewCache.target);
+        if (!previewMode) {
+          controls.enablePan = true;
+        }
+        controls.minDistance = 2;
+        controls.maxDistance = 80;
+      }
+      systemViewMode = nextMode;
+      planetSystem.setViewMode(nextMode);
+      return systemViewMode;
+    },
+  };
 }
 
 function dataURLtoBlob(dataurl) {
@@ -1109,6 +1244,35 @@ async function initializeApp() {
   planet = new Planet(scene, params, moonSettings, guiControllers, visualSettings, sun);
   sun.planetRoot = planet.planetRoot; // Circular dependency fix
 
+  planetSystem = new PlanetSystem(
+    scene,
+    sun,
+    ({ params: planetParams, moonSettings: moonConfig, guiControllers: controllers, visualSettings: visuals }) =>
+      new Planet(
+        scene,
+        planetParams,
+        moonConfig || [],
+        controllers || guiControllers,
+        visuals || visualSettings,
+        sun,
+      ),
+    createOrbitLine,
+    (object) => focusOnObject(object),
+  );
+  planetSystem.attachControls(controls);
+  planetSystem.createFromExisting("primary", planet, clone(params), {
+    semiMajorAxis: 0,
+    orbitalSpeed: 0,
+    spinSpeed: params.rotationSpeed,
+    radius: params.radius,
+  });
+
+  planetSystemApi = createPlanetSystemApi();
+  if (systemPanelContainer) {
+    systemPanel = mountSystemPanel(systemPanelContainer, planetSystemApi);
+    systemPanel?.setSelected?.("primary");
+  }
+
   const loadedFromHash = await initFromHash();
   if (!loadedFromHash) {
     planet.updatePalette();
@@ -1125,6 +1289,14 @@ async function initializeApp() {
     updateSeedDisplay();
     updateGravityDisplay();
   }
+
+  const primaryEntry = planetSystem?.planets?.get?.("primary");
+  if (primaryEntry) {
+    primaryEntry.stateSnapshot = clone(params);
+    primaryEntry.params.radius = params.radius;
+    primaryEntry.params.spinSpeed = params.rotationSpeed;
+  }
+  systemPanel?.render?.();
   setupMobilePanelToggle();
 }
 
@@ -1188,7 +1360,9 @@ function focusOnObject(targetObject) {
 
 //#region Animation loop
 function animate(timestamp) {
-  if (activeFocus) {
+  if (systemViewMode === "system") {
+    activeFocus = null;
+  } else if (activeFocus) {
     const targetPosition = new THREE.Vector3();
     activeFocus.object.getWorldPosition(targetPosition);
 
@@ -1228,6 +1402,14 @@ function animate(timestamp) {
   }
 
   controls.update();
+
+  planetSystem?.update(delta, simulationDelta);
+
+  if (planetSystem && systemViewMode === "system") {
+    const frame = computeSystemViewCamera(planetSystem.getPlanets());
+    camera.position.lerp(frame.position, 0.05);
+    controls.target.lerp(frame.target, 0.05);
+  }
 
   if (planetDirty) {
     showLoading();
