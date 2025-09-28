@@ -27,6 +27,11 @@ const systemViewCache = {
   target: new THREE.Vector3(),
 };
 const systemStarPosition = new THREE.Vector3();
+const systemViewFrameTarget = {
+  position: new THREE.Vector3(),
+  target: new THREE.Vector3(),
+};
+let systemViewNeedsFrame = false;
 let planetSystemApi;
 const clone = (value) => {
   if (typeof structuredClone === "function") {
@@ -34,6 +39,19 @@ const clone = (value) => {
   }
   return JSON.parse(JSON.stringify(value));
 };
+
+function requestSystemViewFrame() {
+  if (!planetSystem) return;
+  const frame = computeSystemViewCamera(
+    planetSystem.getPlanets(),
+    planetSystem.getStarWorldPosition(systemStarPosition),
+  );
+  systemViewFrameTarget.position.copy(frame.position);
+  systemViewFrameTarget.target.copy(frame.target);
+  if (systemViewMode === "system") {
+    systemViewNeedsFrame = true;
+  }
+}
 
 const debounceShare = debounce(() => {
   if (!shareDirty) return;
@@ -179,6 +197,12 @@ if (previewMode) {
   controls.autoRotateSpeed = 0.35;
 }
 
+controls.addEventListener("start", () => {
+  if (systemViewMode === "system") {
+    systemViewNeedsFrame = false;
+  }
+});
+
 // Photo mode state
 let isPhotoMode = false;
 
@@ -257,7 +281,7 @@ function createPlanetSystemApi() {
     addPlanet: () => {
       if (!planetSystem) return null;
       const config = createRandomPlanetConfiguration({ allowRingRandomization: true });
-      return planetSystem.addPlanet({
+      const newId = planetSystem.addPlanet({
         baseState: clone(params),
         planetState: config.params,
         moonSettings: config.moonSettings,
@@ -271,16 +295,27 @@ function createPlanetSystemApi() {
           type: config.params.planetType ?? config.params.type ?? "rocky",
         },
       });
+      if (systemViewMode === "system") {
+        requestSystemViewFrame();
+      }
+      return newId;
     },
     duplicatePlanet: (id) => {
       if (!planetSystem) return null;
-      return planetSystem.duplicatePlanet(id);
+      const newId = planetSystem.duplicatePlanet(id);
+      if (systemViewMode === "system") {
+        requestSystemViewFrame();
+      }
+      return newId;
     },
     removePlanet: (id) => {
       if (!planetSystem) return;
       const remaining = planetSystem.getPlanets().filter((planet) => planet.id !== id).length;
       if (remaining < 1) return;
       planetSystem.removePlanet(id);
+      if (systemViewMode === "system") {
+        requestSystemViewFrame();
+      }
     },
     regeneratePlanet: (id) => {
       if (!planetSystem) return;
@@ -301,9 +336,22 @@ function createPlanetSystemApi() {
       });
       planetSystem.focusPlanet(id);
       systemPanel?.setSelected?.(id);
+      if (systemViewMode === "system") {
+        requestSystemViewFrame();
+      }
       scheduleShareUpdate();
     },
-    updatePlanet: (id, patch) => planetSystem?.updatePlanet(id, patch),
+    updatePlanet: (id, patch) => {
+      planetSystem?.updatePlanet(id, patch);
+      if (
+        systemViewMode === "system" &&
+        patch &&
+        (Object.prototype.hasOwnProperty.call(patch, "semiMajorAxis") ||
+          Object.prototype.hasOwnProperty.call(patch, "radius"))
+      ) {
+        requestSystemViewFrame();
+      }
+    },
     getPlanets: () => planetSystem?.getPlanets() ?? [],
     focusPlanet: (id) => {
       if (!planetSystem) return;
@@ -311,6 +359,7 @@ function createPlanetSystemApi() {
       planetSystem.setViewMode("close");
       planetSystem.focusPlanet(id);
       systemPanel?.setSelected?.(id);
+      systemViewNeedsFrame = false;
     },
     toggleOrbitGizmos: (visible) => planetSystem?.toggleOrbitGizmos(visible),
     setTimeScale: (scale) => planetSystem?.setTimeScale(scale ?? 1),
@@ -331,9 +380,13 @@ function createPlanetSystemApi() {
         }
         controls.minDistance = 2;
         controls.maxDistance = 80;
+        systemViewNeedsFrame = false;
       }
       systemViewMode = mode;
       planetSystem.setViewMode(mode);
+      if (mode === "system") {
+        requestSystemViewFrame();
+      }
     },
     toggleViewMode: () => {
       if (!planetSystem) return systemViewMode;
@@ -352,9 +405,13 @@ function createPlanetSystemApi() {
         }
         controls.minDistance = 2;
         controls.maxDistance = 80;
+        systemViewNeedsFrame = false;
       }
       systemViewMode = nextMode;
       planetSystem.setViewMode(nextMode);
+      if (nextMode === "system") {
+        requestSystemViewFrame();
+      }
       return systemViewMode;
     },
   };
@@ -1293,8 +1350,8 @@ async function initializeApp() {
   );
   planetSystem.attachControls(controls);
   planetSystem.createFromExisting("primary", planet, clone(params), {
-    semiMajorAxis: 0,
-    orbitalSpeed: 0,
+    semiMajorAxis: params?.semiMajorAxis ?? 8,
+    orbitalSpeed: params?.orbitalSpeed ?? 0.04,
     spinSpeed: params.rotationSpeed,
     radius: params.radius,
   });
@@ -1437,13 +1494,15 @@ function animate(timestamp) {
 
   planetSystem?.update(delta, simulationDelta);
 
-  if (planetSystem && systemViewMode === "system") {
-    const frame = computeSystemViewCamera(
-      planetSystem.getPlanets(),
-      planetSystem.getStarWorldPosition(systemStarPosition),
-    );
-    camera.position.lerp(frame.position, 0.05);
-    controls.target.lerp(frame.target, 0.05);
+  if (planetSystem && systemViewMode === "system" && systemViewNeedsFrame) {
+    camera.position.lerp(systemViewFrameTarget.position, 0.05);
+    controls.target.lerp(systemViewFrameTarget.target, 0.05);
+    if (
+      camera.position.distanceTo(systemViewFrameTarget.position) < 0.1 &&
+      controls.target.distanceTo(systemViewFrameTarget.target) < 0.1
+    ) {
+      systemViewNeedsFrame = false;
+    }
   }
 
   if (planetDirty) {
