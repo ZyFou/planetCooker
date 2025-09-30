@@ -71,6 +71,25 @@ export class PlanetSystem {
   systemCameraState: { position: THREE.Vector3; target: THREE.Vector3 } | null = null;
   currentPlanetId: string | null = null;
 
+  private tagPlanetMesh(mesh: THREE.Object3D, id: string) {
+    if (!mesh) return;
+    mesh.traverse?.((child: any) => {
+      if (!child || typeof child !== "object") return;
+      child.userData = child.userData || {};
+      child.userData._planetSystemId = id;
+    });
+  }
+
+  private clearPlanetMeshTag(mesh: THREE.Object3D | null | undefined) {
+    if (!mesh) return;
+    mesh.traverse?.((child: any) => {
+      if (!child?.userData) return;
+      if ("_planetSystemId" in child.userData) {
+        delete child.userData._planetSystemId;
+      }
+    });
+  }
+
   constructor(
     scene: THREE.Scene,
     sun: any,
@@ -142,8 +161,12 @@ export class PlanetSystem {
     mesh.position.set(defaults.semiMajorAxis, 0, 0);
     pivot.rotation.x = defaults.inclination;
     pivot.add(mesh);
+    this.tagPlanetMesh(mesh, entryId);
 
     planet.params.rotationSpeed = defaults.spinSpeed;
+    if (defaults.type) {
+      planet.params.planetType = defaults.type;
+    }
 
     const gizmo = this.orbitFactory(defaults.semiMajorAxis);
     pivot.add(gizmo);
@@ -211,6 +234,9 @@ export class PlanetSystem {
       sun: this.sun,
     });
     planet.params.rotationSpeed = orbitParams.spinSpeed;
+    if (orbitParams.type) {
+      planet.params.planetType = orbitParams.type;
+    }
 
     const mesh = (planet as any).planetSystem ?? planet.planetRoot ?? new THREE.Group();
     if (mesh.parent) {
@@ -219,6 +245,7 @@ export class PlanetSystem {
     mesh.position.set(orbitParams.semiMajorAxis, 0, 0);
     pivot.rotation.x = orbitParams.inclination;
     pivot.add(mesh);
+    this.tagPlanetMesh(mesh, id);
 
     const gizmo = this.orbitFactory(orbitParams.semiMajorAxis);
     pivot.add(gizmo);
@@ -247,8 +274,9 @@ export class PlanetSystem {
 
   removePlanet(id: string) {
     const entry = this.planets.get(id);
-    if (!entry || entry.isPrimary) return;
+    if (!entry) return;
     entry.pivot.parent?.remove(entry.pivot);
+    this.clearPlanetMeshTag(entry.mesh);
     entry.planet?.dispose?.();
     this.planets.delete(id);
     this.order = this.order.filter((pid) => pid !== id);
@@ -431,11 +459,16 @@ export class PlanetSystem {
     mesh.position.set(entry.params.semiMajorAxis, 0, 0);
 
     entry.pivot.remove(entry.mesh);
+    this.clearPlanetMeshTag(entry.mesh);
     entry.pivot.add(mesh);
+    this.tagPlanetMesh(mesh, id);
 
     entry.mesh = mesh;
     entry.planet = planet;
     entry.planet.params.rotationSpeed = entry.params.spinSpeed;
+    if (entry.params.type) {
+      entry.planet.params.planetType = entry.params.type;
+    }
   }
 
   update(delta: number, simulationDelta: number = delta) {
@@ -453,5 +486,18 @@ export class PlanetSystem {
         entry.planet.update(delta, simulationDelta, null);
       }
     });
+  }
+
+  findPlanetIdFromObject(object: THREE.Object3D | null | undefined) {
+    if (!object) return null;
+    let current: THREE.Object3D | null = object;
+    while (current) {
+      const id = (current as any)?.userData?._planetSystemId;
+      if (typeof id === "string") {
+        return id;
+      }
+      current = current.parent;
+    }
+    return null;
   }
 }

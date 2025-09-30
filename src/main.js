@@ -323,11 +323,11 @@ function createPlanetSystemApi() {
     },
     removePlanet: (id) => {
       if (!planetSystem) return;
-      const remaining = planetSystem.getPlanets().filter((planet) => planet.id !== id).length;
-      if (remaining < 1) return;
       planetSystem.removePlanet(id);
-      if (id === activePlanetId) {
-        const remainingPlanets = planetSystem.getPlanets();
+      const remainingPlanets = planetSystem.getPlanets();
+      if (!remainingPlanets.length) {
+        clearActivePlanet();
+      } else if (id === activePlanetId || !planetSystem.getPlanetEntry?.(activePlanetId)) {
         const nextId = remainingPlanets[0]?.id;
         if (nextId) {
           setActivePlanet(nextId, { focusCamera: systemViewMode !== "system" });
@@ -1088,12 +1088,12 @@ function applyPreset(presetName, options = {}) {
     }
     
     // Update all planet components
-    planet.updatePalette();
-    planet.updateClouds();
-    planet.updateCore();
-    sun.updateSun();
-    planet.updateRings();
-    planet.updateTilt();
+    planet?.updatePalette?.();
+    planet?.updateClouds?.();
+    planet?.updateCore?.();
+    sun.updateSun?.();
+    planet?.updateRings?.();
+    planet?.updateTilt?.();
     updateSeedDisplay();
     updateGravityDisplay();
     syncMoonSettings();
@@ -1249,12 +1249,12 @@ async function initFromHash() {
         isApplyingPreset = true;
         try {
           // Update all the UI elements and regenerate the planet
-          planet.updatePalette();
-          planet.updateClouds();
-          planet.updateCore();
-          sun.updateSun();
-          planet.updateRings();
-          planet.updateTilt();
+          planet?.updatePalette?.();
+          planet?.updateClouds?.();
+          planet?.updateCore?.();
+          sun.updateSun?.();
+          planet?.updateRings?.();
+          planet?.updateTilt?.();
           updateSeedDisplay();
           updateGravityDisplay();
           syncMoonSettings();
@@ -1303,12 +1303,12 @@ async function initFromHash() {
         isApplyingPreset = true;
         try {
           // Update all the UI elements and regenerate the planet
-          planet.updatePalette();
-          planet.updateClouds();
-          planet.updateCore();
-          sun.updateSun();
-          planet.updateRings();
-          planet.updateTilt();
+          planet?.updatePalette?.();
+          planet?.updateClouds?.();
+          planet?.updateCore?.();
+          sun.updateSun?.();
+          planet?.updateRings?.();
+          planet?.updateTilt?.();
           updateSeedDisplay();
           updateGravityDisplay();
           syncMoonSettings();
@@ -1435,12 +1435,26 @@ initializeApp().then(() => {
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(mouse, camera);
 
-    const moonMeshes = planet.moonsGroup.children.map(p => p.userData.mesh).filter(m => m);
-    const focusableObjects = [planet.planetMesh, sun.sunVisual, ...moonMeshes];
+    const focusableObjects = [];
+    planetSystem?.planets?.forEach?.((entry) => {
+      if (entry?.mesh) focusableObjects.push(entry.mesh);
+      entry?.planet?.moonsGroup?.children?.forEach?.((pivot) => {
+        const mesh = pivot?.userData?.mesh;
+        if (mesh) focusableObjects.push(mesh);
+      });
+    });
+    if (sun?.sunVisual) focusableObjects.push(sun.sunVisual);
+
     const intersects = raycaster.intersectObjects(focusableObjects, true);
 
     if (intersects.length > 0) {
-        focusOnObject(intersects[0].object);
+      const hit = intersects[0].object;
+      const planetId = planetSystem?.findPlanetIdFromObject?.(hit);
+      if (planetId) {
+        setActivePlanet(planetId, { focusCamera: true });
+      } else {
+        focusOnObject(hit);
+      }
     }
   }, false);
 
@@ -1488,18 +1502,24 @@ function getFocusRadius(object) {
 }
 
 function focusOnObject(targetObject) {
+  const defaultTarget = planet?.planetMesh ?? sun?.sunVisual ?? null;
   if (!targetObject) {
-    // Reset focus to the planet
+    if (!defaultTarget) {
+      activeFocus = null;
+      return;
+    }
     activeFocus = {
-      object: planet.planetMesh,
-      isPlanet: true,
+      object: defaultTarget,
+      isPlanet: Boolean(planet?.planetMesh),
     };
-  } else {
-    activeFocus = {
-      object: targetObject,
-      isPlanet: targetObject === planet.planetMesh,
-    };
+    return;
   }
+
+  const focusedPlanetId = planetSystem?.findPlanetIdFromObject?.(targetObject) ?? null;
+  activeFocus = {
+    object: targetObject,
+    isPlanet: focusedPlanetId !== null && focusedPlanetId === activePlanetId,
+  };
 }
 
 //#region Animation loop
@@ -1561,19 +1581,23 @@ function animate(timestamp) {
   }
 
   if (planetDirty) {
-    showLoading();
-    planet.rebuildPlanet();
+    if (planet) {
+      showLoading();
+      planet.rebuildPlanet();
+      hideLoadingSoon();
+    }
     planetDirty = false;
-    hideLoadingSoon();
   }
 
   if (moonsDirty) {
-    planet.updateMoons();
+    if (planet) {
+      planet.updateMoons?.();
+    }
     moonsDirty = false;
   }
 
   sun.update(delta, simulationDelta, camera);
-  planet.update(delta, simulationDelta, camera);
+  planet?.update?.(delta, simulationDelta, camera);
 
   if (starField && starField.material && starField.material.uniforms) {
     starField.rotation.y += delta * 0.002;
@@ -1704,14 +1728,14 @@ function setupMobilePanelToggle() {
       const targetId = target.dataset.target;
       if (!targetId) return;
 
-      if (targetId === 'planet') {
+      if (targetId === 'planet' && planet?.planetMesh) {
           focusOnObject(planet.planetMesh);
       } else if (targetId === 'sun') {
           focusOnObject(sun.sunVisual);
-      } else if (targetId.startsWith('moon-')) {
+      } else if (targetId.startsWith('moon-') && planet?.moonsGroup) {
           const moonIndex = parseInt(targetId.split('-')[1], 10);
           if (!isNaN(moonIndex) && moonIndex < planet.moonsGroup.children.length) {
-              const moonMesh = planet.moonsGroup.children[moonIndex].userData.mesh;
+              const moonMesh = planet.moonsGroup.children[moonIndex]?.userData?.mesh;
               if (moonMesh) {
                   focusOnObject(moonMesh);
               }
@@ -1940,12 +1964,12 @@ function setupMobilePanelToggle() {
         // Apply
         isApplyingPreset = true;
         try {
-          planet.updatePalette();
-          planet.updateClouds();
-          planet.updateCore();
-          sun.updateSun();
-          planet.updateRings();
-          planet.updateTilt();
+          planet?.updatePalette?.();
+          planet?.updateClouds?.();
+          planet?.updateCore?.();
+          sun.updateSun?.();
+          planet?.updateRings?.();
+          planet?.updateTilt?.();
           updateSeedDisplay();
           updateGravityDisplay();
           syncMoonSettings();
@@ -2077,6 +2101,18 @@ function syncActivePlanetSnapshot() {
   }
 }
 
+function clearActivePlanet() {
+  activePlanetId = null;
+  planet = null;
+  planetDirty = false;
+  moonsDirty = false;
+  if (sun) {
+    sun.planetRoot = null;
+  }
+  focusOnObject(null);
+  systemPanel?.setSelected?.(null);
+}
+
 function setActivePlanet(id, { focusCamera = true } = {}) {
   if (!planetSystem || !id) return null;
   if (id === activePlanetId && planetSystem.getPlanetEntry?.(id)) {
@@ -2092,7 +2128,10 @@ function setActivePlanet(id, { focusCamera = true } = {}) {
   syncActivePlanetSnapshot();
 
   const entry = planetSystem.getPlanetEntry?.(id);
-  if (!entry) return null;
+  if (!entry) {
+    clearActivePlanet();
+    return null;
+  }
 
   const snapshot = entry.stateSnapshot ? clone(entry.stateSnapshot) : {};
   const moons = Array.isArray(entry.moons) ? entry.moons.map((moon) => ({ ...moon })) : [];
@@ -2885,17 +2924,17 @@ function surpriseMe(targetPlanetId = null) {
 
   normalizeMoonSettings();
   handleSeedChanged({ skipShareUpdate: true });
-  planet.updatePalette();
-  planet.updateClouds();
-  sun.updateSun();
-  planet.updateRings();
-  planet.updateTilt();
+  planet?.updatePalette?.();
+  planet?.updateClouds?.();
+  sun.updateSun?.();
+  planet?.updateRings?.();
+  planet?.updateTilt?.();
   updateGravityDisplay();
   rebuildMoonControls();
   markMoonsDirty();
-  planet.initMoonPhysics();
+  planet?.initMoonPhysics?.();
   updateStarfieldUniforms();
-  planet.guiControllers.updateStabilityDisplay(moonSettings.length, moonSettings.length);
+  planet?.guiControllers?.updateStabilityDisplay?.(moonSettings.length, moonSettings.length);
   scheduleShareUpdate();
 
   setTimeout(() => {

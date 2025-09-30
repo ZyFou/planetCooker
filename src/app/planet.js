@@ -263,7 +263,10 @@ export class Planet {
         this.scene = scene;
         this.params = params;
         this.moonSettings = moonSettings;
-        this.guiControllers = guiControllers;
+        this.guiControllers = guiControllers || {};
+        if (typeof this.guiControllers.updateStabilityDisplay !== "function") {
+            this.guiControllers.updateStabilityDisplay = () => {};
+        }
         this.visualSettings = visualSettings;
         this.sun = sun;
 
