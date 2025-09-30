@@ -144,6 +144,9 @@ const PLANET_SURFACE_LOD_ORDER = [
     "lowMed", "microHigh", "micro", "microLow"
 ];
 
+const _sunWorldPosition = new THREE.Vector3();
+const _planetWorldPosition = new THREE.Vector3();
+
 // LOD Transition Manager for smooth transitions
 class LODTransitionManager {
     constructor() {
@@ -637,7 +640,9 @@ export class Planet {
         // Calculate light direction from sun to planet
         const sunDirection = new THREE.Vector3();
         if (this.sun?.sunGroup) {
-            sunDirection.subVectors(this.sun.sunGroup.position, this.planetRoot.position).normalize();
+            this.sun.sunGroup.getWorldPosition(_sunWorldPosition);
+            this.planetRoot.getWorldPosition(_planetWorldPosition);
+            sunDirection.subVectors(_sunWorldPosition, _planetWorldPosition).normalize();
         } else {
             sunDirection.set(1, 0, 0); // Default direction
         }
@@ -1314,7 +1319,13 @@ export class Planet {
         this.atmosphereUniforms.atmosphereRimPower.value = this.params.atmosphereRimPower;
 
         const sunDirection = new THREE.Vector3();
-        sunDirection.subVectors(this.sun.sunGroup.position, this.planetRoot.position).normalize();
+        if (this.sun?.sunGroup) {
+            this.sun.sunGroup.getWorldPosition(_sunWorldPosition);
+            this.planetRoot.getWorldPosition(_planetWorldPosition);
+            sunDirection.subVectors(_sunWorldPosition, _planetWorldPosition).normalize();
+        } else {
+            sunDirection.set(1, 0, 0);
+        }
         this.atmosphereUniforms.lightDirection.value.copy(sunDirection);
 
         this.cloudsMesh.visible = this.params.cloudsOpacity > 0.001;

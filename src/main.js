@@ -12,9 +12,46 @@ import { encodeShare as encodeShareExt, decodeShare as decodeShareExt, saveConfi
 import { initOnboarding, showOnboarding } from "./app/onboarding.js";
 import { Planet } from "./app/planet.js";
 import { Sun } from "./app/sun.js";
+import { PlanetSystem } from "./systems/PlanetSystem.ts";
+import { computeSystemViewCamera } from "./systems/SystemViewCamera.ts";
+import systemPanelTemplate from "./ui/SystemPanel.html?raw";
+import { mountSystemPanel } from "./ui/SystemPanel.js";
 
 let planet;
 let sun;
+let planetSystem;
+let systemPanel;
+let systemViewMode = "close";
+const systemViewCache = {
+  position: new THREE.Vector3(),
+  target: new THREE.Vector3(),
+};
+const systemStarPosition = new THREE.Vector3();
+const systemViewFrameTarget = {
+  position: new THREE.Vector3(),
+  target: new THREE.Vector3(),
+};
+let systemViewNeedsFrame = false;
+let planetSystemApi;
+const clone = (value) => {
+  if (typeof structuredClone === "function") {
+    return structuredClone(value);
+  }
+  return JSON.parse(JSON.stringify(value));
+};
+
+function requestSystemViewFrame() {
+  if (!planetSystem) return;
+  const frame = computeSystemViewCamera(
+    planetSystem.getPlanets(),
+    planetSystem.getStarWorldPosition(systemStarPosition),
+  );
+  systemViewFrameTarget.position.copy(frame.position);
+  systemViewFrameTarget.target.copy(frame.target);
+  if (systemViewMode === "system") {
+    systemViewNeedsFrame = true;
+  }
+}
 
 const debounceShare = debounce(() => {
   if (!shareDirty) return;
@@ -74,6 +111,14 @@ const ringDetailValue = document.getElementById("ring-detail-value");
 const photoToggleButton = document.getElementById("photo-toggle");
 const photoShutterButton = document.getElementById("photo-shutter");
 const previewMode = new URLSearchParams(window.location.search).get("preview") === "1";
+if (typeof systemPanelTemplate === "string") {
+  const templateWrapper = document.createElement("div");
+  templateWrapper.innerHTML = systemPanelTemplate.trim();
+  const tpl = templateWrapper.firstElementChild;
+  if (tpl instanceof HTMLTemplateElement && !document.getElementById("system-panel-template")) {
+    document.body.appendChild(tpl);
+  }
+}
 if (previewMode) {
   document.body.classList.add("preview-mode");
 }
@@ -92,6 +137,11 @@ if (!sceneContainer) {
 if (!controlsContainer) {
   throw new Error("Missing controls container element");
 }
+
+const systemPanelContainer = document.createElement("div");
+systemPanelContainer.id = "system-panel-container";
+systemPanelContainer.className = "system-panel-container";
+infoPanel?.appendChild(systemPanelContainer);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -114,12 +164,44 @@ controls.dampingFactor = 0.045;
 controls.rotateSpeed = 0.7;
 controls.minDistance = 2;
 controls.maxDistance = 80;
+const ORBIT_SEGMENTS = 128;
+function createOrbitLine(radius) {
+  const points = new Float32Array(ORBIT_SEGMENTS * 3);
+  for (let i = 0; i < ORBIT_SEGMENTS; i++) {
+    const angle = (i / ORBIT_SEGMENTS) * Math.PI * 2;
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
+    const offset = i * 3;
+    points[offset] = x;
+    points[offset + 1] = 0.001;
+    points[offset + 2] = z;
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
+  geometry.computeBoundingSphere();
+  const material = new THREE.LineBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.35,
+    depthWrite: false,
+  });
+  const line = new THREE.LineLoop(geometry, material);
+  line.frustumCulled = false;
+  line.name = "OrbitGizmo";
+  return line;
+}
 if (previewMode) {
   controls.enablePan = false;
   controls.enableZoom = false;
   controls.autoRotate = true;
   controls.autoRotateSpeed = 0.35;
 }
+
+controls.addEventListener("start", () => {
+  if (systemViewMode === "system") {
+    systemViewNeedsFrame = false;
+  }
+});
 
 // Photo mode state
 let isPhotoMode = false;
@@ -192,6 +274,147 @@ function exitPhotoMode() {
   setTimeout(() => {
     try { window.location.reload(); } catch {}
   }, 0);
+}
+
+function createPlanetSystemApi() {
+  return {
+    addPlanet: () => {
+      if (!planetSystem) return null;
+      const config = createRandomPlanetConfiguration({ allowRingRandomization: true });
+      const newId = planetSystem.addPlanet({
+        baseState: clone(params),
+        planetState: config.params,
+        moonSettings: config.moonSettings,
+        guiControllers,
+        visualSettings,
+        orbitParams: {
+          radius: config.params.radius,
+          spinSpeed: config.params.rotationSpeed,
+          seed: config.params.seed,
+          preset: config.params.preset ?? null,
+          type: config.params.planetType ?? config.params.type ?? "rocky",
+        },
+      });
+      if (systemViewMode === "system") {
+        requestSystemViewFrame();
+      }
+      return newId;
+    },
+    duplicatePlanet: (id) => {
+      if (!planetSystem) return null;
+      const newId = planetSystem.duplicatePlanet(id);
+      if (systemViewMode === "system") {
+        requestSystemViewFrame();
+      }
+      return newId;
+    },
+    removePlanet: (id) => {
+      if (!planetSystem) return;
+      const remaining = planetSystem.getPlanets().filter((planet) => planet.id !== id).length;
+      if (remaining < 1) return;
+      planetSystem.removePlanet(id);
+      if (systemViewMode === "system") {
+        requestSystemViewFrame();
+      }
+    },
+    regeneratePlanet: (id) => {
+      if (!planetSystem) return;
+      if (id === "primary") {
+        surpriseMe("primary");
+        updateSeedDisplay();
+        updateGravityDisplay();
+        scheduleShareUpdate();
+        return;
+      }
+      const config = createRandomPlanetConfiguration({ allowRingRandomization: true });
+      planetSystem.applyPlanetState(id, config.params, config.moonSettings, {
+        radius: config.params.radius,
+        spinSpeed: config.params.rotationSpeed,
+        seed: config.params.seed,
+        preset: config.params.preset ?? null,
+        type: config.params.planetType ?? config.params.type ?? "rocky",
+      });
+      planetSystem.focusPlanet(id);
+      systemPanel?.setSelected?.(id);
+      if (systemViewMode === "system") {
+        requestSystemViewFrame();
+      }
+      scheduleShareUpdate();
+    },
+    updatePlanet: (id, patch) => {
+      planetSystem?.updatePlanet(id, patch);
+      if (
+        systemViewMode === "system" &&
+        patch &&
+        (Object.prototype.hasOwnProperty.call(patch, "semiMajorAxis") ||
+          Object.prototype.hasOwnProperty.call(patch, "radius"))
+      ) {
+        requestSystemViewFrame();
+      }
+    },
+    getPlanets: () => planetSystem?.getPlanets() ?? [],
+    focusPlanet: (id) => {
+      if (!planetSystem) return;
+      systemViewMode = "close";
+      planetSystem.setViewMode("close");
+      planetSystem.focusPlanet(id);
+      systemPanel?.setSelected?.(id);
+      systemViewNeedsFrame = false;
+    },
+    toggleOrbitGizmos: (visible) => planetSystem?.toggleOrbitGizmos(visible),
+    setTimeScale: (scale) => planetSystem?.setTimeScale(scale ?? 1),
+    setViewMode: (mode) => {
+      if (!planetSystem) return;
+      if (mode === systemViewMode) return;
+      if (mode === "system") {
+        systemViewCache.position.copy(camera.position);
+        systemViewCache.target.copy(controls.target);
+        controls.enablePan = false;
+        controls.minDistance = 4;
+        controls.maxDistance = 200;
+      } else {
+        camera.position.copy(systemViewCache.position);
+        controls.target.copy(systemViewCache.target);
+        if (!previewMode) {
+          controls.enablePan = true;
+        }
+        controls.minDistance = 2;
+        controls.maxDistance = 80;
+        systemViewNeedsFrame = false;
+      }
+      systemViewMode = mode;
+      planetSystem.setViewMode(mode);
+      if (mode === "system") {
+        requestSystemViewFrame();
+      }
+    },
+    toggleViewMode: () => {
+      if (!planetSystem) return systemViewMode;
+      const nextMode = systemViewMode === "system" ? "close" : "system";
+      if (nextMode === "system") {
+        systemViewCache.position.copy(camera.position);
+        systemViewCache.target.copy(controls.target);
+        controls.enablePan = false;
+        controls.minDistance = 4;
+        controls.maxDistance = 200;
+      } else {
+        camera.position.copy(systemViewCache.position);
+        controls.target.copy(systemViewCache.target);
+        if (!previewMode) {
+          controls.enablePan = true;
+        }
+        controls.minDistance = 2;
+        controls.maxDistance = 80;
+        systemViewNeedsFrame = false;
+      }
+      systemViewMode = nextMode;
+      planetSystem.setViewMode(nextMode);
+      if (nextMode === "system") {
+        requestSystemViewFrame();
+      }
+      return systemViewMode;
+    },
+  };
 }
 
 function dataURLtoBlob(dataurl) {
@@ -789,7 +1012,8 @@ resetAllButton?.addEventListener("click", () => {
 
 surpriseMeButton?.addEventListener("click", () => {
   try {
-    surpriseMe();
+    const targetId = planetSystem?.getCurrentPlanetId?.() ?? "primary";
+    surpriseMe(targetId);
     updateSeedDisplay();
     updateGravityDisplay();
     scheduleShareUpdate();
@@ -1109,6 +1333,35 @@ async function initializeApp() {
   planet = new Planet(scene, params, moonSettings, guiControllers, visualSettings, sun);
   sun.planetRoot = planet.planetRoot; // Circular dependency fix
 
+  planetSystem = new PlanetSystem(
+    scene,
+    sun,
+    ({ params: planetParams, moonSettings: moonConfig, guiControllers: controllers, visualSettings: visuals }) =>
+      new Planet(
+        scene,
+        planetParams,
+        moonConfig || [],
+        controllers || guiControllers,
+        visuals || visualSettings,
+        sun,
+      ),
+    createOrbitLine,
+    (object) => focusOnObject(object),
+  );
+  planetSystem.attachControls(controls);
+  planetSystem.createFromExisting("primary", planet, clone(params), {
+    semiMajorAxis: params?.semiMajorAxis ?? 8,
+    orbitalSpeed: params?.orbitalSpeed ?? 0.04,
+    spinSpeed: params.rotationSpeed,
+    radius: params.radius,
+  });
+
+  planetSystemApi = createPlanetSystemApi();
+  if (systemPanelContainer) {
+    systemPanel = mountSystemPanel(systemPanelContainer, planetSystemApi);
+    systemPanel?.setSelected?.("primary");
+  }
+
   const loadedFromHash = await initFromHash();
   if (!loadedFromHash) {
     planet.updatePalette();
@@ -1125,6 +1378,14 @@ async function initializeApp() {
     updateSeedDisplay();
     updateGravityDisplay();
   }
+
+  const primaryEntry = planetSystem?.planets?.get?.("primary");
+  if (primaryEntry) {
+    primaryEntry.stateSnapshot = clone(params);
+    primaryEntry.params.radius = params.radius;
+    primaryEntry.params.spinSpeed = params.rotationSpeed;
+  }
+  systemPanel?.render?.();
   setupMobilePanelToggle();
 }
 
@@ -1188,7 +1449,9 @@ function focusOnObject(targetObject) {
 
 //#region Animation loop
 function animate(timestamp) {
-  if (activeFocus) {
+  if (systemViewMode === "system") {
+    activeFocus = null;
+  } else if (activeFocus) {
     const targetPosition = new THREE.Vector3();
     activeFocus.object.getWorldPosition(targetPosition);
 
@@ -1228,6 +1491,19 @@ function animate(timestamp) {
   }
 
   controls.update();
+
+  planetSystem?.update(delta, simulationDelta);
+
+  if (planetSystem && systemViewMode === "system" && systemViewNeedsFrame) {
+    camera.position.lerp(systemViewFrameTarget.position, 0.05);
+    controls.target.lerp(systemViewFrameTarget.target, 0.05);
+    if (
+      camera.position.distanceTo(systemViewFrameTarget.position) < 0.1 &&
+      controls.target.distanceTo(systemViewFrameTarget.target) < 0.1
+    ) {
+      systemViewNeedsFrame = false;
+    }
+  }
 
   if (planetDirty) {
     showLoading();
@@ -1440,7 +1716,8 @@ function setupMobilePanelToggle() {
       mobileMenu?.setAttribute("hidden", "");
       mobileMenuToggle?.setAttribute("aria-expanded", "false");
       try {
-        surpriseMe();
+    const targetId = planetSystem?.getCurrentPlanetId?.() ?? "primary";
+    surpriseMe(targetId);
         updateSeedDisplay();
         updateGravityDisplay();
         scheduleShareUpdate();
@@ -2083,226 +2360,374 @@ function hideLoadingSoon() {
     setTimeout(() => hideLoading(), 30);
 }
   
-function surpriseMe() {
-    const newSeed = generateSeed();
-    const rng = new SeededRNG(newSeed);
-  
-    const isGasGiant = rng.next() < 1 / 6;
-  
-    const prevSimSpeed = params.simulationSpeed;
-    const preserveFoam = params.foamEnabled;
-    const preserveRings = !params.ringAllowRandom;
-    const prevRingSettings = preserveRings
-      ? { ringEnabled: params.ringEnabled, ringAngle: params.ringAngle, ringSpinSpeed: params.ringSpinSpeed, ringCount: params.ringCount, rings: params.rings.map(r => ({...r})) }
-      : null;
-  
-    isApplyingPreset = true;
-    if (isGasGiant) {
-      params.planetType = "gas_giant";
-      const gasGiantPresets = Object.keys(presets).filter(p => presets[p].planetType === 'gas_giant');
-      const pickPreset = gasGiantPresets[Math.floor(rng.next() * gasGiantPresets.length)];
-      applyPreset(pickPreset, { skipShareUpdate: true, keepSeed: true });
-    } else {
-      params.planetType = "rocky";
-      const rockyPresets = Object.keys(presets).filter(p => presets[p].planetType === 'rocky' || !presets[p].planetType);
-      const pickPreset = rockyPresets[Math.floor(rng.next() * rockyPresets.length)];
-      applyPreset(pickPreset, { skipShareUpdate: true, keepSeed: true });
-    }
-    isApplyingPreset = false;
-  
-    params.simulationSpeed = prevSimSpeed;
-    params.foamEnabled = preserveFoam;
-    if (preserveRings && prevRingSettings) {
-      Object.assign(params, prevRingSettings);
-    }
-  
-    params.seed = newSeed;
-  
-    if (isGasGiant) {
-      params.radius = THREE.MathUtils.lerp(2.0, 4.0, rng.next());
-      params.gasGiantStrataCount = Math.round(THREE.MathUtils.lerp(2, 6, rng.next()));
-      let totalSize = 0;
-      for (let i = 1; i <= params.gasGiantStrataCount; i++) {
-        const hue = rng.next();
-        params[`gasGiantStrataColor${i}`] = `#${new THREE.Color().setHSL(hue, rng.next() * 0.4 + 0.3, rng.next() * 0.4 + 0.3).getHexString()}`;
-        const size = rng.next();
-        params[`gasGiantStrataSize${i}`] = size;
-        totalSize += size;
-      }
-      if (totalSize > 0) {
-        for (let i = 1; i <= params.gasGiantStrataCount; i++) {
-          params[`gasGiantStrataSize${i}`] /= totalSize;
+function createRandomPlanetConfiguration(options = {}) {
+  const {
+    baseParams = params,
+    allowRingRandomization = true,
+    includeStar = false,
+  } = options;
+
+  const nextParams = clone(baseParams) || {};
+  if (!Array.isArray(nextParams.rings)) nextParams.rings = [];
+  if (!nextParams.aurora) {
+    nextParams.aurora = {
+      enabled: false,
+      colors: ["#38ff7a", "#3fb4ff"],
+      latitudeCenterDeg: 60,
+      latitudeWidthDeg: 10,
+      height: 0.06,
+      intensity: 1,
+      noiseScale: 2,
+      banding: 0.5,
+      nightBoost: 1.5,
+    };
+  } else if (!Array.isArray(nextParams.aurora.colors)) {
+    nextParams.aurora.colors = ["#38ff7a", "#3fb4ff"];
+  } else {
+    nextParams.aurora.colors = [...nextParams.aurora.colors];
+  }
+
+  nextParams.rings = Array.isArray(baseParams.rings)
+    ? baseParams.rings.map((ring) => ({ ...ring }))
+    : [];
+
+  const newSeed = generateSeed();
+  const rng = new SeededRNG(newSeed);
+  const isGasGiant = rng.next() < 1 / 6;
+
+  nextParams.planetType = isGasGiant ? "gas_giant" : "rocky";
+
+  const presetCandidates = Object.keys(presets).filter((key) => {
+    const preset = presets[key];
+    if (!preset) return false;
+    if (isGasGiant) return preset.planetType === "gas_giant";
+    return preset.planetType === "rocky" || !preset.planetType;
+  });
+  if (presetCandidates.length) {
+    const presetName = presetCandidates[Math.floor(rng.next() * presetCandidates.length)];
+    const preset = presets[presetName];
+    if (preset) {
+      const { moons: _presetMoons, aurora: presetAurora, ...rest } = preset;
+      Object.keys(rest).forEach((key) => {
+        nextParams[key] = clone(rest[key]);
+      });
+      if (presetAurora) {
+        nextParams.aurora = clone(presetAurora) || nextParams.aurora;
+        if (!Array.isArray(nextParams.aurora.colors)) {
+          nextParams.aurora.colors = ["#38ff7a", "#3fb4ff"];
         }
       }
-      params.gasGiantNoiseScale = THREE.MathUtils.lerp(1.0, 8.0, rng.next());
-      params.gasGiantNoiseStrength = THREE.MathUtils.lerp(0.05, 0.3, rng.next());
-      params.gasGiantStrataWarp = THREE.MathUtils.lerp(0.01, 0.1, rng.next());
-      params.gasGiantStrataWarpScale = THREE.MathUtils.lerp(2.0, 12.0, rng.next());
-    } else {
-      params.radius = THREE.MathUtils.lerp(0.6, 2.0, rng.next());
-      params.subdivisions = Math.round(THREE.MathUtils.lerp(4, 6, rng.next()));
-      params.noiseLayers = Math.round(THREE.MathUtils.lerp(3, 7, rng.next()));
-      params.noiseFrequency = THREE.MathUtils.lerp(0.8, 5.2, rng.next());
-      params.noiseAmplitude = THREE.MathUtils.lerp(0.2, 0.9, rng.next());
-      params.persistence = THREE.MathUtils.lerp(0.35, 0.65, rng.next());
-      params.lacunarity = THREE.MathUtils.lerp(1.6, 3.2, rng.next());
-      params.oceanLevel = THREE.MathUtils.lerp(0.0, 0.75, rng.next() * rng.next());
-      const hue = rng.next();
-      const hue2 = (hue + 0.12 + rng.next() * 0.2) % 1;
-      const hue3 = (hue + 0.3 + rng.next() * 0.3) % 1;
-      params.colorOcean = `#${new THREE.Color().setHSL(hue, 0.6, 0.28).getHexString()}`;
-      params.colorShallow = `#${new THREE.Color().setHSL(hue, 0.55, 0.45).getHexString()}`;
-      params.colorLow = `#${new THREE.Color().setHSL(hue2, 0.42, 0.3).getHexString()}`;
-      params.colorMid = `#${new THREE.Color().setHSL(hue2, 0.36, 0.58).getHexString()}`;
-      params.colorHigh = `#${new THREE.Color().setHSL(hue3, 0.15, 0.92).getHexString()}`;
-      params.colorCore = `#${new THREE.Color().setHSL(hue, 0.4, 0.3).getHexString()}`;
-      params.coreEnabled = true;
-      params.coreSize = THREE.MathUtils.lerp(0.2, 0.6, rng.next());
-      params.coreVisible = true;
-      params.icePolesEnabled = rng.next() < 0.7;
-      params.icePolesCoverage = THREE.MathUtils.lerp(0.05, 0.3, rng.next());
-      params.icePolesColor = `#${new THREE.Color().setHSL(0.6, rng.next() * 0.2 + 0.1, rng.next() * 0.3 + 0.7).getHexString()}`;
-      params.icePolesNoiseScale = THREE.MathUtils.lerp(1.0, 4.0, rng.next());
-      params.icePolesNoiseStrength = THREE.MathUtils.lerp(0.1, 0.5, rng.next());
+      nextParams.preset = presetName;
     }
-  
-    params.axisTilt = THREE.MathUtils.lerp(0, 45, rng.next());
-    params.rotationSpeed = THREE.MathUtils.lerp(0.05, 0.5, rng.next());
-    params.gravity = THREE.MathUtils.lerp(4, 25, rng.next());
-    const atmHue = rng.next();
-    params.atmosphereColor = `#${new THREE.Color().setHSL(atmHue, 0.6, 0.55).getHexString()}`;
-    params.atmosphereOpacity = THREE.MathUtils.lerp(0.05, 0.5, rng.next());
-    params.cloudsOpacity = THREE.MathUtils.lerp(0.1, 0.8, rng.next());
-    params.cloudHeight = THREE.MathUtils.lerp(0.01, 0.12, rng.next());
-    params.cloudDensity = THREE.MathUtils.lerp(0.25, 0.85, rng.next());
-    params.cloudNoiseScale = THREE.MathUtils.lerp(1.2, 5.0, rng.next());
-    params.cloudDriftSpeed = THREE.MathUtils.lerp(0, 0.06, rng.next());
-  
+  } else {
+    nextParams.preset = null;
+  }
+
+  nextParams.seed = newSeed;
+
+  if (isGasGiant) {
+    nextParams.radius = THREE.MathUtils.lerp(2.0, 4.0, rng.next());
+    nextParams.gasGiantStrataCount = Math.round(THREE.MathUtils.lerp(2, 6, rng.next()));
+    let totalSize = 0;
+    for (let i = 1; i <= nextParams.gasGiantStrataCount; i += 1) {
+      const hue = rng.next();
+      nextParams[`gasGiantStrataColor${i}`] = `#${new THREE.Color().setHSL(hue, rng.next() * 0.4 + 0.3, rng.next() * 0.4 + 0.3).getHexString()}`;
+      const size = rng.next();
+      nextParams[`gasGiantStrataSize${i}`] = size;
+      totalSize += size;
+    }
+    if (totalSize > 0) {
+      for (let i = 1; i <= nextParams.gasGiantStrataCount; i += 1) {
+        nextParams[`gasGiantStrataSize${i}`] /= totalSize;
+      }
+    }
+    nextParams.gasGiantNoiseScale = THREE.MathUtils.lerp(1.0, 8.0, rng.next());
+    nextParams.gasGiantNoiseStrength = THREE.MathUtils.lerp(0.05, 0.3, rng.next());
+    nextParams.gasGiantStrataWarp = THREE.MathUtils.lerp(0.01, 0.1, rng.next());
+    nextParams.gasGiantStrataWarpScale = THREE.MathUtils.lerp(2.0, 12.0, rng.next());
+  } else {
+    nextParams.radius = THREE.MathUtils.lerp(0.6, 2.0, rng.next());
+    nextParams.subdivisions = Math.round(THREE.MathUtils.lerp(4, 6, rng.next()));
+    nextParams.noiseLayers = Math.round(THREE.MathUtils.lerp(3, 7, rng.next()));
+    nextParams.noiseFrequency = THREE.MathUtils.lerp(0.8, 5.2, rng.next());
+    nextParams.noiseAmplitude = THREE.MathUtils.lerp(0.2, 0.9, rng.next());
+    nextParams.persistence = THREE.MathUtils.lerp(0.35, 0.65, rng.next());
+    nextParams.lacunarity = THREE.MathUtils.lerp(1.6, 3.2, rng.next());
+    nextParams.oceanLevel = THREE.MathUtils.lerp(0.0, 0.75, rng.next() * rng.next());
+    const hue = rng.next();
+    const hue2 = (hue + 0.12 + rng.next() * 0.2) % 1;
+    const hue3 = (hue + 0.3 + rng.next() * 0.3) % 1;
+    nextParams.colorOcean = `#${new THREE.Color().setHSL(hue, 0.6, 0.28).getHexString()}`;
+    nextParams.colorShallow = `#${new THREE.Color().setHSL(hue, 0.55, 0.45).getHexString()}`;
+    nextParams.colorLow = `#${new THREE.Color().setHSL(hue2, 0.42, 0.3).getHexString()}`;
+    nextParams.colorMid = `#${new THREE.Color().setHSL(hue2, 0.36, 0.58).getHexString()}`;
+    nextParams.colorHigh = `#${new THREE.Color().setHSL(hue3, 0.15, 0.92).getHexString()}`;
+    nextParams.colorCore = `#${new THREE.Color().setHSL(hue, 0.4, 0.3).getHexString()}`;
+    nextParams.coreEnabled = true;
+    nextParams.coreSize = THREE.MathUtils.lerp(0.2, 0.6, rng.next());
+    nextParams.coreVisible = true;
+    nextParams.icePolesEnabled = rng.next() < 0.7;
+    nextParams.icePolesCoverage = THREE.MathUtils.lerp(0.05, 0.3, rng.next());
+    nextParams.icePolesColor = `#${new THREE.Color().setHSL(0.6, rng.next() * 0.2 + 0.1, rng.next() * 0.3 + 0.7).getHexString()}`;
+    nextParams.icePolesNoiseScale = THREE.MathUtils.lerp(1.0, 4.0, rng.next());
+    nextParams.icePolesNoiseStrength = THREE.MathUtils.lerp(0.1, 0.5, rng.next());
+  }
+
+  nextParams.axisTilt = THREE.MathUtils.lerp(0, 45, rng.next());
+  nextParams.rotationSpeed = THREE.MathUtils.lerp(0.05, 0.5, rng.next());
+  nextParams.gravity = THREE.MathUtils.lerp(4, 25, rng.next());
+  const atmHue = rng.next();
+  nextParams.atmosphereColor = `#${new THREE.Color().setHSL(atmHue, 0.6, 0.55).getHexString()}`;
+  nextParams.atmosphereOpacity = THREE.MathUtils.lerp(0.05, 0.5, rng.next());
+  nextParams.cloudsOpacity = THREE.MathUtils.lerp(0.1, 0.8, rng.next());
+  nextParams.cloudHeight = THREE.MathUtils.lerp(0.01, 0.12, rng.next());
+  nextParams.cloudDensity = THREE.MathUtils.lerp(0.25, 0.85, rng.next());
+  nextParams.cloudNoiseScale = THREE.MathUtils.lerp(1.2, 5.0, rng.next());
+  nextParams.cloudDriftSpeed = THREE.MathUtils.lerp(0, 0.06, rng.next());
+
+  let starConfig = null;
+  if (includeStar) {
     if (rng.next() > 0.2) {
-      params.sunVariant = "Star";
       const starPresetNames = Object.keys(starPresets);
       const pickedStarPreset = starPresetNames[Math.floor(rng.next() * starPresetNames.length)];
-      applyStarPreset(pickedStarPreset, { skipShareUpdate: true });
+      starConfig = { type: "preset", preset: pickedStarPreset };
     } else {
-      params.sunVariant = "Black Hole";
-      params.blackHoleCoreSize = THREE.MathUtils.lerp(0.4, 1.6, rng.next());
-      params.blackHoleDiskRadius = params.blackHoleCoreSize * THREE.MathUtils.lerp(1.8, 4.0, rng.next());
-      params.blackHoleDiskThickness = THREE.MathUtils.lerp(0.1, 0.8, rng.next());
-      params.blackHoleDiskIntensity = THREE.MathUtils.lerp(0.8, 2.5, rng.next());
-      params.blackHoleHaloRadius = params.blackHoleDiskRadius * THREE.MathUtils.lerp(1.1, 1.8, rng.next());
-      params.blackHoleHaloAngle = THREE.MathUtils.lerp(20, 160, rng.next());
+      const blackHoleCoreSize = THREE.MathUtils.lerp(0.4, 1.6, rng.next());
+      const diskRadius = blackHoleCoreSize * THREE.MathUtils.lerp(1.8, 4.0, rng.next());
+      const haloRadius = diskRadius * THREE.MathUtils.lerp(1.1, 1.8, rng.next());
+      starConfig = {
+        type: "blackHole",
+        values: {
+          blackHoleCoreSize,
+          blackHoleDiskRadius: diskRadius,
+          blackHoleDiskThickness: THREE.MathUtils.lerp(0.1, 0.8, rng.next()),
+          blackHoleDiskIntensity: THREE.MathUtils.lerp(0.8, 2.5, rng.next()),
+          blackHoleHaloRadius: haloRadius,
+          blackHoleHaloAngle: THREE.MathUtils.lerp(20, 160, rng.next()),
+        },
+      };
     }
-  
-    params.moonCount = Math.round(THREE.MathUtils.lerp(0, 4, rng.next() * rng.next()));
-    params.moonMassScale = THREE.MathUtils.lerp(0.6, 2.5, rng.next());
-    moonSettings.splice(0, moonSettings.length);
-    for (let i = 0; i < params.moonCount; i += 1) {
-      moonSettings.push({
-        size: THREE.MathUtils.lerp(0.08, 0.4, rng.next()),
-        distance: THREE.MathUtils.lerp(2.4, 12.5, rng.next()),
-        orbitSpeed: THREE.MathUtils.lerp(0.4, 1.2, rng.next()),
-        inclination: THREE.MathUtils.lerp(-25, 25, rng.next()),
-        color: `#${new THREE.Color().setHSL((rng.next() + 0.5) % 1, 0.15 + rng.next() * 0.3, 0.6 + rng.next() * 0.2).getHexString()}`,
-        phase: rng.next() * Math.PI * 2,
-        eccentricity: THREE.MathUtils.lerp(0.02, 0.55, rng.next())
-      });
-    }
-  
-    if (!preserveRings) {
-      params.ringEnabled = rng.next() > 0.5;
-      if (params.ringEnabled) {
-        params.ringCount = Math.round(THREE.MathUtils.lerp(1, 5, rng.next()));
-        params.ringAngle = THREE.MathUtils.lerp(-45, 45, rng.next());
-        params.rings.splice(0, params.rings.length);
-        let lastRadius = 1.2;
-        for (let i = 0; i < params.ringCount; i += 1) {
-          const start = lastRadius + THREE.MathUtils.lerp(0.05, 0.2, rng.next());
-          const end = start + THREE.MathUtils.lerp(0.1, 0.5, rng.next());
-          params.rings.push({
-            style: rng.next() > 0.5 ? "Texture" : "Noise",
-            color: `#${new THREE.Color().setHSL(rng.next(), 0.15, 0.6).getHexString()}`,
-            start, end, opacity: THREE.MathUtils.lerp(0.4, 0.9, rng.next()),
-            noiseScale: THREE.MathUtils.lerp(1.5, 6.0, rng.next()),
-            noiseStrength: THREE.MathUtils.lerp(0.1, 0.6, rng.next()),
-            spinSpeed: THREE.MathUtils.lerp(-0.1, 0.1, rng.next()),
-            brightness: 1
-          });
-          lastRadius = end;
-        }
+  }
+
+  const moonCount = Math.round(THREE.MathUtils.lerp(0, 4, rng.next() * rng.next()));
+  const moonMassScale = THREE.MathUtils.lerp(0.6, 2.5, rng.next());
+  const moonSettingsOut = [];
+  for (let i = 0; i < moonCount; i += 1) {
+    moonSettingsOut.push({
+      size: THREE.MathUtils.lerp(0.08, 0.4, rng.next()),
+      distance: THREE.MathUtils.lerp(2.4, 12.5, rng.next()),
+      orbitSpeed: THREE.MathUtils.lerp(0.4, 1.2, rng.next()),
+      inclination: THREE.MathUtils.lerp(-25, 25, rng.next()),
+      color: `#${new THREE.Color().setHSL((rng.next() + 0.5) % 1, 0.15 + rng.next() * 0.3, 0.6 + rng.next() * 0.2).getHexString()}`,
+      phase: rng.next() * Math.PI * 2,
+      eccentricity: THREE.MathUtils.lerp(0.02, 0.55, rng.next()),
+    });
+  }
+
+  nextParams.moonCount = moonCount;
+  nextParams.moonMassScale = moonMassScale;
+
+  if (allowRingRandomization) {
+    nextParams.ringEnabled = rng.next() > 0.5;
+    nextParams.rings = [];
+    if (nextParams.ringEnabled) {
+      nextParams.ringCount = Math.round(THREE.MathUtils.lerp(1, 5, rng.next()));
+      nextParams.ringAngle = THREE.MathUtils.lerp(-45, 45, rng.next());
+      let lastRadius = 1.2;
+      for (let i = 0; i < nextParams.ringCount; i += 1) {
+        const start = lastRadius + THREE.MathUtils.lerp(0.05, 0.2, rng.next());
+        const end = start + THREE.MathUtils.lerp(0.1, 0.5, rng.next());
+        nextParams.rings.push({
+          style: rng.next() > 0.5 ? "Texture" : "Noise",
+          color: `#${new THREE.Color().setHSL(rng.next(), 0.15, 0.6).getHexString()}`,
+          start,
+          end,
+          opacity: THREE.MathUtils.lerp(0.4, 0.9, rng.next()),
+          noiseScale: THREE.MathUtils.lerp(1.5, 6.0, rng.next()),
+          noiseStrength: THREE.MathUtils.lerp(0.1, 0.6, rng.next()),
+          spinSpeed: THREE.MathUtils.lerp(-0.1, 0.1, rng.next()),
+          brightness: 1,
+        });
+        lastRadius = end;
       }
+    } else {
+      nextParams.ringCount = 0;
     }
+  } else {
+    nextParams.ringEnabled = baseParams.ringEnabled;
+    nextParams.ringAngle = baseParams.ringAngle;
+    nextParams.ringCount = baseParams.ringCount ?? nextParams.rings.length;
+    nextParams.ringSpinSpeed = baseParams.ringSpinSpeed;
+    nextParams.rings = Array.isArray(baseParams.rings)
+      ? baseParams.rings.map((ring) => ({ ...ring }))
+      : [];
+  }
 
-    // Randomize aurora
-    params.aurora.enabled = rng.next() > 0.3; // 70% chance of aurora
-    if (params.aurora.enabled) {
-      const h1 = rng.next();
-      const h2 = (h1 + 0.4 + rng.next() * 0.2) % 1.0;
-      // mutate colors to preserve array identity
-      params.aurora.colors[0] = `#${new THREE.Color().setHSL(h1, 0.9, 0.6).getHexString()}`;
-      params.aurora.colors[1] = `#${new THREE.Color().setHSL(h2, 0.9, 0.6).getHexString()}`;
-      params.aurora.latitudeCenterDeg = 60 + rng.next() * 15;
-      params.aurora.latitudeWidthDeg = THREE.MathUtils.lerp(8, 20, rng.next());
-      // Aurora height at atmosphere level (matches Earth-like preset)
-      params.aurora.height = 0.06;
-      params.aurora.intensity = THREE.MathUtils.lerp(0.5, 2.0, rng.next());
-      params.aurora.noiseScale = THREE.MathUtils.lerp(1.0, 5.0, rng.next());
-      params.aurora.banding = THREE.MathUtils.lerp(0.3, 1.0, rng.next());
-      params.aurora.nightBoost = THREE.MathUtils.lerp(1.2, 2.5, rng.next());
+  nextParams.aurora.enabled = rng.next() > 0.3;
+  if (nextParams.aurora.enabled) {
+    const h1 = rng.next();
+    const h2 = (h1 + 0.4 + rng.next() * 0.2) % 1.0;
+    nextParams.aurora.colors[0] = `#${new THREE.Color().setHSL(h1, 0.9, 0.6).getHexString()}`;
+    nextParams.aurora.colors[1] = `#${new THREE.Color().setHSL(h2, 0.9, 0.6).getHexString()}`;
+    nextParams.aurora.latitudeCenterDeg = 60 + rng.next() * 15;
+    nextParams.aurora.latitudeWidthDeg = THREE.MathUtils.lerp(8, 20, rng.next());
+    nextParams.aurora.height = 0.06;
+    nextParams.aurora.intensity = THREE.MathUtils.lerp(0.5, 2.0, rng.next());
+    nextParams.aurora.noiseScale = THREE.MathUtils.lerp(1.0, 5.0, rng.next());
+    nextParams.aurora.banding = THREE.MathUtils.lerp(0.3, 1.0, rng.next());
+    nextParams.aurora.nightBoost = THREE.MathUtils.lerp(1.2, 2.5, rng.next());
+  }
+
+  return { params: nextParams, moonSettings: moonSettingsOut, starConfig };
+}
+
+function surpriseMe(targetPlanetId = null) {
+  const currentId = targetPlanetId ?? planetSystem?.getCurrentPlanetId?.() ?? "primary";
+
+  if (planetSystem && currentId && currentId !== "primary") {
+    const config = createRandomPlanetConfiguration({ allowRingRandomization: true });
+    planetSystem.applyPlanetState(currentId, config.params, config.moonSettings, {
+      radius: config.params.radius,
+      spinSpeed: config.params.rotationSpeed,
+      seed: config.params.seed,
+      preset: config.params.preset ?? null,
+      type: config.params.planetType ?? config.params.type,
+    });
+    planetSystem.focusPlanet(currentId);
+    systemPanel?.setSelected?.(currentId);
+    scheduleShareUpdate();
+    return;
+  }
+
+  const prevSimSpeed = params.simulationSpeed;
+  const preserveFoam = params.foamEnabled;
+  const preserveRings = !params.ringAllowRandom;
+  const prevRingSettings = preserveRings
+    ? {
+        ringEnabled: params.ringEnabled,
+        ringAngle: params.ringAngle,
+        ringSpinSpeed: params.ringSpinSpeed,
+        ringCount: params.ringCount,
+        rings: params.rings.map((ring) => ({ ...ring })),
+      }
+    : null;
+
+  const config = createRandomPlanetConfiguration({ allowRingRandomization: !preserveRings, includeStar: true });
+  const randomParams = config.params;
+  const randomMoons = config.moonSettings;
+
+  const shallowCopy = clone(randomParams) || {};
+  const auroraParams = shallowCopy.aurora;
+  const ringParams = Array.isArray(shallowCopy.rings) ? shallowCopy.rings : [];
+  delete shallowCopy.aurora;
+  delete shallowCopy.rings;
+
+  Object.assign(params, shallowCopy);
+
+  params.simulationSpeed = prevSimSpeed;
+  params.foamEnabled = preserveFoam;
+
+  if (auroraParams) {
+    if (!params.aurora) params.aurora = { colors: ["#38ff7a", "#3fb4ff"] };
+    params.aurora.enabled = auroraParams.enabled;
+    params.aurora.latitudeCenterDeg = auroraParams.latitudeCenterDeg;
+    params.aurora.latitudeWidthDeg = auroraParams.latitudeWidthDeg;
+    params.aurora.height = auroraParams.height;
+    params.aurora.intensity = auroraParams.intensity;
+    params.aurora.noiseScale = auroraParams.noiseScale;
+    params.aurora.banding = auroraParams.banding;
+    params.aurora.nightBoost = auroraParams.nightBoost;
+    if (!Array.isArray(params.aurora.colors)) params.aurora.colors = ["#38ff7a", "#3fb4ff"];
+    if (Array.isArray(auroraParams.colors)) {
+      params.aurora.colors[0] = auroraParams.colors[0];
+      params.aurora.colors[1] = auroraParams.colors[1];
     }
+  }
 
-    Object.keys(guiControllers).forEach((key) => {
-      if (params[key] !== undefined && guiControllers[key]?.setValue) {
-        isApplyingPreset = true;
-        guiControllers[key].setValue(params[key]);
+  if (!preserveRings) {
+    params.rings.splice(0, params.rings.length, ...ringParams.map((ring) => ({ ...ring })));
+    params.ringCount = randomParams.ringCount ?? params.rings.length;
+  } else if (prevRingSettings) {
+    params.ringEnabled = prevRingSettings.ringEnabled;
+    params.ringAngle = prevRingSettings.ringAngle;
+    params.ringSpinSpeed = prevRingSettings.ringSpinSpeed;
+    params.ringCount = prevRingSettings.ringCount;
+    params.rings.splice(0, params.rings.length, ...prevRingSettings.rings.map((ring) => ({ ...ring })));
+  }
+
+  moonSettings.splice(0, moonSettings.length, ...randomMoons.map((moon) => ({ ...moon })));
+  params.moonCount = randomParams.moonCount;
+  params.moonMassScale = randomParams.moonMassScale;
+
+  if (config.starConfig) {
+    if (config.starConfig.type === "preset") {
+      params.sunVariant = "Star";
+      applyStarPreset(config.starConfig.preset, { skipShareUpdate: true });
+    } else if (config.starConfig.type === "blackHole") {
+      params.sunVariant = "Black Hole";
+      const starValues = config.starConfig.values;
+      params.blackHoleCoreSize = starValues.blackHoleCoreSize;
+      params.blackHoleDiskRadius = starValues.blackHoleDiskRadius;
+      params.blackHoleDiskThickness = starValues.blackHoleDiskThickness;
+      params.blackHoleDiskIntensity = starValues.blackHoleDiskIntensity;
+      params.blackHoleHaloRadius = starValues.blackHoleHaloRadius;
+      params.blackHoleHaloAngle = starValues.blackHoleHaloAngle;
+    }
+  }
+
+  planetSystem?.updatePrimarySnapshot(clone(params), moonSettings.slice(0, params.moonCount));
+  systemPanel?.setSelected?.("primary");
+
+  Object.keys(guiControllers).forEach((key) => {
+    if (params[key] !== undefined && guiControllers[key]?.setValue) {
+      isApplyingPreset = true;
+      guiControllers[key].setValue(params[key]);
+      isApplyingPreset = false;
+    }
+  });
+
+  try {
+    Object.values(guiControllers).forEach((ctrl) => ctrl?.updateDisplay?.());
+    guiControllers.refreshPlanetTypeVisibility(params.planetType);
+    guiControllers.rebuildRingControls?.();
+
+    if (params.aurora) {
+      isApplyingPreset = true;
+      try {
+        if (guiControllers.auroraEnabled) guiControllers.auroraEnabled.setValue(params.aurora.enabled);
+        if (guiControllers.auroraColor1) guiControllers.auroraColor1.setValue(params.aurora.colors[0]);
+        if (guiControllers.auroraColor2) guiControllers.auroraColor2.setValue(params.aurora.colors[1]);
+        if (guiControllers.auroraLatitudeCenter) guiControllers.auroraLatitudeCenter.setValue(params.aurora.latitudeCenterDeg);
+        if (guiControllers.auroraLatitudeWidth) guiControllers.auroraLatitudeWidth.setValue(params.aurora.latitudeWidthDeg);
+        if (guiControllers.auroraIntensity) guiControllers.auroraIntensity.setValue(params.aurora.intensity);
+        if (guiControllers.auroraNoiseScale) guiControllers.auroraNoiseScale.setValue(params.aurora.noiseScale);
+        if (guiControllers.auroraBanding) guiControllers.auroraBanding.setValue(params.aurora.banding);
+        if (guiControllers.auroraNightBoost) guiControllers.auroraNightBoost.setValue(params.aurora.nightBoost);
+      } finally {
         isApplyingPreset = false;
       }
-    });
+    }
+  } catch {}
 
-    try {
-      Object.values(guiControllers).forEach((ctrl) => ctrl?.updateDisplay?.());
-      guiControllers.refreshPlanetTypeVisibility(params.planetType);
-      guiControllers.rebuildRingControls?.();
-      
-      // Update aurora controllers explicitly using setValue for proper GUI updates
-      if (params.aurora) {
-        isApplyingPreset = true;
-        try {
-          if (guiControllers.auroraEnabled) guiControllers.auroraEnabled.setValue(params.aurora.enabled);
-          if (guiControllers.auroraColor1) guiControllers.auroraColor1.setValue(params.aurora.colors[0]);
-          if (guiControllers.auroraColor2) guiControllers.auroraColor2.setValue(params.aurora.colors[1]);
-          if (guiControllers.auroraLatitudeCenter) guiControllers.auroraLatitudeCenter.setValue(params.aurora.latitudeCenterDeg);
-          if (guiControllers.auroraLatitudeWidth) guiControllers.auroraLatitudeWidth.setValue(params.aurora.latitudeWidthDeg);
-          // Aurora height is fixed - no controller to update
-          if (guiControllers.auroraIntensity) guiControllers.auroraIntensity.setValue(params.aurora.intensity);
-          if (guiControllers.auroraNoiseScale) guiControllers.auroraNoiseScale.setValue(params.aurora.noiseScale);
-          if (guiControllers.auroraBanding) guiControllers.auroraBanding.setValue(params.aurora.banding);
-          if (guiControllers.auroraNightBoost) guiControllers.auroraNightBoost.setValue(params.aurora.nightBoost);
-        } finally {
-          isApplyingPreset = false;
-        }
-      }
-    } catch {}
+  normalizeMoonSettings();
+  handleSeedChanged({ skipShareUpdate: true });
+  planet.updatePalette();
+  planet.updateClouds();
+  sun.updateSun();
+  planet.updateRings();
+  planet.updateTilt();
+  updateGravityDisplay();
+  rebuildMoonControls();
+  markMoonsDirty();
+  planet.initMoonPhysics();
+  updateStarfieldUniforms();
+  planet.guiControllers.updateStabilityDisplay(moonSettings.length, moonSettings.length);
+  scheduleShareUpdate();
 
-    normalizeMoonSettings();
-    handleSeedChanged({ skipShareUpdate: true });
-    planet.updatePalette();
-    planet.updateClouds();
-    sun.updateSun();
-    planet.updateRings();
-    planet.updateTilt();
-    updateGravityDisplay();
-    rebuildMoonControls();
-    markMoonsDirty();
-    planet.initMoonPhysics();
-    updateStarfieldUniforms();
-    planet.guiControllers.updateStabilityDisplay(moonSettings.length, moonSettings.length);
-    scheduleShareUpdate();
-    
-    // Force immediate URL update for surprise me to prevent loss on reload
-    setTimeout(() => {
-      if (shareDirty) {
-        updateShareCode();
-        shareDirty = false;
-      }
-    }, 200); // Slightly longer than debounce to ensure it runs after
+  setTimeout(() => {
+    if (shareDirty) {
+      updateShareCode();
+      shareDirty = false;
+    }
+  }, 200);
 }

@@ -44,12 +44,28 @@ const starCoreFragmentShader = `
   }
 
   void main() {
+    vec3 normal = normalize(vNormal);
     float r = length(vPosition);
     float base = pow(smoothstep(1.0, 0.0, r), 1.6);
-    float turbulence = fbm(normalize(vNormal) * uNoiseScale + uTime * 0.25);
-    float intensity = base + uNoiseStrength * turbulence + uPulse;
-    intensity = clamp(intensity, 0.0, 1.4);
-    vec3 color = mix(uColorEdge, uColorCore, clamp(intensity, 0.0, 1.0));
+    float turbulence = fbm(normal * uNoiseScale + uTime * 0.25);
+    float granulation = fbm(normal * (uNoiseScale * 3.4) + uTime * 0.8);
+    float micro = fbm(normal * (uNoiseScale * 8.0) + uTime * 1.4);
+    float bands = sin((normal.y + uTime * 0.1) * 14.0 + granulation * 2.0) * 0.08;
+    float swirls = sin((normal.z + uTime * 0.2) * 9.0 + normal.x * 4.0) * 0.05;
+
+    float intensity = base
+      + uNoiseStrength * (0.45 * turbulence + 0.35 * granulation)
+      + micro * 0.18
+      + bands + swirls
+      + uPulse;
+
+    intensity = clamp(intensity, 0.0, 1.8);
+
+    float colorMix = clamp(intensity + granulation * 0.2, 0.0, 1.0);
+    vec3 warmEdge = mix(uColorEdge, vec3(1.0, 0.82, 0.52), 0.35);
+    vec3 inner = mix(uColorCore, warmEdge, 0.3 + micro * 0.15);
+    vec3 color = mix(uColorEdge, inner, colorMix);
+
     gl_FragColor = vec4(color, clamp(intensity, 0.2, 1.0));
   }
 `;
@@ -85,12 +101,17 @@ const starCoronaFragmentShader = `
   }
 
   void main() {
+    vec3 dir = normalize(vPosition);
     float radius = length(vPosition);
     float rim = smoothstep(1.0, 0.2, radius);
-    float t = turbulence(normalize(vPosition) * uNoiseScale) * uNoiseStrength;
-    float alpha = clamp(rim * (0.65 + t + uPulse), 0.0, 1.0);
+    float noise = turbulence(dir * (uNoiseScale * 1.2)) * uNoiseStrength;
+    float filaments = sin((dir.y + uTime * 0.2) * 12.0 + dir.x * 8.0) * 0.3;
+    float streamer = sin((dir.z + uTime * 0.35) * 6.0 + dir.y * 4.0) * 0.2;
+
+    float alpha = clamp(rim * (0.5 + 0.35 * noise + 0.25 * filaments + 0.15 * streamer + uPulse), 0.0, 1.0);
     if (alpha <= 0.001) discard;
-    vec3 color = uColor * (0.6 + 0.4 * rim);
+
+    vec3 color = uColor * (0.55 + rim * 0.65 + noise * 0.25 + filaments * 0.1);
     gl_FragColor = vec4(color, alpha);
   }
 `;
@@ -263,17 +284,9 @@ export class Sun {
     }
 
     _createSunLight() {
-        const sunLight = new THREE.DirectionalLight(0xfff0ce, 1.65);
-        sunLight.castShadow = true;
-        sunLight.shadow.mapSize.set(2048, 2048);
-        sunLight.shadow.camera.near = 1;
-        sunLight.shadow.camera.far = 160;
-        sunLight.shadow.camera.left = -35;
-        sunLight.shadow.camera.right = 35;
-        sunLight.shadow.camera.top = 35;
-        sunLight.shadow.camera.bottom = -35;
+        const sunLight = new THREE.PointLight(0xfff0ce, 1.65, 0, 2);
+        sunLight.castShadow = false;
         sunLight.position.set(0, 0, 0);
-        sunLight.target = this.planetRoot;
         return sunLight;
     }
 
@@ -592,8 +605,6 @@ export class Sun {
         this.sunGroup.position.set(distance, distance * 0.35, distance);
         this.sunLight.color.copy(color);
         this.sunLight.intensity = Math.max(0, this.params.sunIntensity) * (this.visualSettings.lightingScale || 1.0);
-        this.sunLight.target = this.planetRoot;
-        this.sunLight.target.updateMatrixWorld();
 
         const lodVisible = !isBlackHole;
         this.sunVisual.visible = lodVisible;
@@ -630,9 +641,9 @@ export class Sun {
         const noiseResolutionScale = Math.max(0.25, Math.min(2.0, this.visualSettings?.noiseResolution ?? 1.0));
         const noiseScale = Math.max(0.2, (this.params.sunNoiseScale || 1.6) * noiseResolutionScale);
         this.starCoreUniforms.uNoiseScale.value = noiseScale;
-        this.starCoreUniforms.uNoiseStrength.value = glowStrength * 0.35;
-        this.starCoronaUniforms.uNoiseScale.value = noiseScale * 0.75;
-        this.starCoronaUniforms.uNoiseStrength.value = glowStrength * 0.45;
+        this.starCoreUniforms.uNoiseStrength.value = glowStrength * 0.55;
+        this.starCoronaUniforms.uNoiseScale.value = noiseScale * 0.85;
+        this.starCoronaUniforms.uNoiseStrength.value = glowStrength * 0.6;
 
         let desiredCount = Math.max(0, Math.round(this.params.sunParticleCount || 0));
         if (this.visualSettings?.particleMax != null) {
