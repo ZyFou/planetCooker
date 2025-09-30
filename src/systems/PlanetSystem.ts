@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { Planet } from "../app/planet.js";
 import { SeededRNG } from "../app/utils.js";
+import { getPlanetMass } from "../app/planet/physics.js";
 
 const _STAR_WORLD = new THREE.Vector3();
 const _STAR_LOCAL = new THREE.Vector3();
@@ -404,6 +405,10 @@ export class PlanetSystem {
     if (state?.seed !== undefined) entry.params.seed = state.seed;
     if (state?.preset !== undefined) entry.params.preset = state.preset ?? null;
     if (state?.planetType !== undefined) entry.params.type = state.planetType;
+    if (entry.planet) {
+      entry.planet.params = entry.stateSnapshot;
+      entry.planet.moonSettings = entry.moons;
+    }
   }
 
   applyPlanetState(
@@ -474,13 +479,56 @@ export class PlanetSystem {
   update(delta: number, simulationDelta: number = delta) {
     const starLocal = this.getStarLocalPosition();
     const focusedId = this.getCurrentPlanetId();
-    this.planets.forEach((entry) => {
+    const entries = Array.from(this.planets.values());
+    const worldPositions = new Map<string, THREE.Vector3>();
+
+    entries.forEach((entry) => {
       entry.pivot.position.copy(starLocal);
       entry.theta += entry.params.orbitalSpeed * simulationDelta * this.timeScale;
       const a = entry.params.semiMajorAxis;
       const x = a * Math.cos(entry.theta);
       const z = a * Math.sin(entry.theta);
       entry.mesh.position.set(x, 0, z);
+      const worldPos = entry.mesh.getWorldPosition(new THREE.Vector3());
+      worldPositions.set(entry.id, worldPos);
+    });
+
+    const starMu = typeof this.sun?.getGravityParameter === "function" ? this.sun.getGravityParameter() : null;
+    const starWorld = this.getStarWorldPosition(_STAR_WORLD);
+    const sourceMap = new Map<string, { position: THREE.Vector3; mu: number; id?: string }[]>();
+
+    entries.forEach((entry) => {
+      sourceMap.set(entry.id, []);
+    });
+
+    if (Number.isFinite(starMu) && (starMu ?? 0) > 0) {
+      const starSource = { position: starWorld.clone(), mu: Number(starMu), id: "star" };
+      entries.forEach((entry) => {
+        sourceMap.get(entry.id)?.push(starSource);
+      });
+    }
+
+    entries.forEach((entry) => {
+      const snapshotParams = entry.stateSnapshot ?? null;
+      const activeParams = entry.planet?.params ?? null;
+      const planetParams = snapshotParams && Number.isFinite(snapshotParams.gravity) && Number.isFinite(snapshotParams.radius)
+        ? snapshotParams
+        : activeParams && Number.isFinite(activeParams.gravity) && Number.isFinite(activeParams.radius)
+          ? activeParams
+          : { gravity: activeParams?.gravity ?? 9.81, radius: activeParams?.radius ?? entry.params.radius ?? 1 };
+      const mu = Math.max(0, getPlanetMass(planetParams));
+      const worldPos = worldPositions.get(entry.id);
+      if (!worldPos) return;
+      entries.forEach((target) => {
+        if (target.id === entry.id) return;
+        const list = sourceMap.get(target.id);
+        if (!list) return;
+        list.push({ position: worldPos.clone(), mu, id: entry.id });
+      });
+    });
+
+    entries.forEach((entry) => {
+      entry.planet.setExternalGravitySources?.(sourceMap.get(entry.id) ?? []);
       if (entry.id !== focusedId) {
         entry.planet.params.rotationSpeed = entry.params.spinSpeed ?? entry.planet.params.rotationSpeed;
         entry.planet.update(delta, simulationDelta, null);

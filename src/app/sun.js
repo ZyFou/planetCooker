@@ -263,17 +263,14 @@ export class Sun {
     }
 
     _createSunLight() {
-        const sunLight = new THREE.DirectionalLight(0xfff0ce, 1.65);
+        const sunLight = new THREE.PointLight(0xfff0ce, 1.65, 0, 1.5);
         sunLight.castShadow = true;
         sunLight.shadow.mapSize.set(2048, 2048);
-        sunLight.shadow.camera.near = 1;
-        sunLight.shadow.camera.far = 160;
-        sunLight.shadow.camera.left = -35;
-        sunLight.shadow.camera.right = 35;
-        sunLight.shadow.camera.top = 35;
-        sunLight.shadow.camera.bottom = -35;
+        sunLight.shadow.camera.near = 0.1;
+        sunLight.shadow.camera.far = 220;
+        sunLight.shadow.bias = -0.00008;
+        sunLight.shadow.radius = 2.5;
         sunLight.position.set(0, 0, 0);
-        sunLight.target = this.planetRoot;
         return sunLight;
     }
 
@@ -591,8 +588,9 @@ export class Sun {
         this.sunGroup.position.set(0, 0, 0);
         this.sunLight.color.copy(color);
         this.sunLight.intensity = Math.max(0, this.params.sunIntensity) * (this.visualSettings.lightingScale || 1.0);
-        this.sunLight.target = this.planetRoot;
-        this.sunLight.target.updateMatrixWorld();
+        this.sunLight.decay = THREE.MathUtils.clamp(this.params.sunFalloff ?? 1.4, 0, 4) || 1.4;
+        this.sunLight.distance = Math.max(0, this.params.sunLightRange ?? 0);
+        this.sunLight.position.set(0, 0, 0);
 
         const lodVisible = !isBlackHole;
         this.sunVisual.visible = lodVisible;
@@ -1065,6 +1063,16 @@ export class Sun {
         if (needsUpdate && this.starParticleState.geometry) {
             this.starParticleState.geometry.attributes.position.needsUpdate = true;
         }
+    }
+
+    getGravityParameter() {
+        const size = Math.max(0.1, this.params.sunSize || 1);
+        const intensity = Math.max(0.1, this.params.sunIntensity || 1);
+        const baseMu = Math.pow(size, 3) * intensity * 12;
+        if (this.params.sunVariant === "Black Hole") {
+            return baseMu * 25;
+        }
+        return baseMu;
     }
 }
 

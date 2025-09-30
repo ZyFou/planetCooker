@@ -293,6 +293,8 @@ export class Planet {
         this.orbitLinesGroup = new THREE.Group();
         this.planetRoot.add(this.orbitLinesGroup);
 
+        this.externalGravitySources = [];
+
         this.cloudTexture = null;
         this.cloudTextureDirty = true;
         this.foamTexture = null;
@@ -807,6 +809,14 @@ export class Planet {
     }
 
 
+    setExternalGravitySources(sources) {
+        if (!Array.isArray(sources) || sources.length === 0) {
+            this.externalGravitySources = [];
+            return;
+        }
+        this.externalGravitySources = sources;
+    }
+
     update(delta, simulationDelta, camera = null) {
         if (camera && this.surfaceLOD) {
             this.surfaceLOD.updateMatrixWorld(true);
@@ -846,6 +856,7 @@ export class Planet {
                 syncDebugMoonArtifacts: this.guiControllers.syncDebugMoonArtifacts,
                 rebuildMoonControls: this.guiControllers.rebuildMoonControls,
                 guiControllers: this.guiControllers,
+                externalGravitySources: this.externalGravitySources,
             });
         } else {
             const planetMass = PHYSICS.getPlanetMass(this.params);
@@ -1785,7 +1796,8 @@ export class Planet {
             moonSettings: this.moonSettings,
             updateStabilityDisplay: this.guiControllers.updateStabilityDisplay,
             updateOrbitMaterial: this.updateOrbitMaterial.bind(this),
-            alignOrbitLineWithPivot: this.alignOrbitLineWithPivot.bind(this)
+            alignOrbitLineWithPivot: this.alignOrbitLineWithPivot.bind(this),
+            externalGravitySources: this.externalGravitySources
         });
     }
 

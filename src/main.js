@@ -2099,6 +2099,11 @@ function syncActivePlanetSnapshot() {
   } else if (planetSystem.updatePlanetSnapshot) {
     planetSystem.updatePlanetSnapshot(activePlanetId, stateClone, moonsClone);
   }
+  const entry = planetSystem.getPlanetEntry?.(activePlanetId);
+  if (entry?.planet) {
+    entry.planet.params = entry.stateSnapshot;
+    entry.planet.moonSettings = entry.moons;
+  }
 }
 
 function clearActivePlanet() {
@@ -2138,6 +2143,7 @@ function setActivePlanet(id, { focusCamera = true } = {}) {
 
   activePlanetId = id;
   planet = entry.planet;
+  planetSystem.currentPlanetId = id;
   if (sun && planet?.planetRoot) {
     sun.planetRoot = planet.planetRoot;
   }
@@ -2145,6 +2151,13 @@ function setActivePlanet(id, { focusCamera = true } = {}) {
   isApplyingPreset = true;
   try {
     applySnapshotToParams(snapshot, moons);
+    if (planet) {
+      planet.params = params;
+      planet.moonSettings = moonSettings;
+      if (planet.guiControllers !== guiControllers) {
+        planet.guiControllers = guiControllers;
+      }
+    }
     Object.keys(guiControllers).forEach((key) => {
       if (params[key] !== undefined && guiControllers[key]?.setValue) {
         guiControllers[key].setValue(params[key]);
@@ -2182,6 +2195,10 @@ function setActivePlanet(id, { focusCamera = true } = {}) {
     const stateClone = clone(params);
     const moonsClone = cloneActiveMoons();
     planetSystem.updatePlanetSnapshot(id, stateClone, moonsClone);
+    if (planet) {
+      planet.params = params;
+      planet.moonSettings = moonSettings;
+    }
   }
 
   if (focusCamera) {

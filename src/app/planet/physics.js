@@ -4,6 +4,8 @@ import * as THREE from "three";
 const tmpVecA = new THREE.Vector3();
 const tmpVecB = new THREE.Vector3();
 const tmpVecC = new THREE.Vector3();
+const tmpVecD = new THREE.Vector3();
+const tmpVecE = new THREE.Vector3();
 
 /**
  * Calculates the mass of the planet based on its radius and gravity.
@@ -201,7 +203,8 @@ export function stepMoonPhysics(dt, context) {
         params, planetRoot, moonsGroup, moonSettings, coreMesh,
         updateStabilityDisplay, updateOrbitMaterial, updateTrajectoryHistory,
         spawnExplosion, applyImpactDeformation,
-        syncDebugMoonArtifacts, rebuildMoonControls, guiControllers
+        syncDebugMoonArtifacts, rebuildMoonControls, guiControllers,
+        externalGravitySources = []
     } = context;
 
   if (!params.physicsEnabled) return;
@@ -225,17 +228,43 @@ export function stepMoonPhysics(dt, context) {
 
       phys.mu = getGravParameter(planetMass, params.physicsTwoWay ? phys.mass : 0);
 
-      const acc = computeAccelerationTowards(planetWorld, phys.posWorld, phys.mu, tmpVecA);
-      phys.posWorld.addScaledVector(phys.velWorld, h).addScaledVector(acc, 0.5 * h * h);
+      const accPlanet = computeAccelerationTowards(planetWorld, phys.posWorld, phys.mu, tmpVecA);
+      const accTotal = tmpVecD.copy(accPlanet);
+      if (externalGravitySources.length) {
+        for (let i = 0; i < externalGravitySources.length; i += 1) {
+          const source = externalGravitySources[i];
+          if (!source || !source.position) continue;
+          const mu = Number.isFinite(source.mu) ? source.mu : Number.isFinite(source.mass) ? source.mass : 0;
+          if (mu <= 0) continue;
+          tmpVecE.copy(source.position).sub(phys.posWorld);
+          const distSq = Math.max(1e-6, tmpVecE.lengthSq());
+          const dist = Math.sqrt(distSq);
+          accTotal.add(tmpVecE.multiplyScalar(-mu / (distSq * dist)));
+        }
+      }
+      phys.posWorld.addScaledVector(phys.velWorld, h).addScaledVector(accTotal, 0.5 * h * h);
 
-      const nextAcc = computeAccelerationTowards(planetWorld, phys.posWorld, phys.mu, tmpVecC);
-      phys.velWorld.add(acc.add(nextAcc).multiplyScalar(0.5 * h));
+      const nextAccPlanet = computeAccelerationTowards(planetWorld, phys.posWorld, phys.mu, tmpVecC);
+      const nextAccTotal = tmpVecE.copy(nextAccPlanet);
+      if (externalGravitySources.length) {
+        for (let i = 0; i < externalGravitySources.length; i += 1) {
+          const source = externalGravitySources[i];
+          if (!source || !source.position) continue;
+          const mu = Number.isFinite(source.mu) ? source.mu : Number.isFinite(source.mass) ? source.mass : 0;
+          if (mu <= 0) continue;
+          tmpVecD.copy(source.position).sub(phys.posWorld);
+          const distSq = Math.max(1e-6, tmpVecD.lengthSq());
+          const dist = Math.sqrt(distSq);
+          nextAccTotal.add(tmpVecD.multiplyScalar(-mu / (distSq * dist)));
+        }
+      }
+      phys.velWorld.add(accTotal.add(nextAccTotal).multiplyScalar(0.5 * h));
       if (params.physicsDamping > 0) {
         phys.velWorld.multiplyScalar(damping);
       }
 
       if (params.physicsTwoWay) {
-        const planetAcc = nextAcc.multiplyScalar(-phys.mass / Math.max(1e-6, planetMass));
+        const planetAcc = nextAccPlanet.multiplyScalar(-phys.mass / Math.max(1e-6, planetMass));
         planetVel.addScaledVector(planetAcc, h);
       }
 
