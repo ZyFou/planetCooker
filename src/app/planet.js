@@ -146,6 +146,7 @@ const PLANET_SURFACE_LOD_ORDER = [
 
 const _sunWorldPosition = new THREE.Vector3();
 const _planetWorldPosition = new THREE.Vector3();
+const _sunDirection = new THREE.Vector3();
 
 // LOD Transition Manager for smooth transitions
 class LODTransitionManager {
@@ -643,19 +644,24 @@ export class Planet {
         if (!megaMesh?.material?.uniforms) return;
 
         // Calculate light direction from sun to planet
-        const sunDirection = new THREE.Vector3();
         if (this.sun?.sunGroup) {
             this.sun.sunGroup.getWorldPosition(_sunWorldPosition);
             this.planetRoot.getWorldPosition(_planetWorldPosition);
-            sunDirection.subVectors(_sunWorldPosition, _planetWorldPosition).normalize();
+            _sunDirection.subVectors(_sunWorldPosition, _planetWorldPosition).normalize();
         } else {
-            sunDirection.set(1, 0, 0); // Default direction
+            _sunDirection.set(1, 0, 0); // Default direction
         }
 
         // Update lighting uniforms
-        megaMesh.material.uniforms.lightDirection.value.copy(sunDirection);
+        megaMesh.material.uniforms.lightDirection.value.copy(_sunDirection);
         megaMesh.material.uniforms.lightColor.value.set(this.params.sunColor || 0xffffff);
-        megaMesh.material.uniforms.lightIntensity.value = this.params.sunIntensity || 1.0;
+        const safeIntensity = Number.isFinite(this.params.sunIntensity)
+            ? Math.max(0.1, this.params.sunIntensity)
+            : 1.6;
+        if (!Number.isFinite(this.params.sunIntensity) || this.params.sunIntensity < 0.1) {
+            this.params.sunIntensity = safeIntensity;
+        }
+        megaMesh.material.uniforms.lightIntensity.value = safeIntensity;
 
         // Update ambient light (matches scene ambient light: 0x6f87b6, 0.35)
         megaMesh.material.uniforms.ambientLightColor.value.setHex(0x6f87b6);
@@ -823,6 +829,7 @@ export class Planet {
             this.surfaceLOD.update(camera);
         }
         this._syncActiveSurfaceMesh();
+        this._updateMegaLODLighting();
         const rotationDelta = this.params.rotationSpeed * simulationDelta * Math.PI * 2;
         this.spinGroup.rotation.y += rotationDelta;
         this.cloudsMesh.rotation.y += rotationDelta * 1.12;
@@ -1325,22 +1332,28 @@ export class Planet {
     updateClouds() {
         this.cloudsMaterial.opacity = this.params.cloudsOpacity;
 
+        const safeIntensity = Number.isFinite(this.params.sunIntensity)
+            ? Math.max(0.1, this.params.sunIntensity)
+            : 1.6;
+        if (!Number.isFinite(this.params.sunIntensity) || this.params.sunIntensity < 0.1) {
+            this.params.sunIntensity = safeIntensity;
+        }
+
         this.atmosphereUniforms.atmosphereIntensity.value = this.params.atmosphereIntensity;
-        this.atmosphereUniforms.sunBrightness.value = this.params.sunIntensity;
+        this.atmosphereUniforms.sunBrightness.value = safeIntensity;
         this.atmosphereUniforms.sunColor.value.set(this.params.sunColor);
         this.atmosphereUniforms.atmosphereColor.value.set(this.params.atmosphereColor);
         this.atmosphereUniforms.atmosphereFresnelPower.value = this.params.atmosphereFresnelPower;
         this.atmosphereUniforms.atmosphereRimPower.value = this.params.atmosphereRimPower;
 
-        const sunDirection = new THREE.Vector3();
         if (this.sun?.sunGroup) {
             this.sun.sunGroup.getWorldPosition(_sunWorldPosition);
             this.planetRoot.getWorldPosition(_planetWorldPosition);
-            sunDirection.subVectors(_sunWorldPosition, _planetWorldPosition).normalize();
+            _sunDirection.subVectors(_sunWorldPosition, _planetWorldPosition).normalize();
         } else {
-            sunDirection.set(1, 0, 0);
+            _sunDirection.set(1, 0, 0);
         }
-        this.atmosphereUniforms.lightDirection.value.copy(sunDirection);
+        this.atmosphereUniforms.lightDirection.value.copy(_sunDirection);
 
         this.cloudsMesh.visible = this.params.cloudsOpacity > 0.001;
         this.atmosphereMesh.visible = this.params.atmosphereOpacity > 0.001;

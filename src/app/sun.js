@@ -577,6 +577,17 @@ export class Sun {
         const isBlackHole = this.params.sunVariant === "Black Hole";
         const variantChanged = this.currentSunVariant !== this.params.sunVariant;
 
+        const rawIntensity = Number.isFinite(this.params.sunIntensity)
+            ? this.params.sunIntensity
+            : 1.6;
+        const safeIntensity = Math.max(0.1, rawIntensity);
+        if (!Number.isFinite(this.params.sunIntensity) || this.params.sunIntensity < 0.1) {
+            this.params.sunIntensity = safeIntensity;
+        }
+        const lightingScale = Number.isFinite(this.visualSettings?.lightingScale)
+            ? Math.max(0.1, this.visualSettings.lightingScale)
+            : 1.0;
+
         if (variantChanged) {
           this._resetBlackHoleState();
           if (isBlackHole) {
@@ -587,7 +598,7 @@ export class Sun {
 
         this.sunGroup.position.set(0, 0, 0);
         this.sunLight.color.copy(color);
-        this.sunLight.intensity = Math.max(0, this.params.sunIntensity) * (this.visualSettings.lightingScale || 1.0);
+        this.sunLight.intensity = safeIntensity * lightingScale;
         this.sunLight.decay = THREE.MathUtils.clamp(this.params.sunFalloff ?? 1.4, 0, 4) || 1.4;
         this.sunLight.distance = Math.max(0, this.params.sunLightRange ?? 0);
         this.sunLight.position.set(0, 0, 0);

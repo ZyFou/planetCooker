@@ -1206,9 +1206,18 @@ function applyVisualSettings() {
   renderer.setPixelRatio(pixelRatio);
   
   // Apply lighting scale
-  ambientLight.intensity = 0.35 * visualSettings.lightingScale;
+  const safeLightingScale = Number.isFinite(visualSettings.lightingScale)
+    ? Math.max(0.1, visualSettings.lightingScale)
+    : 1.0;
+  visualSettings.lightingScale = safeLightingScale;
+  ambientLight.intensity = 0.35 * safeLightingScale;
   if (sun && sun.sunLight) {
-    sun.sunLight.intensity = Math.max(0, params.sunIntensity) * visualSettings.lightingScale;
+    const baseSunIntensity = Number.isFinite(params.sunIntensity) ? params.sunIntensity : 1.6;
+    const safeSunIntensity = Math.max(0.1, baseSunIntensity);
+    if (!Number.isFinite(params.sunIntensity) || params.sunIntensity < 0.1) {
+      params.sunIntensity = safeSunIntensity;
+    }
+    sun.sunLight.intensity = safeSunIntensity * safeLightingScale;
   }
   
   // Update starfield if it exists
@@ -2434,14 +2443,20 @@ function setupVisualSettingsControls() {
   
   // Lighting scale
   lightingScale?.addEventListener("input", (e) => {
-    visualSettings.lightingScale = parseFloat(e.target.value);
+    const nextScale = Number.isFinite(parseFloat(e.target.value)) ? parseFloat(e.target.value) : 1.0;
+    visualSettings.lightingScale = Math.max(0.1, nextScale);
     if (lightingScaleValue) {
       lightingScaleValue.textContent = Math.round(visualSettings.lightingScale * 100) + "%";
     }
     // Apply lighting changes immediately for preview
     ambientLight.intensity = 0.35 * visualSettings.lightingScale;
     if (sun && sun.sunLight) {
-      sun.sunLight.intensity = Math.max(0, params.sunIntensity) * visualSettings.lightingScale;
+      const baseSunIntensity = Number.isFinite(params.sunIntensity) ? params.sunIntensity : 1.6;
+      const safeSunIntensity = Math.max(0.1, baseSunIntensity);
+      if (!Number.isFinite(params.sunIntensity) || params.sunIntensity < 0.1) {
+        params.sunIntensity = safeSunIntensity;
+      }
+      sun.sunLight.intensity = safeSunIntensity * visualSettings.lightingScale;
     }
   });
   
