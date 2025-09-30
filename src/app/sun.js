@@ -48,9 +48,11 @@ const starCoreFragmentShader = `
     float base = pow(smoothstep(1.0, 0.0, r), 1.6);
     float turbulence = fbm(normalize(vNormal) * uNoiseScale + uTime * 0.25);
     float intensity = base + uNoiseStrength * turbulence + uPulse;
-    intensity = clamp(intensity, 0.0, 1.4);
+    intensity = clamp(intensity, 0.0, 3.0); // Augmenté de 1.4 à 3.0
     vec3 color = mix(uColorEdge, uColorCore, clamp(intensity, 0.0, 1.0));
-    gl_FragColor = vec4(color, clamp(intensity, 0.2, 1.0));
+    // Contrôle de l'opacité basé sur l'intensité
+    float alpha = clamp(intensity * 0.8, 0.3, 1.0); // Opacité variable selon l'intensité
+    gl_FragColor = vec4(color, alpha);
   }
 `;
 
@@ -88,9 +90,9 @@ const starCoronaFragmentShader = `
     float radius = length(vPosition);
     float rim = smoothstep(1.0, 0.2, radius);
     float t = turbulence(normalize(vPosition) * uNoiseScale) * uNoiseStrength;
-    float alpha = clamp(rim * (0.65 + t + uPulse), 0.0, 1.0);
+    float alpha = clamp(rim * (0.8 + t + uPulse), 0.0, 1.0); // Augmenté de 0.65 à 0.8
     if (alpha <= 0.001) discard;
-    vec3 color = uColor * (0.6 + 0.4 * rim);
+    vec3 color = uColor * (0.8 + 0.4 * rim); // Augmenté de 0.6 à 0.8
     gl_FragColor = vec4(color, alpha);
   }
 `;
@@ -263,7 +265,7 @@ export class Sun {
     }
 
     _createSunLight() {
-        const sunLight = new THREE.PointLight(0xfff0ce, 1.65, 0, 1.5);
+        const sunLight = new THREE.PointLight(0xfff0ce, 3.0, 0, 1.5); // Augmenté l'intensité de base
         sunLight.castShadow = true;
         sunLight.shadow.mapSize.set(2048, 2048);
         sunLight.shadow.camera.near = 0.1;
@@ -276,19 +278,19 @@ export class Sun {
 
     _createStarObjects() {
         this.starCoreUniforms = {
-            uColorCore: { value: new THREE.Color(0xffd27f) },
-            uColorEdge: { value: new THREE.Color(0xffa060) },
+            uColorCore: { value: new THREE.Color(0xfff4a3) }, // Plus brillant et blanc
+            uColorEdge: { value: new THREE.Color(0xffd27f) }, // Plus brillant
             uTime: { value: 0 },
             uNoiseScale: { value: 1.6 },
-            uNoiseStrength: { value: 0.4 },
+            uNoiseStrength: { value: 0.6 }, // Augmenté de 0.4 à 0.6
             uPulse: { value: 0 }
         };
 
         this.starCoronaUniforms = {
-            uColor: { value: new THREE.Color(0xffa060) },
+            uColor: { value: new THREE.Color(0xffd27f) }, // Plus brillant
             uTime: { value: 0 },
             uNoiseScale: { value: 1.2 },
-            uNoiseStrength: { value: 0.5 },
+            uNoiseStrength: { value: 0.7 }, // Augmenté de 0.5 à 0.7
             uPulse: { value: 0 }
         };
 
@@ -598,8 +600,8 @@ export class Sun {
 
         this.sunGroup.position.set(0, 0, 0);
         this.sunLight.color.copy(color);
-        this.sunLight.intensity = safeIntensity * lightingScale;
-        this.sunLight.decay = THREE.MathUtils.clamp(this.params.sunFalloff ?? 1.4, 0, 4) || 1.4;
+        this.sunLight.intensity = Math.max(1.0, safeIntensity * lightingScale * 3.0); // Multiplicateur pour intensité plus forte
+        this.sunLight.decay = THREE.MathUtils.clamp(this.params.sunFalloff ?? 0.2, 0, 4) || 0.2;
         this.sunLight.distance = Math.max(0, this.params.sunLightRange ?? 0);
         this.sunLight.position.set(0, 0, 0);
 
