@@ -81,6 +81,17 @@ export class SystemPanel {
     if (!this.list) return;
     this.list.innerHTML = "";
     const planets = this.systemApi.getPlanets();
+    const formatType = (type) => {
+      if (!type) return "Custom";
+      return type
+        .split("_")
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+    };
+    const formatValue = (value, digits) => {
+      if (typeof value !== "number" || !Number.isFinite(value)) return null;
+      return value.toFixed(digits);
+    };
     planets.forEach((planet) => {
       const item = document.createElement("article");
       item.className = "system-panel__item";
@@ -127,6 +138,30 @@ export class SystemPanel {
       actions.append(focusBtn, duplicateBtn, regenBtn, removeBtn);
       header.appendChild(actions);
       item.appendChild(header);
+
+      const meta = document.createElement("div");
+      meta.className = "system-panel__meta";
+      const typeField = document.createElement("div");
+      typeField.className = "system-panel__meta-field";
+      typeField.innerHTML = `<span class="system-panel__meta-label">Type</span><span class="system-panel__meta-value">${formatType(
+        planet.type,
+      )}</span>`;
+      const orbitField = document.createElement("div");
+      orbitField.className = "system-panel__meta-field";
+      const orbitValue = formatValue(planet.semiMajorAxis, 1);
+      const orbitDisplay = orbitValue ? orbitValue.replace(/\.0$/, "") : "—";
+      orbitField.innerHTML = `<span class="system-panel__meta-label">Orbit</span><span class="system-panel__meta-value">${orbitDisplay}${
+        orbitValue ? '<span class="system-panel__meta-unit">u</span>' : ""
+      }</span>`;
+      const radiusField = document.createElement("div");
+      radiusField.className = "system-panel__meta-field";
+      const radiusValue = formatValue(planet.radius, 2);
+      const radiusDisplay = radiusValue ? radiusValue.replace(/\.00$/, "") : "—";
+      radiusField.innerHTML = `<span class="system-panel__meta-label">Radius</span><span class="system-panel__meta-value">${radiusDisplay}${
+        radiusValue ? "&times;" : ""
+      }</span>`;
+      meta.append(typeField, orbitField, radiusField);
+      item.appendChild(meta);
 
       const controls = document.createElement("div");
       controls.className = "system-panel__item-controls";

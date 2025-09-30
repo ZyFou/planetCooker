@@ -92,7 +92,7 @@ export function setupPlanetControls({
   realWorldsFolder.add(real, "uranus").name("Uranus");
   realWorldsFolder.add(real, "neptune").name("Neptune");
 
-  const planetFolder = registerFolder(gui.addFolder("Planet"), { close: true });
+  const planetFolder = registerFolder(gui.addFolder("Planet Controls"), { close: true });
 
   const rockyPlanetControllers = [];
   const gasGiantControllers = [];
@@ -474,7 +474,9 @@ export function setupPlanetControls({
       scheduleShareUpdate();
     });
 
-  const motionFolder = registerFolder(gui.addFolder("Motion"), { close: true });
+  const systemFolder = registerFolder(gui.addFolder("System Controls"), { close: true });
+
+  const motionFolder = registerFolder(systemFolder.addFolder("Motion"), { close: true });
 
   guiControllers.axisTilt = motionFolder.add(params, "axisTilt", 0, 45, 0.5)
     .name("Axis Tilt")
@@ -501,7 +503,7 @@ export function setupPlanetControls({
       scheduleShareUpdate();
     });
 
-  const environmentFolder = registerFolder(gui.addFolder("Environment"), { close: true });
+  const environmentFolder = registerFolder(systemFolder.addFolder("Environment"), { close: true });
 
   guiControllers.gravity = environmentFolder.add(params, "gravity", 0.1, 40, 0.1)
     .name("Gravity m/s^2")
@@ -583,14 +585,6 @@ export function setupPlanetControls({
 
   guiControllers.sunIntensity = sunFolder.add(params, "sunIntensity", 0.2, 4, 0.05)
     .name("Intensity")
-    .onChange(() => {
-      if (shouldSkipStarUpdate()) return;
-      updateSun();
-      scheduleShareUpdate();
-    });
-
-  guiControllers.sunDistance = sunFolder.add(params, "sunDistance", 10, 160, 1)
-    .name("Distance")
     .onChange(() => {
       if (shouldSkipStarUpdate()) return;
       updateSun();

@@ -578,7 +578,6 @@ export class Sun {
     updateSun() {
         const color = new THREE.Color(this.params.sunColor);
         const isBlackHole = this.params.sunVariant === "Black Hole";
-        const distance = this.params.sunDistance;
         const variantChanged = this.currentSunVariant !== this.params.sunVariant;
 
         if (variantChanged) {
@@ -589,7 +588,7 @@ export class Sun {
           this.currentSunVariant = this.params.sunVariant;
         }
 
-        this.sunGroup.position.set(distance, distance * 0.35, distance);
+        this.sunGroup.position.set(0, 0, 0);
         this.sunLight.color.copy(color);
         this.sunLight.intensity = Math.max(0, this.params.sunIntensity) * (this.visualSettings.lightingScale || 1.0);
         this.sunLight.target = this.planetRoot;

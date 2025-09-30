@@ -124,6 +124,8 @@ export class PlanetSystem {
     if (mesh.parent) {
       mesh.parent.remove(mesh);
     }
+    const starPosition = this.getStarLocalPosition();
+    pivot.position.copy(starPosition);
     const defaults: PlanetOrbitParams = {
       id: entryId,
       seed: planet.params?.seed || Math.floor(Math.random() * 1e9),
@@ -325,6 +327,10 @@ export class PlanetSystem {
     return this.order.map((id) => this.planets.get(id)?.params).filter(Boolean) as PlanetOrbitParams[];
   }
 
+  getPlanetEntry(id: string) {
+    return this.planets.get(id) ?? null;
+  }
+
   setTimeScale(scale: number) {
     this.timeScale = scale;
   }
@@ -357,15 +363,19 @@ export class PlanetSystem {
   updatePrimarySnapshot(state: Record<string, any>, moons: any[]) {
     const primaryId = this.order[0];
     if (!primaryId) return;
-    const primary = this.planets.get(primaryId);
-    if (!primary) return;
-    primary.stateSnapshot = structuredClone(state ?? {});
-    primary.moons = (moons ?? []).map((moon) => ({ ...moon }));
-    if (state?.radius !== undefined) primary.params.radius = state.radius;
-    if (state?.rotationSpeed !== undefined) primary.params.spinSpeed = state.rotationSpeed;
-    if (state?.seed !== undefined) primary.params.seed = state.seed;
-    if (state?.preset !== undefined) primary.params.preset = state.preset ?? null;
-    if (state?.planetType !== undefined) primary.params.type = state.planetType;
+    this.updatePlanetSnapshot(primaryId, state, moons);
+  }
+
+  updatePlanetSnapshot(id: string, state: Record<string, any>, moons: any[]) {
+    const entry = this.planets.get(id);
+    if (!entry) return;
+    entry.stateSnapshot = structuredClone(state ?? {});
+    entry.moons = (moons ?? []).map((moon) => ({ ...moon }));
+    if (state?.radius !== undefined) entry.params.radius = state.radius;
+    if (state?.rotationSpeed !== undefined) entry.params.spinSpeed = state.rotationSpeed;
+    if (state?.seed !== undefined) entry.params.seed = state.seed;
+    if (state?.preset !== undefined) entry.params.preset = state.preset ?? null;
+    if (state?.planetType !== undefined) entry.params.type = state.planetType;
   }
 
   applyPlanetState(
@@ -430,16 +440,15 @@ export class PlanetSystem {
 
   update(delta: number, simulationDelta: number = delta) {
     const starLocal = this.getStarLocalPosition();
+    const focusedId = this.getCurrentPlanetId();
     this.planets.forEach((entry) => {
-      if (!entry.isPrimary) {
-        entry.pivot.position.copy(starLocal);
-      }
+      entry.pivot.position.copy(starLocal);
       entry.theta += entry.params.orbitalSpeed * simulationDelta * this.timeScale;
       const a = entry.params.semiMajorAxis;
       const x = a * Math.cos(entry.theta);
       const z = a * Math.sin(entry.theta);
       entry.mesh.position.set(x, 0, z);
-      if (!entry.isPrimary) {
+      if (entry.id !== focusedId) {
         entry.planet.params.rotationSpeed = entry.params.spinSpeed ?? entry.planet.params.rotationSpeed;
         entry.planet.update(delta, simulationDelta, null);
       }

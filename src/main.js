@@ -22,6 +22,7 @@ let sun;
 let planetSystem;
 let systemPanel;
 let systemViewMode = "close";
+let activePlanetId = "primary";
 const systemViewCache = {
   position: new THREE.Vector3(),
   target: new THREE.Vector3(),
@@ -295,6 +296,9 @@ function createPlanetSystemApi() {
           type: config.params.planetType ?? config.params.type ?? "rocky",
         },
       });
+      if (newId) {
+        setActivePlanet(newId, { focusCamera: systemViewMode !== "system" });
+      }
       if (systemViewMode === "system") {
         requestSystemViewFrame();
       }
@@ -303,6 +307,9 @@ function createPlanetSystemApi() {
     duplicatePlanet: (id) => {
       if (!planetSystem) return null;
       const newId = planetSystem.duplicatePlanet(id);
+      if (newId) {
+        setActivePlanet(newId, { focusCamera: systemViewMode !== "system" });
+      }
       if (systemViewMode === "system") {
         requestSystemViewFrame();
       }
@@ -313,6 +320,13 @@ function createPlanetSystemApi() {
       const remaining = planetSystem.getPlanets().filter((planet) => planet.id !== id).length;
       if (remaining < 1) return;
       planetSystem.removePlanet(id);
+      if (id === activePlanetId) {
+        const remainingPlanets = planetSystem.getPlanets();
+        const nextId = remainingPlanets[0]?.id;
+        if (nextId) {
+          setActivePlanet(nextId, { focusCamera: systemViewMode !== "system" });
+        }
+      }
       if (systemViewMode === "system") {
         requestSystemViewFrame();
       }
@@ -334,8 +348,9 @@ function createPlanetSystemApi() {
         preset: config.params.preset ?? null,
         type: config.params.planetType ?? config.params.type ?? "rocky",
       });
-      planetSystem.focusPlanet(id);
-      systemPanel?.setSelected?.(id);
+      if (id === activePlanetId) {
+        setActivePlanet(id, { focusCamera: systemViewMode !== "system" });
+      }
       if (systemViewMode === "system") {
         requestSystemViewFrame();
       }
@@ -357,8 +372,7 @@ function createPlanetSystemApi() {
       if (!planetSystem) return;
       systemViewMode = "close";
       planetSystem.setViewMode("close");
-      planetSystem.focusPlanet(id);
-      systemPanel?.setSelected?.(id);
+      setActivePlanet(id, { focusCamera: true });
       systemViewNeedsFrame = false;
     },
     toggleOrbitGizmos: (visible) => planetSystem?.toggleOrbitGizmos(visible),
@@ -900,7 +914,7 @@ const {
   registerFolder,
   unregisterFolder,
   applyControlSearch,
-  scheduleShareUpdate: () => { shareDirty = true; debounceShare(); },
+  scheduleShareUpdate,
   markMoonsDirty: () => { moonsDirty = true; },
   updateOrbitLinesVisibility: () => planet?.updateOrbitLinesVisibility(),
   initMoonPhysics: () => planet?.initMoonPhysics(),
@@ -921,7 +935,7 @@ const { rebuildRingControls } = setupRingControls({
   registerFolder,
   unregisterFolder,
   applyControlSearch,
-  scheduleShareUpdate: () => { shareDirty = true; debounceShare(); },
+  scheduleShareUpdate,
   updateRings: () => planet?.updateRings(),
   getIsApplyingPreset: () => isApplyingPreset,
   getRingsFolder: () => guiControllers?.folders?.ringsFolder
@@ -934,7 +948,7 @@ setupPlanetControls({
     starPresets,
     guiControllers,
     registerFolder,
-    scheduleShareUpdate: () => { shareDirty = true; debounceShare(); },
+    scheduleShareUpdate,
     markPlanetDirty: () => { planetDirty = true; },
     markMoonsDirty: () => { moonsDirty = true; },
     handleSeedChanged,
@@ -1361,6 +1375,8 @@ async function initializeApp() {
     systemPanel = mountSystemPanel(systemPanelContainer, planetSystemApi);
     systemPanel?.setSelected?.("primary");
   }
+
+  setActivePlanet("primary", { focusCamera: false });
 
   const loadedFromHash = await initFromHash();
   if (!loadedFromHash) {
@@ -1982,8 +1998,128 @@ function markMoonsDirty() {
     moonsDirty = true;
 }
 
+function cloneActiveMoons() {
+  return moonSettings.slice(0, params.moonCount).map((moon) => ({ ...moon }));
+}
+
+function applySnapshotToParams(snapshot = {}, moons = []) {
+  if (!snapshot || typeof snapshot !== "object") snapshot = {};
+  const auroraParams = snapshot.aurora;
+  const ringParams = Array.isArray(snapshot.rings) ? snapshot.rings : [];
+  const keys = Object.keys(snapshot).filter((key) => key !== "aurora" && key !== "rings");
+  keys.forEach((key) => {
+    const value = snapshot[key];
+    if (value !== undefined) {
+      params[key] = typeof value === "object" && value !== null ? clone(value) : value;
+    }
+  });
+
+  if (auroraParams) {
+    mergeAurora(auroraParams);
+  }
+
+  params.rings.splice(0, params.rings.length, ...ringParams.map((ring) => ({ ...ring })));
+  params.ringCount = snapshot.ringCount ?? params.rings.length;
+
+  const moonArray = Array.isArray(moons) ? moons : [];
+  moonSettings.splice(0, moonSettings.length, ...moonArray.map((moon) => ({ ...moon })));
+  params.moonCount = snapshot.moonCount ?? moonSettings.length;
+  if (snapshot.moonMassScale !== undefined) params.moonMassScale = snapshot.moonMassScale;
+}
+
+function syncActivePlanetSnapshot() {
+  if (!planetSystem || !activePlanetId) return;
+  const stateClone = clone(params);
+  const moonsClone = cloneActiveMoons();
+  if (activePlanetId === "primary") {
+    planetSystem.updatePrimarySnapshot(stateClone, moonsClone);
+  } else if (planetSystem.updatePlanetSnapshot) {
+    planetSystem.updatePlanetSnapshot(activePlanetId, stateClone, moonsClone);
+  }
+}
+
+function setActivePlanet(id, { focusCamera = true } = {}) {
+  if (!planetSystem || !id) return null;
+  if (id === activePlanetId && planetSystem.getPlanetEntry?.(id)) {
+    if (focusCamera) {
+      planetSystem.focusPlanet(id);
+    } else {
+      planetSystem.currentPlanetId = id;
+    }
+    systemPanel?.setSelected?.(id);
+    return id;
+  }
+
+  syncActivePlanetSnapshot();
+
+  const entry = planetSystem.getPlanetEntry?.(id);
+  if (!entry) return null;
+
+  const snapshot = entry.stateSnapshot ? clone(entry.stateSnapshot) : {};
+  const moons = Array.isArray(entry.moons) ? entry.moons.map((moon) => ({ ...moon })) : [];
+
+  activePlanetId = id;
+  planet = entry.planet;
+  if (sun && planet?.planetRoot) {
+    sun.planetRoot = planet.planetRoot;
+  }
+
+  isApplyingPreset = true;
+  try {
+    applySnapshotToParams(snapshot, moons);
+    Object.keys(guiControllers).forEach((key) => {
+      if (params[key] !== undefined && guiControllers[key]?.setValue) {
+        guiControllers[key].setValue(params[key]);
+      }
+    });
+  } finally {
+    isApplyingPreset = false;
+  }
+
+  try {
+    Object.values(guiControllers).forEach((ctrl) => ctrl?.updateDisplay?.());
+  } catch {}
+
+  guiControllers.refreshPlanetTypeVisibility?.(params.planetType);
+  guiControllers.rebuildRingControls?.();
+  guiControllers.normalizeMoonSettings?.();
+  rebuildMoonControls();
+  syncMoonSettings();
+  normalizeMoonSettings();
+  updateSeedDisplay();
+  updateGravityDisplay();
+  planet.updatePalette?.();
+  planet.updateClouds?.();
+  planet.updateCore?.();
+  planet.updateRings?.();
+  planet.updateTilt?.();
+  planet.updateAurora?.();
+  planet.updateOrbitLinesVisibility?.();
+  planet.initMoonPhysics?.();
+  markMoonsDirty();
+  sun?.updateSun?.();
+  updateStarfieldUniforms();
+
+  if (planetSystem.updatePlanetSnapshot) {
+    const stateClone = clone(params);
+    const moonsClone = cloneActiveMoons();
+    planetSystem.updatePlanetSnapshot(id, stateClone, moonsClone);
+  }
+
+  if (focusCamera) {
+    planetSystem.focusPlanet(id);
+  } else {
+    planetSystem.currentPlanetId = id;
+  }
+
+  systemPanel?.setSelected?.(id);
+  scheduleShareUpdate();
+  return id;
+}
+
 function scheduleShareUpdate() {
     shareDirty = true;
+    syncActivePlanetSnapshot();
     debounceShare();
 }
 
@@ -2593,8 +2729,7 @@ function surpriseMe(targetPlanetId = null) {
       preset: config.params.preset ?? null,
       type: config.params.planetType ?? config.params.type,
     });
-    planetSystem.focusPlanet(currentId);
-    systemPanel?.setSelected?.(currentId);
+    setActivePlanet(currentId, { focusCamera: systemViewMode !== "system" });
     scheduleShareUpdate();
     return;
   }

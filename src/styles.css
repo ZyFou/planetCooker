@@ -1467,6 +1467,38 @@ body.photo-mode #scene {
   gap: 0.5rem;
 }
 
+.system-panel__meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+}
+
+.system-panel__meta-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.8rem;
+}
+
+.system-panel__meta-label {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.system-panel__meta-value {
+  color: rgba(255, 255, 255, 0.85);
+  font-variant-numeric: tabular-nums;
+}
+
+.system-panel__meta-unit {
+  margin-left: 0.15rem;
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.55);
+}
+
 .system-panel__slider {
   display: flex;
   flex-direction: column;
