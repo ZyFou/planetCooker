@@ -142,7 +142,13 @@ if (!controlsContainer) {
 const systemPanelContainer = document.createElement("div");
 systemPanelContainer.id = "system-panel-container";
 systemPanelContainer.className = "system-panel-container";
-infoPanel?.appendChild(systemPanelContainer);
+if (infoPanel) {
+  if (debugPanel && debugPanel.parentElement === infoPanel) {
+    infoPanel.insertBefore(systemPanelContainer, debugPanel);
+  } else {
+    infoPanel.appendChild(systemPanelContainer);
+  }
+}
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -670,7 +676,7 @@ const params = {
   sunColor: "#ffd27f",
   sunIntensity: 1.6,
   sunDistance: 48,
-  sunSize: 1,
+  sunSize: 1.6,
   sunHaloSize: 6.5,
   sunGlowStrength: 1.4,
   sunPulseSpeed: 0.5,
@@ -762,7 +768,7 @@ const presets = {
 };
 
 const starPresets = {
-  Sol: { sunColor: "#ffd27f", sunIntensity: 1.6, sunDistance: 48, sunSize: 1.1, sunHaloSize: 5.4, sunGlowStrength: 1.3, sunPulseSpeed: 0.6, sunNoiseScale: 1.45, sunParticleCount: 240, sunParticleSpeed: 0.65, sunParticleSize: 0.14, sunParticleColor: "#ffbf7a", sunParticleLifetime: 4.2 },
+  Sol: { sunColor: "#ffd27f", sunIntensity: 1.6, sunDistance: 48, sunSize: 1.6, sunHaloSize: 5.4, sunGlowStrength: 1.3, sunPulseSpeed: 0.6, sunNoiseScale: 1.45, sunParticleCount: 240, sunParticleSpeed: 0.65, sunParticleSize: 0.14, sunParticleColor: "#ffbf7a", sunParticleLifetime: 4.2 },
   "Red Dwarf": { sunColor: "#ff7750", sunIntensity: 0.9, sunDistance: 36, sunSize: 0.8, sunHaloSize: 4.1, sunGlowStrength: 1.1, sunPulseSpeed: 0.85, sunNoiseScale: 1.9, sunParticleCount: 180, sunParticleSpeed: 0.42, sunParticleSize: 0.12, sunParticleColor: "#ff6242", sunParticleLifetime: 5.0 },
   "Blue Giant": { sunColor: "#9fc4ff", sunIntensity: 2.5, sunDistance: 110, sunSize: 1.6, sunHaloSize: 8.2, sunGlowStrength: 2.0, sunPulseSpeed: 0.4, sunNoiseScale: 1.2, sunParticleCount: 320, sunParticleSpeed: 0.9, sunParticleSize: 0.18, sunParticleColor: "#8abaff", sunParticleLifetime: 3.2 },
   "White Dwarf": { sunColor: "#f2f7ff", sunIntensity: 1.9, sunDistance: 38, sunSize: 0.9, sunHaloSize: 3.6, sunGlowStrength: 0.9, sunPulseSpeed: 1.2, sunNoiseScale: 2.3, sunParticleCount: 140, sunParticleSpeed: 0.5, sunParticleSize: 0.1, sunParticleColor: "#eff6ff", sunParticleLifetime: 2.6 },
@@ -1364,7 +1370,7 @@ async function initializeApp() {
   );
   planetSystem.attachControls(controls);
   planetSystem.createFromExisting("primary", planet, clone(params), {
-    semiMajorAxis: params?.semiMajorAxis ?? 8,
+    semiMajorAxis: params?.semiMajorAxis ?? 14,
     orbitalSpeed: params?.orbitalSpeed ?? 0.04,
     spinSpeed: params.rotationSpeed,
     radius: params.radius,
@@ -1447,6 +1453,39 @@ mobileHelpButton?.addEventListener("click", () => { try { closeMobileMenu?.(); }
 //#endregion
 
 let activeFocus = null;
+const focusBounds = new THREE.Box3();
+const focusSize = new THREE.Vector3();
+
+function getFocusRadius(object) {
+  if (!object) return 1;
+
+  const geometry = object.geometry;
+  if (geometry) {
+    if (!geometry.boundingSphere && geometry.computeBoundingSphere) {
+      geometry.computeBoundingSphere();
+    }
+    if (geometry.boundingSphere) {
+      const scale = object.scale ?? { x: 1, y: 1, z: 1 };
+      const maxScale = Math.max(scale.x ?? 1, scale.y ?? 1, scale.z ?? 1);
+      const radius = geometry.boundingSphere.radius * (Number.isFinite(maxScale) ? maxScale : 1);
+      if (Number.isFinite(radius) && radius > 0) {
+        return radius;
+      }
+    }
+  }
+
+  focusBounds.makeEmpty();
+  focusBounds.setFromObject(object);
+  if (!focusBounds.isEmpty()) {
+    focusBounds.getSize(focusSize);
+    const radius = focusSize.length() / 2;
+    if (Number.isFinite(radius) && radius > 0) {
+      return radius;
+    }
+  }
+
+  return 1;
+}
 
 function focusOnObject(targetObject) {
   if (!targetObject) {
@@ -1471,7 +1510,7 @@ function animate(timestamp) {
     const targetPosition = new THREE.Vector3();
     activeFocus.object.getWorldPosition(targetPosition);
 
-    const radius = activeFocus.object.geometry.boundingSphere.radius;
+    const radius = getFocusRadius(activeFocus.object);
     const offset = activeFocus.isPlanet ? params.radius * 2.5 : radius * 4;
     const desiredCameraPosition = targetPosition.clone().add(new THREE.Vector3(offset, offset * 0.5, offset));
 
