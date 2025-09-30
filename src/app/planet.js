@@ -401,8 +401,9 @@ export class Planet {
         this.atmosphereMesh.receiveShadow = false;
         this.spinGroup.add(this.atmosphereMesh);
 
-        this.auroraNode = new AuroraNode(this);
-        this.spinGroup.add(this.auroraNode.mesh);
+        // Aurora - DISABLED (buggy)
+        // this.auroraNode = new AuroraNode(this);
+        // this.spinGroup.add(this.auroraNode.mesh);
 
         const oceanMaterial = new THREE.MeshPhysicalMaterial({
             color: new THREE.Color(0x1b3c6d),
@@ -2038,8 +2039,9 @@ export class Planet {
     }
 
     updateAurora() {
-        if (!this.auroraNode) return;
-        this.auroraNode.applyParams(true);
+        // Aurora disabled (buggy)
+        // if (!this.auroraNode) return;
+        // this.auroraNode.applyParams(true);
     }
 }
 

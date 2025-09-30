@@ -951,68 +951,68 @@ export function setupPlanetControls({
       scheduleShareUpdate();
     });
 
-  // Aurora
-  const auroraFolder = registerFolder(environmentFolder.addFolder("Aurora"), { close: true });
-  guiControllers.folders.auroraFolder = auroraFolder;
+  // Aurora - DISABLED (buggy)
+  // const auroraFolder = registerFolder(environmentFolder.addFolder("Aurora"), { close: true });
+  // guiControllers.folders.auroraFolder = auroraFolder;
 
-  const updateAuroraAndShare = () => {
-    if (getIsApplyingPreset()) return;
-    updateAurora();
-    markPlanetDirty();
-    scheduleShareUpdate();
-  };
+  // const updateAuroraAndShare = () => {
+  //   if (getIsApplyingPreset()) return;
+  //   updateAurora();
+  //   markPlanetDirty();
+  //   scheduleShareUpdate();
+  // };
 
-  guiControllers.auroraEnabled = auroraFolder.add(params.aurora, "enabled")
-    .name("Enable")
-    .onChange(updateAuroraAndShare);
+  // guiControllers.auroraEnabled = auroraFolder.add(params.aurora, "enabled")
+  //   .name("Enable")
+  //   .onChange(updateAuroraAndShare);
 
-  guiControllers.auroraColor1 = auroraFolder.addColor(params.aurora.colors, "0")
-    .name("Color 1")
-    .onChange(updateAuroraAndShare);
+  // guiControllers.auroraColor1 = auroraFolder.addColor(params.aurora.colors, "0")
+  //   .name("Color 1")
+  //   .onChange(updateAuroraAndShare);
 
-  guiControllers.auroraColor2 = auroraFolder.addColor(params.aurora.colors, "1")
-    .name("Color 2")
-    .onChange(updateAuroraAndShare);
+  // guiControllers.auroraColor2 = auroraFolder.addColor(params.aurora.colors, "1")
+  //   .name("Color 2")
+  //   .onChange(updateAuroraAndShare);
 
-  guiControllers.auroraLatitudeCenter = auroraFolder.add(params.aurora, "latitudeCenterDeg", 45, 85, 0.5)
-    .name("Latitude")
-    .onFinishChange(updateAuroraAndShare);
+  // guiControllers.auroraLatitudeCenter = auroraFolder.add(params.aurora, "latitudeCenterDeg", 45, 85, 0.5)
+  //   .name("Latitude")
+  //   .onFinishChange(updateAuroraAndShare);
 
-  guiControllers.auroraLatitudeWidth = auroraFolder.add(params.aurora, "latitudeWidthDeg", 1, 30, 0.5)
-    .name("Width")
-    .onFinishChange(updateAuroraAndShare);
+  // guiControllers.auroraLatitudeWidth = auroraFolder.add(params.aurora, "latitudeWidthDeg", 1, 30, 0.5)
+  //   .name("Width")
+  //   .onFinishChange(updateAuroraAndShare);
 
   // Aurora height is fixed at atmosphere level (0.06) - no GUI control needed
 
-  guiControllers.auroraIntensity = auroraFolder.add(params.aurora, "intensity", 0.1, 5, 0.05)
-    .name("Intensity")
-    .onChange(updateAuroraAndShare);
+  // guiControllers.auroraIntensity = auroraFolder.add(params.aurora, "intensity", 0.1, 5, 0.05)
+  //   .name("Intensity")
+  //   .onChange(updateAuroraAndShare);
 
-  guiControllers.auroraNoiseScale = auroraFolder.add(params.aurora, "noiseScale", 0.5, 10, 0.1)
-    .name("Noise Scale")
-    .onFinishChange(updateAuroraAndShare);
+  // guiControllers.auroraNoiseScale = auroraFolder.add(params.aurora, "noiseScale", 0.5, 10, 0.1)
+  //   .name("Noise Scale")
+  //   .onFinishChange(updateAuroraAndShare);
 
-  guiControllers.auroraBanding = auroraFolder.add(params.aurora, "banding", 0, 1, 0.01)
-    .name("Banding")
-    .onChange(updateAuroraAndShare);
+  // guiControllers.auroraBanding = auroraFolder.add(params.aurora, "banding", 0, 1, 0.01)
+  //   .name("Banding")
+  //   .onChange(updateAuroraAndShare);
 
-  guiControllers.auroraNightBoost = auroraFolder.add(params.aurora, "nightBoost", 1, 5, 0.05)
-    .name("Night Boost")
-    .onFinishChange(updateAuroraAndShare);
+  // guiControllers.auroraNightBoost = auroraFolder.add(params.aurora, "nightBoost", 1, 5, 0.05)
+  //   .name("Night Boost")
+  //   .onFinishChange(updateAuroraAndShare);
 
-  const randomizeAurora = () => {
-    if (getIsApplyingPreset()) return;
-    const h1 = Math.random();
-    const h2 = (h1 + 0.4 + Math.random() * 0.2) % 1.0;
-    params.aurora.colors[0] = `#${new THREE.Color().setHSL(h1, 0.9, 0.6).getHexString()}`;
-    params.aurora.colors[1] = `#${new THREE.Color().setHSL(h2, 0.9, 0.6).getHexString()}`;
-    params.aurora.latitudeCenterDeg = 60 + Math.random() * 15;
-    if (guiControllers.auroraColor1) guiControllers.auroraColor1.updateDisplay();
-    if (guiControllers.auroraColor2) guiControllers.auroraColor2.updateDisplay();
-    if (guiControllers.auroraLatitudeCenter) guiControllers.auroraLatitudeCenter.updateDisplay();
-    updateAuroraAndShare();
-  };
-  auroraFolder.add({ randomizeAurora }, "randomizeAurora").name("🎲 Randomize");
+  // const randomizeAurora = () => {
+  //   if (getIsApplyingPreset()) return;
+  //   const h1 = Math.random();
+  //   const h2 = (h1 + 0.4 + Math.random() * 0.2) % 1.0;
+  //   params.aurora.colors[0] = `#${new THREE.Color().setHSL(h1, 0.9, 0.6).getHexString()}`;
+  //   params.aurora.colors[1] = `#${new THREE.Color().setHSL(h2, 0.9, 0.6).getHexString()}`;
+  //   params.aurora.latitudeCenterDeg = 60 + Math.random() * 15;
+  //   if (guiControllers.auroraColor1) guiControllers.auroraColor1.updateDisplay();
+  //   if (guiControllers.auroraColor2) guiControllers.auroraColor2.updateDisplay();
+  //   if (guiControllers.auroraLatitudeCenter) guiControllers.auroraLatitudeCenter.updateDisplay();
+  //   updateAuroraAndShare();
+  // };
+  // auroraFolder.add({ randomizeAurora }, "randomizeAurora").name("🎲 Randomize");
 
   // Effects: Explosions
   const effectsFolder = registerFolder(environmentFolder.addFolder("Explosions"), { close: true });
@@ -1094,8 +1094,8 @@ export function setupPlanetControls({
     ringsFolder,
     spaceFolder,
     effectsFolder,
-    gasGiantFolder,
-    auroraFolder
+    gasGiantFolder
+    // auroraFolder // Aurora disabled (buggy)
   });
 
   refreshPlanetTypeVisibility();

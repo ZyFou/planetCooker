@@ -963,7 +963,7 @@ setupPlanetControls({
     updateTilt: () => planet?.updateTilt(),
     updateSun: () => sun?.updateSun(),
     updateRings: () => planet?.updateRings(),
-    updateAurora: () => planet?.updateAurora(),
+    // updateAurora: () => planet?.updateAurora(), // Aurora disabled (buggy)
     updateStarfieldUniforms,
     regenerateStarfield,
     updateGravityDisplay,
@@ -2036,9 +2036,10 @@ function markPlanetDirty() {
 }
 
 function updateAurora() {
-    if (planet) {
-        planet.updateAurora();
-    }
+    // Aurora disabled (buggy)
+    // if (planet) {
+    //     planet.updateAurora();
+    // }
 }
 
 // Keep aurora object and colors array identity to preserve GUI bindings
@@ -2193,7 +2194,7 @@ function setActivePlanet(id, { focusCamera = true } = {}) {
   planet.updateCore?.();
   planet.updateRings?.();
   planet.updateTilt?.();
-  planet.updateAurora?.();
+  // planet.updateAurora?.(); // Aurora disabled (buggy)
   planet.updateOrbitLinesVisibility?.();
   planet.initMoonPhysics?.();
   markMoonsDirty();
