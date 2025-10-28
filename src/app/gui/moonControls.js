@@ -144,23 +144,8 @@ export function setupMoonControls({
     markMoonsDirty();
   }
 
-  const moonsFolder = registerFolder(gui.addFolder("Moons"));
-  moonsFolder.open();
-
-  guiControllers.moonCount = moonsFolder.add(params, "moonCount", 0, 5, 1)
-    .name("Count")
-    .onChange(() => {
-      if (getIsApplyingPreset()) return;
-      syncMoonSettings();
-      scheduleShareUpdate();
-    });
-
-  guiControllers.showOrbitLines = moonsFolder.add(params, "showOrbitLines")
-    .name("Show Orbit Lines")
-    .onChange(() => {
-      updateOrbitLinesVisibility();
-      scheduleShareUpdate();
-    });
+  // Moons folder is now created in planetControls.js under Environment
+  // The moon count and orbit lines controls are handled there
 
   // Respawn/Add a moon convenience button
   const respawnApi = {
@@ -176,7 +161,10 @@ export function setupMoonControls({
       }
     }
   };
-  moonsFolder.add(respawnApi, "respawn").name("Respawn Moon");
+  
+  // Create a separate folder for the respawn button
+  const respawnFolder = registerFolder(gui.addFolder("Moon Actions"), { close: true });
+  respawnFolder.add(respawnApi, "respawn").name("Respawn Moon");
 
   const physicsFolder = registerFolder(gui.addFolder("Physics"), { close: true });
 
