@@ -460,3 +460,96 @@ export function generateAnnulusTexture({ innerRatio, color, opacity = 1, noiseSc
 }
 
 
+export function generateMetalnessTexture({ seed = "metal", resolution = 512, fleckDensity = 0.08, fleckSize = 6, base = 0.08 } = {}) {
+  const canvas = document.createElement("canvas");
+  canvas.width = resolution;
+  canvas.height = resolution;
+  const ctx = canvas.getContext("2d");
+  const img = ctx.createImageData(resolution, resolution);
+  const data = img.data;
+
+  let s = Array.from(String(seed)).reduce((a, c) => (a + c.charCodeAt(0)) >>> 0, 0) >>> 0;
+  const rand = () => {
+    let t = (s += 0x6D2B79F5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const noise = createNoise3D(rand);
+
+  for (let y = 0; y < resolution; y++) {
+    for (let x = 0; x < resolution; x++) {
+      const u = x / resolution;
+      const v = y / resolution;
+      const n = (noise(u * 8.0, v * 8.0, 0) * 0.5 + 0.5);
+      const speck = Math.max(0, Math.min(1, Math.pow(n, 10)));
+      const clusters = (noise(u * fleckSize, v * fleckSize, 1.234) * 0.5 + 0.5);
+      const density = fleckDensity * clusters;
+      const m = Math.max(0, Math.min(1, base + speck * density));
+      const idx = (y * resolution + x) * 4;
+      const v8 = m * 255;
+      data[idx] = v8;
+      data[idx + 1] = v8;
+      data[idx + 2] = v8;
+      data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(img, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.generateMipmaps = true;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+export function generateRoughnessTexture({ seed = "rough", resolution = 512, glassPatchDensity = 0.06, glassSmoothness = 0.7, base = 0.8 } = {}) {
+  const canvas = document.createElement("canvas");
+  canvas.width = resolution;
+  canvas.height = resolution;
+  const ctx = canvas.getContext("2d");
+  const img = ctx.createImageData(resolution, resolution);
+  const data = img.data;
+
+  let s = Array.from(String(seed)).reduce((a, c) => (a + c.charCodeAt(0)) >>> 0, 0) >>> 0;
+  const rand = () => {
+    let t = (s += 0x6D2B79F5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const noise = createNoise3D(rand);
+
+  for (let y = 0; y < resolution; y++) {
+    for (let x = 0; x < resolution; x++) {
+      const u = x / resolution;
+      const v = y / resolution;
+      const macro = (noise(u * 2.0, v * 2.0, 0.5) * 0.5 + 0.5);
+      const micro = (noise(u * 16.0, v * 16.0, 2.5) * 0.5 + 0.5) * 0.25;
+      const glassMask = Math.max(0, macro - (1.0 - glassPatchDensity));
+      const glass = Math.max(0, Math.min(1, Math.pow(glassMask, 2.0))) * glassSmoothness;
+      let r = base - glass;
+      r = Math.max(0.04, Math.min(1.0, r + micro - 0.1));
+      const idx = (y * resolution + x) * 4;
+      const v8 = r * 255;
+      data[idx] = v8;
+      data[idx + 1] = v8;
+      data[idx + 2] = v8;
+      data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(img, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.generateMipmaps = true;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+

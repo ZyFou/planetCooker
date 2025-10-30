@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { createNoise3D } from "simplex-noise";
 import { SeededRNG } from "./utils.js";
 import * as PHYSICS from "./planet/physics.js";
-import { generateRingTexture as generateRingTextureExt, generateAnnulusTexture as generateAnnulusTextureExt, generateGasGiantTexture as generateGasGiantTextureExt, generateRockTexture, generateSandTexture } from "./textures.js";
+import { generateRingTexture as generateRingTextureExt, generateAnnulusTexture as generateAnnulusTextureExt, generateGasGiantTexture as generateGasGiantTextureExt, generateRockTexture, generateSandTexture, generateMetalnessTexture, generateRoughnessTexture } from "./textures.js";
 import { blackHoleDiskUniforms, blackHoleDiskVertexShader, blackHoleDiskFragmentShader } from "./sun.js";
 // Aurora removed
 
@@ -302,6 +302,9 @@ export class Planet {
             atmosphere: new THREE.Color(this.params.atmosphereColor),
             icePoles: new THREE.Color(this.params.icePolesColor)
         };
+
+        // Biome noise used for surface biome variation on rocky planets
+        this.biomeNoise = createNoise3D(() => new SeededRNG(`${this.params.seed}-biome`).next());
 
         this.activeExplosions = [];
 
@@ -1006,6 +1009,10 @@ export class Planet {
           const splatTexture = new THREE.DataTexture(splatData, texWidth, texHeight, THREE.RedFormat, THREE.UnsignedByteType);
           splatTexture.needsUpdate = true;
 
+          // Generate material effect maps for rocky planets
+          const metalnessTex = generateMetalnessTexture({ seed: this.params.seed, resolution: 512, fleckDensity: 0.08, fleckSize: 6, base: 0.1 });
+          const roughnessTex = generateRoughnessTexture({ seed: this.params.seed, resolution: 512, glassPatchDensity: 0.06, glassSmoothness: 0.7, base: 0.82 });
+
           PLANET_SURFACE_LOD_ORDER.forEach((levelKey) => {
             if (levelKey === 'mega') {
                 const rockTexture = generateRockTexture({ seed: this.params.seed });
@@ -1018,8 +1025,15 @@ export class Planet {
                     metalness: 0.12,
                     flatShading: false
                 });
+                material.metalnessMap = metalnessTex;
+                material.roughnessMap = roughnessTex;
+                material.needsUpdate = true;
                 this._assignSurfaceMaterial(levelKey, material);
             } else {
+                // Ensure base material has the maps as well
+                this.planetMaterial.metalnessMap = metalnessTex;
+                this.planetMaterial.roughnessMap = roughnessTex;
+                this.planetMaterial.needsUpdate = true;
                 this._assignSurfaceMaterial(levelKey, this.planetMaterial);
             }
           });
@@ -1245,6 +1259,30 @@ export class Planet {
             const highT = Math.pow((landT - 0.5) / 0.5, 1.3);
             baseColor = this.palette.mid.clone().lerp(this.palette.high, highT);
           }
+        }
+
+        // Biome tinting for rocky planets: blend based on latitude, elevation, and humidity noise
+        if (vertexPosition) {
+          const lat = Math.abs(vertexPosition.y);
+          const temp = THREE.MathUtils.clamp(1.0 - lat - elevation * 0.5, 0, 1);
+          const hN = (this.biomeNoise(vertexPosition.x * 1.6, vertexPosition.y * 1.6, vertexPosition.z * 1.6) + 1) * 0.5;
+          const humidity = THREE.MathUtils.clamp(hN, 0, 1);
+
+          const desertColor = new THREE.Color(0xd2b48c);
+          const forestColor = this.palette.low.clone();
+          const shrubColor = this.palette.low.clone().lerp(this.palette.mid, 0.5);
+          const tundraColor = this.palette.mid.clone().lerp(this.palette.high, 0.6);
+
+          let biomeColor = shrubColor;
+          if (temp > 0.6) {
+            biomeColor = humidity < 0.35 ? desertColor : forestColor;
+          } else if (temp > 0.35) {
+            biomeColor = humidity < 0.4 ? shrubColor : forestColor.clone().lerp(this.palette.mid, 0.3);
+          } else {
+            biomeColor = tundraColor;
+          }
+
+          baseColor.lerp(biomeColor, 0.35);
         }
 
         if (this.params.icePolesEnabled && vertexPosition) {
@@ -1574,9 +1612,15 @@ export class Planet {
 
           let mesh = pivot.userData.mesh;
           if (!mesh) {
+            const moonColor = new THREE.Color(moon.color || "#d0d0d0");
+            const moonTex = generateRockTexture({ seed: `${this.params.seed}-moon-${index}`, color: moonColor.getHex() });
+            moonTex.wrapS = THREE.RepeatWrapping;
+            moonTex.wrapT = THREE.RepeatWrapping;
+            moonTex.repeat.set(2, 1);
+
             mesh = new THREE.Mesh(
               new THREE.SphereGeometry(1, 48, 48),
-              new THREE.MeshStandardMaterial({ color: moon.color || "#d0d0d0", roughness: 0.85, metalness: 0.18 })
+              new THREE.MeshStandardMaterial({ color: moon.color || "#d0d0d0", roughness: 0.85, metalness: 0.18, map: moonTex })
             );
             mesh.castShadow = true;
             mesh.receiveShadow = true;
@@ -1584,7 +1628,19 @@ export class Planet {
             pivot.userData.mesh = mesh;
           }
 
-          mesh.material.color.set(moon.color || "#d0d0d0");
+          // Ensure moon has a noise texture map applied (also when color changes)
+          {
+            const moonColor = new THREE.Color(moon.color || "#d0d0d0");
+            mesh.material.color.set(moonColor);
+            if (!mesh.material.map) {
+              const tex = generateRockTexture({ seed: `${this.params.seed}-moon-${index}`, color: moonColor.getHex() });
+              tex.wrapS = THREE.RepeatWrapping;
+              tex.wrapT = THREE.RepeatWrapping;
+              tex.repeat.set(2, 1);
+              mesh.material.map = tex;
+              mesh.material.needsUpdate = true;
+            }
+          }
           mesh.scale.setScalar(Math.max(0.02, moon.size || 0.15));
 
           const semiMajor = Math.max(0.5, moon.distance || 3.5);
