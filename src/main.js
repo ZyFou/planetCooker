@@ -495,18 +495,7 @@ const params = {
   ringSpinSpeed: 0.05,
   ringAllowRandom: true,
   ringCount: 0,
-  rings: [],
-  aurora: {
-    enabled: false,
-    colors: ["#38ff7a", "#3fb4ff"],
-    latitudeCenterDeg: 65,
-    latitudeWidthDeg: 12,
-    height: 0.06,
-    intensity: 1.0,
-    noiseScale: 2.0,
-    banding: 0.8,
-    nightBoost: 1.5
-  }
+  rings: []
 };
 
 const presets = {
@@ -720,7 +709,6 @@ setupPlanetControls({
     updateTilt: () => planet?.updateTilt(),
     updateSun: () => sun?.updateSun(),
     updateRings: () => planet?.updateRings(),
-    updateAurora: () => planet?.updateAurora(),
     updateStarfieldUniforms,
     regenerateStarfield,
     updateGravityDisplay,
@@ -814,11 +802,9 @@ function applyPreset(presetName, options = {}) {
   try {
     const preset = presets[presetName];
     
-    // Apply all preset values to params (deep-merge aurora)
+    // Apply all preset values to params
     Object.keys(preset).forEach(key => {
-      if (key === 'aurora') {
-        mergeAurora(preset[key]);
-      } else if (key !== 'moons') { // Handle moons separately
+      if (key !== 'moons') { // Handle moons separately
         params[key] = preset[key];
       }
     });
@@ -917,7 +903,7 @@ function generateSeed() {
     'FOREST', 'OCEAN', 'MOUNTAIN', 'VALLEY', 'DESERT', 'JUNGLE', 'TUNDRA',
     'SAVANNA', 'PRAIRIE', 'MEADOW', 'GARDEN', 'FLOWER', 'TREE', 'LEAF',
     'WIND', 'BREEZE', 'GALE', 'HURRICANE', 'TORNADO', 'CYCLONE', 'TYPHOON',
-    'AURORA', 'DAWN', 'DUSK', 'TWILIGHT', 'SUNRISE', 'SUNSET', 'MIDNIGHT',
+    'DAWN', 'DUSK', 'TWILIGHT', 'SUNRISE', 'SUNSET', 'MIDNIGHT',
     'NOON', 'MORNING', 'EVENING', 'NIGHT', 'DAY', 'YEAR', 'MONTH', 'WEEK',
     'HOUR', 'MINUTE', 'SECOND', 'MOMENT', 'INSTANT', 'ETERNITY', 'INFINITY',
     'ZERO', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT',
@@ -999,8 +985,7 @@ async function initFromHash() {
         // Apply the loaded configuration
         const prevType = params.planetType;
         const data = configData.data || {};
-        if (data.aurora) mergeAurora(data.aurora);
-        Object.keys(data).forEach(k => { if (k !== 'aurora') params[k] = data[k]; });
+        Object.keys(data).forEach(k => { params[k] = data[k]; });
         // Guard against GUI onChange side-effects while syncing controls
         isApplyingPreset = true;
         try {
@@ -1053,8 +1038,7 @@ async function initFromHash() {
             params.moonCount = decoded.moons.length;
           } catch {}
         }
-        if (loadedData?.aurora) mergeAurora(loadedData.aurora);
-        Object.keys(loadedData || {}).forEach(k => { if (k !== 'aurora') params[k] = loadedData[k]; });
+        Object.keys(loadedData || {}).forEach(k => { params[k] = loadedData[k]; });
         
         isApplyingPreset = true;
         try {
@@ -1589,8 +1573,7 @@ function setupMobilePanelToggle() {
           if (cfg?.data) {
           const prevType = params.planetType;
           const data = cfg.data || {};
-          if (data.aurora) mergeAurora(data.aurora);
-          Object.keys(data).forEach(k => { if (k !== 'aurora') params[k] = data[k]; });
+          Object.keys(data).forEach(k => { params[k] = data[k]; });
             if (prevType !== params.planetType) markPlanetDirty();
           }
         } else {
@@ -1601,8 +1584,7 @@ function setupMobilePanelToggle() {
             params.moonCount = decoded.moons.length;
           }
           const prevType = params.planetType;
-          if (loadedData?.aurora) mergeAurora(loadedData.aurora);
-          Object.keys(loadedData || {}).forEach(k => { if (k !== 'aurora') params[k] = loadedData[k]; });
+          Object.keys(loadedData || {}).forEach(k => { params[k] = loadedData[k]; });
           if (prevType !== params.planetType) markPlanetDirty();
         }
         // Apply
@@ -1670,36 +1652,7 @@ function markPlanetDirty() {
     planetDirty = true;
 }
 
-function updateAurora() {
-    if (planet) {
-        planet.updateAurora();
-    }
-}
-
-// Keep aurora object and colors array identity to preserve GUI bindings
-function mergeAurora(nextAurora) {
-    if (!nextAurora) return;
-    if (!params.aurora) params.aurora = {};
-    const curr = params.aurora;
-    if (!Array.isArray(curr.colors)) curr.colors = ["#38ff7a", "#3fb4ff"];
-    if (Array.isArray(nextAurora.colors)) {
-        if (typeof nextAurora.colors[0] === "string") curr.colors[0] = nextAurora.colors[0];
-        if (typeof nextAurora.colors[1] === "string") curr.colors[1] = nextAurora.colors[1];
-    }
-    const keys = [
-        "enabled",
-        "latitudeCenterDeg",
-        "latitudeWidthDeg",
-        "height",
-        "intensity",
-        "noiseScale",
-        "banding",
-        "nightBoost"
-    ];
-    for (const k of keys) {
-        if (nextAurora[k] !== undefined) curr[k] = nextAurora[k];
-    }
-}
+// Aurora removed
 
 function markMoonsDirty() {
     moonsDirty = true;
@@ -2232,23 +2185,7 @@ function surpriseMe() {
       }
     }
 
-    // Randomize aurora
-    params.aurora.enabled = rng.next() > 0.3; // 70% chance of aurora
-    if (params.aurora.enabled) {
-      const h1 = rng.next();
-      const h2 = (h1 + 0.4 + rng.next() * 0.2) % 1.0;
-      // mutate colors to preserve array identity
-      params.aurora.colors[0] = `#${new THREE.Color().setHSL(h1, 0.9, 0.6).getHexString()}`;
-      params.aurora.colors[1] = `#${new THREE.Color().setHSL(h2, 0.9, 0.6).getHexString()}`;
-      params.aurora.latitudeCenterDeg = 60 + rng.next() * 15;
-      params.aurora.latitudeWidthDeg = THREE.MathUtils.lerp(8, 20, rng.next());
-      // Aurora height at atmosphere level (matches Earth-like preset)
-      params.aurora.height = 0.06;
-      params.aurora.intensity = THREE.MathUtils.lerp(0.5, 2.0, rng.next());
-      params.aurora.noiseScale = THREE.MathUtils.lerp(1.0, 5.0, rng.next());
-      params.aurora.banding = THREE.MathUtils.lerp(0.3, 1.0, rng.next());
-      params.aurora.nightBoost = THREE.MathUtils.lerp(1.2, 2.5, rng.next());
-    }
+    // Aurora randomization removed
 
     Object.keys(guiControllers).forEach((key) => {
       if (params[key] !== undefined && guiControllers[key]?.setValue) {
@@ -2262,25 +2199,6 @@ function surpriseMe() {
       Object.values(guiControllers).forEach((ctrl) => ctrl?.updateDisplay?.());
       guiControllers.refreshPlanetTypeVisibility(params.planetType);
       guiControllers.rebuildRingControls?.();
-      
-      // Update aurora controllers explicitly using setValue for proper GUI updates
-      if (params.aurora) {
-        isApplyingPreset = true;
-        try {
-          if (guiControllers.auroraEnabled) guiControllers.auroraEnabled.setValue(params.aurora.enabled);
-          if (guiControllers.auroraColor1) guiControllers.auroraColor1.setValue(params.aurora.colors[0]);
-          if (guiControllers.auroraColor2) guiControllers.auroraColor2.setValue(params.aurora.colors[1]);
-          if (guiControllers.auroraLatitudeCenter) guiControllers.auroraLatitudeCenter.setValue(params.aurora.latitudeCenterDeg);
-          if (guiControllers.auroraLatitudeWidth) guiControllers.auroraLatitudeWidth.setValue(params.aurora.latitudeWidthDeg);
-          // Aurora height is fixed - no controller to update
-          if (guiControllers.auroraIntensity) guiControllers.auroraIntensity.setValue(params.aurora.intensity);
-          if (guiControllers.auroraNoiseScale) guiControllers.auroraNoiseScale.setValue(params.aurora.noiseScale);
-          if (guiControllers.auroraBanding) guiControllers.auroraBanding.setValue(params.aurora.banding);
-          if (guiControllers.auroraNightBoost) guiControllers.auroraNightBoost.setValue(params.aurora.nightBoost);
-        } finally {
-          isApplyingPreset = false;
-        }
-      }
     } catch {}
 
     normalizeMoonSettings();

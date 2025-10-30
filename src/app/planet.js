@@ -4,7 +4,7 @@ import { SeededRNG } from "./utils.js";
 import * as PHYSICS from "./planet/physics.js";
 import { generateRingTexture as generateRingTextureExt, generateAnnulusTexture as generateAnnulusTextureExt, generateGasGiantTexture as generateGasGiantTextureExt, generateRockTexture, generateSandTexture } from "./textures.js";
 import { blackHoleDiskUniforms, blackHoleDiskVertexShader, blackHoleDiskFragmentShader } from "./sun.js";
-import { AuroraNode } from "../nodes/AuroraNode.js";
+// Aurora removed
 
 const surfaceVertexShader = `
     attribute vec3 color;
@@ -391,9 +391,6 @@ export class Planet {
         this.atmosphereMesh.castShadow = false;
         this.atmosphereMesh.receiveShadow = false;
         this.spinGroup.add(this.atmosphereMesh);
-
-        this.auroraNode = new AuroraNode(this);
-        this.spinGroup.add(this.auroraNode.mesh);
 
         const oceanMaterial = new THREE.MeshPhysicalMaterial({
             color: new THREE.Color(0x1b3c6d),
@@ -866,9 +863,7 @@ export class Planet {
         this.updateExplosions(simulationDelta);
         this.syncOrbitLinesWithPivots();
 
-        if (this.auroraNode) {
-            this.auroraNode.update(delta);
-        }
+        // Aurora removed
     }
 
     rebuildPlanet() {
@@ -1197,7 +1192,6 @@ export class Planet {
         this.updateCore();
         this.updateRings();
         this._syncActiveSurfaceMesh();
-        this.updateAurora();
     }
 
     deriveTerrainProfile(seed) {
@@ -1998,10 +1992,7 @@ export class Planet {
         });
     }
 
-    updateAurora() {
-        if (!this.auroraNode) return;
-        this.auroraNode.applyParams(true);
-    }
+    // Aurora removed
 }
 
 
