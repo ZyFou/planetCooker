@@ -525,17 +525,24 @@ const waterFragmentShader = `
         float spec = pow(max(dot(normalize(vViewDirection), reflectDir), 0.0), 64.0);
         vec3 specular = uLightColor * uLightIntensity * spec * 0.5;
         
-        // Combine lighting
-        vec3 ambient = waterColor * uAmbientLightColor * uAmbientLightIntensity;
+        // Combine lighting - reduce ambient contribution to prevent glowing in dark
+        // Ambient only applies very subtle tint when there's actual light
+        vec3 ambient = waterColor * uAmbientLightColor * uAmbientLightIntensity * 0.2;
         vec3 diffuse = waterColor * uLightColor * uLightIntensity * NdotL;
         
-        vec3 finalColor = ambient + diffuse + specular;
+        // Only add ambient when there's light hitting the surface (prevent glowing in complete darkness)
+        float lightAmount = max(NdotL, 0.0);
+        // Scale ambient with light amount, but don't let it drop below a very minimal value when lit
+        float ambientScale = lightAmount > 0.01 ? (0.3 + lightAmount * 0.7) : (lightAmount * 10.0);
+        ambientScale = clamp(ambientScale, 0.0, 1.0);
+        
+        vec3 finalColor = ambient * ambientScale + diffuse + specular;
         
         // Apply refraction tint
         finalColor = mix(finalColor, uLightColor, refraction * 0.1);
         
-        // Opacity based on fresnel (more transparent at glancing angles)
-        float finalOpacity = uOpacity * (0.7 + fresnel * 0.3);
+        // Opacity based on fresnel (more transparent at glancing angles, and overall more transparent)
+        float finalOpacity = uOpacity * (0.6 + fresnel * 0.4);
         
         gl_FragColor = vec4(finalColor, finalOpacity);
     }
@@ -697,7 +704,7 @@ export class Planet {
             uLightIntensity: { value: 1.0 },
             uAmbientLightColor: { value: new THREE.Color(0x6f87b6) },
             uAmbientLightIntensity: { value: 0.35 },
-            uOpacity: { value: 0.7 },
+            uOpacity: { value: 0.45 },
             uRefractionStrength: { value: 0.5 },
             uFresnelPower: { value: 2.0 },
             uShallowColorFactor: { value: 0.3 }
