@@ -124,6 +124,77 @@ if (previewMode) {
 // Photo mode state
 let isPhotoMode = false;
 
+// FPS mode state
+let isFpsMode = false;
+let ship = null;
+let fpsController = {
+  position: new THREE.Vector3(),
+  rotation: new THREE.Euler(0, 0, 0, 'YXZ'),
+  velocity: new THREE.Vector3(),
+  speed: 0.4, // Reduced by 5 (was 2.0)
+  accelerationMultiplier: 2.0,
+  slowMultiplier: 0.3,
+  dashBoost: 1.0,
+  dashCooldown: 0,
+  dashDuration: 0,
+  mouseSensitivity: 0.002,
+  pitch: 0,
+  yaw: 0,
+  isPointerLocked: false
+};
+
+// Keyboard input state
+const keys = {};
+
+// Ship initialization
+function createShip() {
+  if (ship) {
+    // Ship already exists, just update position
+    return ship;
+  }
+  
+  // Create a triangular ship using a cone geometry (reduced size by 5)
+  const shipGeometry = new THREE.ConeGeometry(0.03, 0.06, 3);
+  
+  // Create glowing blue material
+  const shipMaterial = new THREE.MeshStandardMaterial({
+    color: 0x00aaff,
+    emissive: 0x0055cc,
+    emissiveIntensity: 1.5,
+    metalness: 0.8,
+    roughness: 0.2
+  });
+  
+  ship = new THREE.Mesh(shipGeometry, shipMaterial);
+  ship.rotation.x = Math.PI / 2; // Rotate to point forward
+  
+  // Add glow effect with additional geometry
+  const glowGeometry = new THREE.ConeGeometry(0.036, 0.07, 3);
+  const glowMaterial = new THREE.MeshBasicMaterial({
+    color: 0x00aaff,
+    transparent: true,
+    opacity: 0.3,
+    side: THREE.DoubleSide
+  });
+  const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+  glow.rotation.x = Math.PI / 2;
+  ship.add(glow);
+  
+  // Position ship at safe distance from planet
+  if (planet && planet.planetRoot) {
+    const planetRadius = params.radius || 1.32;
+    const initialDistance = planetRadius * 2.5;
+    ship.position.set(0, initialDistance * 0.5, initialDistance);
+    fpsController.position.copy(ship.position);
+  } else {
+    ship.position.set(0, 3, 3);
+    fpsController.position.copy(ship.position);
+  }
+  
+  scene.add(ship);
+  return ship;
+}
+
 function relayoutForMode() {
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
@@ -1197,6 +1268,10 @@ async function initializeApp() {
   planet.updateOrbitLinesVisibility();
   applyControlSearch({ scrollToFirst: false });
   updateShareCode();
+  
+  // Create ship after planet is initialized
+  createShip();
+  
   renderer.render(scene, camera);
   await yieldToBrowser();
 
@@ -1252,7 +1327,8 @@ function focusOnObject(targetObject) {
 
 //#region Animation loop
 function animate(timestamp) {
-  if (activeFocus) {
+  // Skip activeFocus when in FPS mode
+  if (activeFocus && !isFpsMode) {
     const targetPosition = new THREE.Vector3();
     activeFocus.object.getWorldPosition(targetPosition);
 
@@ -1291,7 +1367,13 @@ function animate(timestamp) {
     if (hudFps) hudFps.textContent = `FPS: ${fps}`;
   }
 
-  controls.update();
+  // Only update OrbitControls when not in FPS mode
+  if (!isFpsMode) {
+    controls.update();
+  } else {
+    // Update ship movement in FPS mode
+    updateShipMovement(delta);
+  }
 
   if (planetDirty) {
     showLoading();
@@ -1385,6 +1467,238 @@ function onWindowResize() {
     }
 }
 window.addEventListener("resize", onWindowResize);
+
+// Keyboard input handlers for FPS mode
+function handleKeyDown(event) {
+  const key = event.key.toLowerCase();
+  keys[key] = true;
+  keys[event.code] = true;
+  
+  // Handle Space for dash (prevent default scrolling)
+  if (event.code === 'Space' && isFpsMode) {
+    event.preventDefault();
+    if (fpsController.dashCooldown <= 0) {
+      fpsController.dashBoost = 3.0;
+      fpsController.dashDuration = 0.3; // 0.3 seconds dash
+      fpsController.dashCooldown = 2.0; // 2 seconds cooldown
+    }
+  }
+  
+  // Toggle FPS mode with V
+  if (key === 'v' && !event.repeat) {
+    toggleFpsMode();
+  }
+}
+
+function handleKeyUp(event) {
+  const key = event.key.toLowerCase();
+  keys[key] = false;
+  keys[event.code] = false;
+}
+
+// Mouse look controls
+let mouseX = 0;
+let mouseY = 0;
+let previousMouseX = 0;
+let previousMouseY = 0;
+
+function handleMouseMove(event) {
+  if (!isFpsMode || !fpsController.isPointerLocked) return;
+  
+  const movementX = event.movementX || event.mozMovementX || event.webkitMovementX || 0;
+  const movementY = event.movementY || event.mozMovementY || event.webkitMovementY || 0;
+  
+  fpsController.yaw -= movementX * fpsController.mouseSensitivity;
+  fpsController.pitch -= movementY * fpsController.mouseSensitivity;
+  
+  // Limit pitch to avoid gimbal lock
+  fpsController.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, fpsController.pitch));
+}
+
+function requestPointerLock() {
+  const canvas = renderer.domElement;
+  if (canvas.requestPointerLock) {
+    canvas.requestPointerLock();
+  } else if (canvas.mozRequestPointerLock) {
+    canvas.mozRequestPointerLock();
+  } else if (canvas.webkitRequestPointerLock) {
+    canvas.webkitRequestPointerLock();
+  }
+}
+
+function onPointerLockChange() {
+  const wasLocked = fpsController.isPointerLocked;
+  fpsController.isPointerLocked = document.pointerLockElement === renderer.domElement ||
+                                  document.mozPointerLockElement === renderer.domElement ||
+                                  document.webkitPointerLockElement === renderer.domElement;
+  
+  // If pointer lock was lost while in FPS mode, exit FPS mode
+  if (wasLocked && !fpsController.isPointerLocked && isFpsMode) {
+    toggleFpsMode();
+  }
+}
+
+document.addEventListener('keydown', handleKeyDown);
+document.addEventListener('keyup', handleKeyUp);
+document.addEventListener('mousemove', handleMouseMove);
+document.addEventListener('pointerlockchange', onPointerLockChange);
+document.addEventListener('mozpointerlockchange', onPointerLockChange);
+document.addEventListener('webkitpointerlockchange', onPointerLockChange);
+
+// FPS mode toggle
+function toggleFpsMode() {
+  isFpsMode = !isFpsMode;
+  
+  if (isFpsMode) {
+    // Enter FPS mode
+    controls.enabled = false;
+    
+    // Initialize ship if not created
+    if (!ship) {
+      createShip();
+    }
+    
+    // Set camera to ship position with proper orientation
+    if (ship) {
+      fpsController.position.copy(ship.position);
+      
+      // Hide ship from camera view
+      ship.visible = false;
+      
+      // Calculate initial rotation from current camera direction
+      const direction = new THREE.Vector3();
+      camera.getWorldDirection(direction);
+      fpsController.yaw = Math.atan2(direction.x, direction.z);
+      fpsController.pitch = Math.asin(-direction.y);
+      
+      // Set camera position and rotation
+      const euler = new THREE.Euler(fpsController.pitch, fpsController.yaw, 0, 'YXZ');
+      camera.rotation.copy(euler);
+      
+      const quaternion = new THREE.Quaternion().setFromEuler(euler);
+      const cameraOffset = new THREE.Vector3(0, 0.02, 0.04); // Reduced by 5
+      cameraOffset.applyQuaternion(quaternion);
+      camera.position.copy(fpsController.position).add(cameraOffset);
+    }
+    
+    // Request pointer lock (will be requested on click)
+    // Add click handler to canvas for pointer lock
+    const canvas = renderer.domElement;
+    canvas.addEventListener('click', requestPointerLockOnClick, { once: true });
+  } else {
+    // Exit FPS mode
+    controls.enabled = true;
+    
+    // Exit pointer lock
+    if (document.exitPointerLock) {
+      document.exitPointerLock();
+    } else if (document.mozExitPointerLock) {
+      document.mozExitPointerLock();
+    } else if (document.webkitExitPointerLock) {
+      document.webkitExitPointerLock();
+    }
+    
+    // Make ship visible again when exiting FPS mode
+    if (ship) {
+      ship.visible = true;
+    }
+    
+    // Reset camera to orbit view
+    if (planet && planet.planetRoot) {
+      const planetRadius = params.radius || 1.32;
+      const targetPosition = new THREE.Vector3(0, planetRadius * 2.5, planetRadius * 2.5);
+      camera.position.copy(targetPosition);
+      controls.target.set(0, 0, 0);
+      controls.update();
+    }
+  }
+}
+
+function requestPointerLockOnClick() {
+  requestPointerLock();
+}
+
+// Update ship movement in FPS mode
+function updateShipMovement(delta) {
+  if (!ship || !isFpsMode) return;
+  
+  // Calculate movement direction based on ship orientation
+  const moveDirection = new THREE.Vector3();
+  
+  // Create rotation euler and quaternion
+  const euler = new THREE.Euler(fpsController.pitch, fpsController.yaw, 0, 'YXZ');
+  const quaternion = new THREE.Quaternion().setFromEuler(euler);
+  
+  // Calculate forward and right vectors from rotation
+  const forward = new THREE.Vector3(0, 0, -1);
+  forward.applyQuaternion(quaternion);
+  
+  const right = new THREE.Vector3(1, 0, 0);
+  right.applyQuaternion(quaternion);
+  
+  // ZQSD controls (Z=forward, Q=left, S=back, D=right)
+  if (keys['z'] || keys['w']) {
+    moveDirection.add(forward);
+  }
+  if (keys['s']) {
+    moveDirection.sub(forward);
+  }
+  if (keys['q'] || keys['a']) {
+    moveDirection.sub(right);
+  }
+  if (keys['d']) {
+    moveDirection.add(right);
+  }
+  
+  // Normalize direction
+  if (moveDirection.length() > 0) {
+    moveDirection.normalize();
+  }
+  
+  // Calculate speed multiplier
+  let speedMultiplier = 1.0;
+  if (keys['shift']) {
+    speedMultiplier = fpsController.accelerationMultiplier;
+  } else if (keys['control'] || keys['ctrl']) {
+    speedMultiplier = fpsController.slowMultiplier;
+  }
+  
+  // Apply dash boost
+  if (fpsController.dashDuration > 0) {
+    speedMultiplier *= fpsController.dashBoost;
+    fpsController.dashDuration -= delta;
+    if (fpsController.dashDuration <= 0) {
+      fpsController.dashBoost = 1.0;
+    }
+  }
+  
+  // Update dash cooldown
+  if (fpsController.dashCooldown > 0) {
+    fpsController.dashCooldown -= delta;
+  }
+  
+  // Calculate velocity
+  const targetVelocity = moveDirection.multiplyScalar(fpsController.speed * speedMultiplier);
+  fpsController.velocity.lerp(targetVelocity, delta * 10); // Smooth acceleration
+  
+  // Update position
+  fpsController.position.add(fpsController.velocity.clone().multiplyScalar(delta));
+  
+  // Update ship position
+  ship.position.copy(fpsController.position);
+  
+  // Update camera position (behind and slightly above ship) - reduced by 5
+  const cameraOffset = new THREE.Vector3(0, 0.02, 0.04);
+  cameraOffset.applyQuaternion(quaternion);
+  camera.position.copy(fpsController.position).add(cameraOffset);
+  
+  // Set camera rotation to match ship orientation
+  camera.rotation.copy(euler);
+  
+  // Update ship rotation to match camera (with offset for visual)
+  ship.rotation.y = fpsController.yaw;
+  ship.rotation.x = fpsController.pitch + Math.PI / 2; // Adjust for ship model orientation
+}
 
 // ... (rest of the file is mostly UI handlers, which can remain)
 
