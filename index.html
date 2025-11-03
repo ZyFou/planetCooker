@@ -8,6 +8,11 @@
     <link rel="stylesheet" href="/src/landing.css" />
   </head>
   <body>
+    <div class="parallax-container">
+      <div class="parallax-layer parallax-layer--stars" data-speed="0.3"></div>
+      <div class="parallax-layer parallax-layer--nebula" data-speed="0.5"></div>
+      <div class="parallax-layer parallax-layer--planets" data-speed="0.7"></div>
+    </div>
     <div class="landing">
       <header class="landing__nav">
         <div class="landing__brand">
@@ -67,10 +72,11 @@
                   </p>
                 </div>
                 <div class="hero__update">
-                  <h4>Ocean & Shoreline Effects</h4>
+                  <h4>Advanced Water Rendering</h4>
                   <p>
-                    <strong>New Water System:</strong> Added realistic ocean layers with transparent water spheres and dynamic shoreline foam! 
-                    Control foam color and visibility independently. The ocean now feels like actual water with proper refraction and shoreline effects.
+                    <strong>Realistic Ocean Shader:</strong> Experience stunning water rendering with animated waves, light refraction, and Fresnel effects! 
+                    The new shader system features multi-octave wave displacement, dynamic lighting integration, and proper transparency that reacts to viewing angles. 
+                    Water now looks truly transparent with realistic depth and no glowing artifacts.
                   </p>
                 </div>
                 <div class="hero__update">
@@ -218,7 +224,39 @@
         prevBtn.addEventListener('click', prevSlide);
         
         // Auto-advance every 8 seconds
-        setInterval(nextSlide, 8000);
+        let autoAdvance = setInterval(nextSlide, 8000);
+        
+        // Pause on hover
+        const carousel = document.querySelector('.updates__carousel');
+        if (carousel) {
+          carousel.addEventListener('mouseenter', () => clearInterval(autoAdvance));
+          carousel.addEventListener('mouseleave', () => {
+            autoAdvance = setInterval(nextSlide, 8000);
+          });
+        }
+        
+        // Parallax effect on scroll
+        let parallaxElements = document.querySelectorAll('.parallax-layer');
+        let ticking = false;
+        
+        function updateParallax() {
+          const scrolled = window.pageYOffset;
+          parallaxElements.forEach(element => {
+            const speed = parseFloat(element.dataset.speed || 0.5);
+            const yPos = -(scrolled * speed);
+            element.style.transform = `translate3d(0, ${yPos}px, 0)`;
+          });
+          ticking = false;
+        }
+        
+        function requestParallaxTick() {
+          if (!ticking) {
+            requestAnimationFrame(updateParallax);
+            ticking = true;
+          }
+        }
+        
+        window.addEventListener('scroll', requestParallaxTick, { passive: true });
         
         // Touch/swipe support
         let startX = 0;
