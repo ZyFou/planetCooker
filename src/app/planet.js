@@ -883,6 +883,16 @@ export class Planet {
     rebuildPlanet() {
         this.updatePalette();
 
+        // Nettoyer le système de chunks si on passe à une planète de gaz
+        if (this.params.planetType === 'gas_giant' && this.chunkSystem) {
+          this.chunkSystem.dispose();
+          const chunkGroup = this.chunkSystem.getGroup();
+          if (chunkGroup && chunkGroup.parent) {
+            chunkGroup.parent.remove(chunkGroup);
+          }
+          this.chunkSystem = null;
+        }
+
         if (this.params.planetType === 'gas_giant') {
           // Check if gas giant parameters changed and clear cache if needed
           const currentGasParams = {
@@ -951,6 +961,11 @@ export class Planet {
           this.oceanMesh.visible = false;
           this.foamMesh.visible = false;
 
+          // S'assurer que le LOD de surface est visible pour les planètes de gaz
+          if (this.surfaceLOD) {
+            this.surfaceLOD.visible = true;
+          }
+
         } else {
           this._disposeGasLODResources();
 
@@ -977,8 +992,8 @@ export class Planet {
           const profile = this.deriveTerrainProfile(this.params.seed);
           const generators = { baseNoise, ridgeNoise, warpNoiseX, warpNoiseY, warpNoiseZ, craterNoise };
 
-          // Utiliser le système de chunks si activé
-          if (this.useChunkSystem) {
+          // Utiliser le système de chunks si activé ET seulement pour les planètes rocheuses
+          if (this.useChunkSystem && this.params.planetType !== 'gas_giant') {
             // Nettoyer l'ancien système de chunks s'il existe
             if (this.chunkSystem) {
               this.chunkSystem.dispose();
@@ -1011,12 +1026,12 @@ export class Planet {
             const chunkGroup = this.chunkSystem.getGroup();
             this.spinGroup.add(chunkGroup);
 
-            // Cacher les meshes LOD traditionnels
+            // Cacher les meshes LOD traditionnels (seulement pour les chunks rocheux)
             if (this.surfaceLOD) {
               this.surfaceLOD.visible = false;
             }
           } else {
-            // Utiliser le système LOD traditionnel
+            // Utiliser le système LOD traditionnel (pour planètes rocheuses sans chunks)
             const geometryByLevel = {};
             PLANET_SURFACE_LOD_ORDER.forEach((levelKey) => {
               const detail = this._getSurfaceDetailForLevel(levelKey);
