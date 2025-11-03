@@ -21,6 +21,7 @@ export class PlanetChunk {
 
     /**
      * Met à jour le niveau de LOD du chunk basé sur la distance de la caméra
+     * Niveaux de LOD: 0-10 (0 = très faible, 5 = intermédiaire parfait, 10 = très élevé)
      */
     updateLOD(cameraPosition, planetRadius, lodConfig) {
         if (!this.mesh || !this.boundingSphere) return;
@@ -32,27 +33,37 @@ export class PlanetChunk {
         // Normaliser la distance par rapport à la taille de la planète
         const normalizedDistance = distance / (planetRadius * 10);
         
-        // Déterminer le niveau de LOD optimal
-        let targetLOD = 0;
-        if (normalizedDistance < 0.5) {
+        // Déterminer le niveau de LOD optimal (11 niveaux: 0-10)
+        // Le niveau 5 est le niveau intermédiaire parfait
+        // Les niveaux 9-10 sont ultra détaillés pour très proche
+        let targetLOD = 5; // Par défaut, niveau intermédiaire
+        if (normalizedDistance < 0.15) {
+            targetLOD = 10; // Ultra ultra haut niveau de détail (extrêmement proche)
+        } else if (normalizedDistance < 0.3) {
+            targetLOD = 9; // Ultra haut niveau de détail (très proche)
+        } else if (normalizedDistance < 0.5) {
             targetLOD = 8; // Très haut niveau de détail
-        } else if (normalizedDistance < 1.0) {
-            targetLOD = 7;
+        } else if (normalizedDistance < 0.8) {
+            targetLOD = 7; // Haut niveau de détail
+        } else if (normalizedDistance < 1.2) {
+            targetLOD = 6; // Niveau moyen-élevé
         } else if (normalizedDistance < 2.0) {
-            targetLOD = 6;
+            targetLOD = 5; // Niveau intermédiaire
         } else if (normalizedDistance < 4.0) {
-            targetLOD = 5;
+            targetLOD = 5; // Intermédiaire parfait (défaut)
         } else if (normalizedDistance < 8.0) {
-            targetLOD = 4;
+            targetLOD = 4; // Niveau moyen-faible
         } else if (normalizedDistance < 16.0) {
-            targetLOD = 3;
+            targetLOD = 3; // Niveau faible
         } else if (normalizedDistance < 32.0) {
-            targetLOD = 2;
+            targetLOD = 2; // Très faible
+        } else if (normalizedDistance < 64.0) {
+            targetLOD = 1; // Très très faible
         } else {
-            targetLOD = 1;
+            targetLOD = 0; // Minimum absolu
         }
 
-        this.lodLevel = Math.max(0, Math.min(8, targetLOD));
+        this.lodLevel = Math.max(0, Math.min(10, targetLOD));
     }
 
     /**
@@ -255,9 +266,9 @@ export class PlanetChunkSystem {
         }
 
         // Calculer le niveau de détail basé sur le LOD
-        // LOD 0 = résolution minimale, LOD 8 = résolution maximale
-        // Réduire la résolution de base pour moins de détail initial
-        const detail = Math.max(0, Math.min(6, lodLevel)); // Réduire de 8 à 6 pour moins de détail
+        // LOD 0-10 : 0 = très faible, 5 = intermédiaire (parfait), 10 = très élevé
+        // Le niveau 5 correspond au rendu parfait actuel
+        const detail = lodLevel; // Utiliser directement le niveau LOD (0-10)
         
         // Créer une géométrie basée sur le triangle du chunk
         const geometry = this.buildChunkGeometry(chunk.vertices, detail);
@@ -290,8 +301,25 @@ export class PlanetChunkSystem {
 
         // Générer les points de la grille triangulaire
         // Le détail détermine le nombre de subdivisions
-        // Réduire la résolution de base pour moins de vertices
-        const resolution = Math.max(1, Math.floor(Math.pow(1.8, detail))); // Réduire la croissance de la résolution
+        // Niveau 5 (intermédiaire) = résolution de base parfaite
+        // Formule ajustée pour avoir une bonne progression de 0 à 10
+        let resolution;
+        if (detail <= 5) {
+            // Niveaux faibles à intermédiaire (0-5) : croissance modérée
+            resolution = Math.max(1, Math.floor(Math.pow(1.5, detail + 1)));
+        } else if (detail <= 8) {
+            // Niveaux élevés moyens (6-8) : croissance rapide
+            const baseRes = Math.pow(1.5, 6); // Résolution au niveau 5
+            const extraDetail = detail - 5;
+            resolution = Math.floor(baseRes * Math.pow(1.6, extraDetail));
+        } else {
+            // Niveaux ultra élevés (9-10) : croissance très rapide pour maximum de détail
+            const baseRes = Math.pow(1.5, 6) * Math.pow(1.6, 3); // Résolution au niveau 8
+            const extraDetail = detail - 8;
+            // Pour les niveaux 9-10, croissance exponentielle pour ultra détail (comme le premier système)
+            resolution = Math.floor(baseRes * Math.pow(2.2, extraDetail));
+        }
+        resolution = Math.max(1, Math.min(resolution, 256)); // Augmenter la limite à 256 pour ultra détail maximum
 
         // Générer les vertices avec subdivision barycentrique
         // Nous générons les vertices de manière séquentielle, donc pas besoin de vertexMap
