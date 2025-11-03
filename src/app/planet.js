@@ -4,6 +4,7 @@ import { SeededRNG } from "./utils.js";
 import * as PHYSICS from "./planet/physics.js";
 import { generateRingTexture as generateRingTextureExt, generateAnnulusTexture as generateAnnulusTextureExt, generateGasGiantTexture as generateGasGiantTextureExt, generateRockTexture, generateSandTexture, generateMetalnessTexture, generateRoughnessTexture } from "./textures.js";
 import { blackHoleDiskUniforms, blackHoleDiskVertexShader, blackHoleDiskFragmentShader } from "./sun.js";
+import { PlanetChunkSystem } from "./planet/planetChunkSystem.js";
 // Aurora removed
 
 const surfaceVertexShader = `
@@ -318,6 +319,10 @@ export class Planet {
         // Initialize LOD transition manager for smooth transitions
         this.lodTransitionManager = new LODTransitionManager();
         this.smoothLODTransitionsEnabled = true; // Enable by default
+
+        // System de chunks pour les planètes rocheuses
+        this.chunkSystem = null;
+        this.useChunkSystem = true; // Activer le système de chunks par défaut
 
         this._createPlanetObjects();
         this.rebuildPlanet();
@@ -800,7 +805,13 @@ export class Planet {
 
 
     update(delta, simulationDelta, camera = null) {
-        if (camera && this.surfaceLOD) {
+        // Mettre à jour le système de chunks si activé
+        if (this.chunkSystem && this.useChunkSystem && this.params.planetType !== 'gas_giant') {
+            const cameraPosition = camera ? camera.getWorldPosition(new THREE.Vector3()) : null;
+            if (cameraPosition) {
+                this.chunkSystem.update(cameraPosition);
+            }
+        } else if (camera && this.surfaceLOD) {
             this.surfaceLOD.updateMatrixWorld(true);
             this.surfaceLOD.update(camera);
         }
@@ -964,14 +975,70 @@ export class Planet {
           }
 
           const profile = this.deriveTerrainProfile(this.params.seed);
-
           const generators = { baseNoise, ridgeNoise, warpNoiseX, warpNoiseY, warpNoiseZ, craterNoise };
-          const geometryByLevel = {};
-          PLANET_SURFACE_LOD_ORDER.forEach((levelKey) => {
-            const detail = this._getSurfaceDetailForLevel(levelKey);
-            geometryByLevel[levelKey] = this._buildRockyGeometry(detail, generators, profile, offsets);
-            this._replaceSurfaceGeometry(levelKey, geometryByLevel[levelKey]);
-          });
+
+          // Utiliser le système de chunks si activé
+          if (this.useChunkSystem) {
+            // Nettoyer l'ancien système de chunks s'il existe
+            if (this.chunkSystem) {
+              this.chunkSystem.dispose();
+              const chunkGroup = this.chunkSystem.getGroup();
+              if (chunkGroup && chunkGroup.parent) {
+                chunkGroup.parent.remove(chunkGroup);
+              }
+            }
+
+            // Créer le nouveau système de chunks
+            this.chunkSystem = new PlanetChunkSystem(
+              this.params.radius,
+              this.params,
+              this.visualSettings,
+              generators,
+              profile,
+              offsets,
+              this.planetMaterial
+            );
+
+            // Définir le générateur de couleurs
+            this.chunkSystem.setColorGenerator((normalized, finalRadius, unitVertex) => {
+              return this.sampleColor(normalized, finalRadius, unitVertex);
+            });
+
+            // Générer les chunks
+            this.chunkSystem.generateChunks();
+
+            // Ajouter le groupe de chunks au spinGroup
+            const chunkGroup = this.chunkSystem.getGroup();
+            this.spinGroup.add(chunkGroup);
+
+            // Cacher les meshes LOD traditionnels
+            if (this.surfaceLOD) {
+              this.surfaceLOD.visible = false;
+            }
+          } else {
+            // Utiliser le système LOD traditionnel
+            const geometryByLevel = {};
+            PLANET_SURFACE_LOD_ORDER.forEach((levelKey) => {
+              const detail = this._getSurfaceDetailForLevel(levelKey);
+              geometryByLevel[levelKey] = this._buildRockyGeometry(detail, generators, profile, offsets);
+              this._replaceSurfaceGeometry(levelKey, geometryByLevel[levelKey]);
+            });
+
+            // Afficher les meshes LOD traditionnels
+            if (this.surfaceLOD) {
+              this.surfaceLOD.visible = true;
+            }
+
+            // Nettoyer le système de chunks s'il existait
+            if (this.chunkSystem) {
+              this.chunkSystem.dispose();
+              const chunkGroup = this.chunkSystem.getGroup();
+              if (chunkGroup && chunkGroup.parent) {
+                chunkGroup.parent.remove(chunkGroup);
+              }
+              this.chunkSystem = null;
+            }
+          }
 
           const texWidth = 256;
           const texHeight = 128;
