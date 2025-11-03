@@ -1088,36 +1088,107 @@ async function initFromHash() {
   return false;
 }
 
-async function initializeApp() {
-  sun = new Sun(scene, null, params, visualSettings);
-  planet = new Planet(scene, params, moonSettings, guiControllers, visualSettings, sun);
-  sun.planetRoot = planet.planetRoot; // Circular dependency fix
-
-  const loadedFromHash = await initFromHash();
-  if (!loadedFromHash) {
-    planet.updatePalette();
-    planet.updateClouds();
-    planet.updateCore();
-    sun.updateSun();
-    planet.updateRings();
-    planet.updateTilt();
-    updateSeedDisplay();
-    updateGravityDisplay();
-    applyPreset(params.preset, { skipShareUpdate: true, keepSeed: true });
-    syncMoonSettings();
-  } else {
-    updateSeedDisplay();
-    updateGravityDisplay();
-  }
-  setupMobilePanelToggle();
+// Helper to yield to browser for rendering between loading phases
+function yieldToBrowser() {
+  return new Promise(resolve => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(resolve);
+    });
+  });
 }
 
-initializeApp().then(() => {
-  normalizeMoonSettings();
-  regenerateStarfield();
+// Update loading status display
+function updateLoadingStatus(text) {
+  const statusEl = document.getElementById('loading-status');
+  if (statusEl) {
+    if (text) {
+      statusEl.textContent = text;
+      statusEl.hidden = false;
+    } else {
+      statusEl.hidden = true;
+    }
+  }
+}
+
+async function initializeApp() {
+  // Phase 1: Scene setup and background color (already done before this function)
+  // Ensure dark background is visible
+  scene.background = new THREE.Color(0x05070f);
+  await yieldToBrowser();
+
+  // Phase 2: Create and add starfield, render immediately
+  updateLoadingStatus("Loading starfield...");
+  const desiredCount = getStarfieldCount(params.starCount);
+  if (desiredCount !== params.starCount) {
+    params.starCount = desiredCount;
+    guiControllers.starCount?.updateDisplay?.();
+  }
+  starField = createStarfieldExt({ 
+    seed: params.seed, 
+    count: desiredCount, 
+    resolution: visualSettings?.noiseResolution ?? 1.0 
+  });
+  scene.add(starField);
   updateStarfieldUniforms();
+  renderer.render(scene, camera);
+  await yieldToBrowser();
+
+  // Phase 3: Create sun with temporary planetRoot (will be replaced in Phase 4)
+  updateLoadingStatus("Loading star...");
+  // Create temporary group for sun light target to avoid null reference errors
+  const tempPlanetRoot = new THREE.Group();
+  sun = new Sun(scene, tempPlanetRoot, params, visualSettings);
+  renderer.render(scene, camera);
+  await yieldToBrowser();
+
+  // Phase 4: Create planet object
+  updateLoadingStatus("Loading planet...");
+  planet = new Planet(scene, params, moonSettings, guiControllers, visualSettings, sun);
+  // Replace temporary planetRoot with actual planetRoot
+  sun.planetRoot = planet.planetRoot;
+  sun.sunLight.target = planet.planetRoot; // Update light target
+  // Remove temporary group from scene if it was added
+  if (tempPlanetRoot.parent) {
+    tempPlanetRoot.parent.remove(tempPlanetRoot);
+  }
+  renderer.render(scene, camera);
+  await yieldToBrowser();
+
+  // Phase 5: Initialize planet properties
+  planet.updatePalette();
+  planet.updateClouds();
+  planet.updateCore();
+  sun.updateSun();
+  planet.updateRings();
+  planet.updateTilt();
+  updateSeedDisplay();
+  updateGravityDisplay();
+  renderer.render(scene, camera);
+  await yieldToBrowser();
+
+  // Phase 6: Load configuration from hash (if present)
+  const loadedFromHash = await initFromHash();
+  if (!loadedFromHash) {
+    applyPreset(params.preset, { skipShareUpdate: true, keepSeed: true });
+    syncMoonSettings();
+  }
+  renderer.render(scene, camera);
+  await yieldToBrowser();
+
+  // Phase 7: Final planet setup
+  setupMobilePanelToggle();
+  normalizeMoonSettings();
   markPlanetDirty();
+  renderer.render(scene, camera);
+  await yieldToBrowser();
+
+  // Phase 8: Create moons (deferred until planet is fully loaded)
+  updateLoadingStatus("Loading moons...");
   markMoonsDirty();
+  renderer.render(scene, camera);
+  await yieldToBrowser();
+
+  // Phase 9: Final setup (physics, orbit lines, etc.)
   applyInitialVisualSettings();
   if (previewMode) {
     try { applyVisualSettings(); } catch {}
@@ -1126,7 +1197,16 @@ initializeApp().then(() => {
   planet.updateOrbitLinesVisibility();
   applyControlSearch({ scrollToFirst: false });
   updateShareCode();
+  renderer.render(scene, camera);
+  await yieldToBrowser();
 
+  // Hide status display
+  updateLoadingStatus("");
+}
+
+initializeApp().then(() => {
+  // All initialization is now handled in initializeApp() with progressive loading
+  // Start animation loop
   renderer.domElement.addEventListener('dblclick', (event) => {
     const mouse = new THREE.Vector2();
     const rect = renderer.domElement.getBoundingClientRect();

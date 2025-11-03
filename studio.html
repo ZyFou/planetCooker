@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Planet Studio</title>
     <link rel="icon" href="/favicon.ico" />
+    <style>
+      /* Prevent flash of unstyled content */
+      body {
+        background: #05070f;
+        margin: 0;
+        padding: 0;
+      }
+      #scene {
+        background: #05070f;
+      }
+    </style>
   </head>
   <body>
     <div id="app">
@@ -111,6 +122,7 @@
           </div> -->
           <!-- <button id="camera-mode" class="camera-mode-btn" title="Change camera mode">Camera: Orbit</button> -->
           <div id="hud-fps" class="hud-fps" aria-live="polite">FPS: 0</div>
+          <div id="loading-status" class="loading-status" hidden aria-live="polite"></div>
           
           <!-- Photo mode controls -->
           <button id="photo-toggle" class="photo-toggle" aria-pressed="false" title="Exit photo mode">📷</button>

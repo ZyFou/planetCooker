@@ -183,6 +183,28 @@ button:hover {
   letter-spacing: 0.06em;
 }
 
+.loading-status {
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  z-index: 5;
+  padding: 0.35rem 0.65rem;
+  border-radius: 8px;
+  background: rgba(6, 10, 22, 0.75);
+  border: 1px solid rgba(135, 169, 218, 0.45);
+  font-weight: 600;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  color: #d9e6ff;
+  opacity: 0;
+  transition: opacity 0.3s ease-in-out;
+  pointer-events: none;
+}
+
+.loading-status:not([hidden]) {
+  opacity: 1;
+}
+
 .mobile-menu-toggle,
 .desktop-menu-toggle {
   display: none;
