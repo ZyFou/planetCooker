@@ -256,6 +256,291 @@ const PLANET_SURFACE_LOD_CONFIG = {
     microLow:  { detailOffset: -4.0,  rockDetailMultiplier: 0.1,  rockDetailMin: 1,  distanceMultiplier: 36.0, gasSegmentScale: 0.4,  textureScale: 0.1 }
 };
 
+const waterVertexShader = `
+    varying vec3 vNormal;
+    varying vec3 vPosition;
+    varying vec3 vWorldPosition;
+    varying vec3 vViewDirection;
+    varying vec2 vUv;
+
+    uniform float uTime;
+    uniform float uWaveSpeed;
+    uniform float uWaveAmplitude;
+    uniform float uWaveFrequency;
+
+    // Noise function for waves
+    vec3 mod289(vec3 x) {
+        return x - floor(x * (1.0 / 289.0)) * 289.0;
+    }
+
+    vec4 mod289(vec4 x) {
+        return x - floor(x * (1.0 / 289.0)) * 289.0;
+    }
+
+    vec4 permute(vec4 x) {
+        return mod289(((x*34.0)+1.0)*x);
+    }
+
+    vec4 taylorInvSqrt(vec4 r) {
+        return 1.79284291400159 - 0.85373472095314 * r;
+    }
+
+    float snoise(vec3 v) {
+        const vec2  C = vec2(1.0/6.0, 1.0/3.0);
+        const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);
+
+        vec3 i  = floor(v + dot(v, C.yyy));
+        vec3 x0 = v - i + dot(i, C.xxx);
+
+        vec3 g = step(x0.yzx, x0.xyz);
+        vec3 l = 1.0 - g;
+        vec3 i1 = min(g.xyz, l.zxy);
+        vec3 i2 = max(g.xyz, l.zxy);
+
+        vec3 x1 = x0 - i1 + C.xxx;
+        vec3 x2 = x0 - i2 + C.yyy;
+        vec3 x3 = x0 - D.yyy;
+
+        i = mod289(i);
+        vec4 p = permute(permute(permute(
+            i.z + vec4(0.0, i1.z, i2.z, 1.0))
+            + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+            + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+
+        float n_ = 0.142857142857;
+        vec3  ns = n_ * D.wyz - D.xzx;
+
+        vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+
+        vec4 x_ = floor(j * ns.z);
+        vec4 y_ = floor(j - 7.0 * x_);
+
+        vec4 x = x_ *ns.x + ns.yyyy;
+        vec4 y = y_ *ns.x + ns.yyyy;
+        vec4 h = 1.0 - abs(x) - abs(y);
+
+        vec4 b0 = vec4(x.xy, y.xy);
+        vec4 b1 = vec4(x.zw, y.zw);
+
+        vec4 s0 = floor(b0)*2.0 + 1.0;
+        vec4 s1 = floor(b1)*2.0 + 1.0;
+        vec4 sh = -step(h, vec4(0.0));
+
+        vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
+        vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+
+        vec3 p0 = vec3(a0.xy, h.x);
+        vec3 p1 = vec3(a0.zw, h.y);
+        vec3 p2 = vec3(a1.xy, h.z);
+        vec3 p3 = vec3(a1.zw, h.w);
+
+        vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
+        p0 *= norm.x;
+        p1 *= norm.y;
+        p2 *= norm.z;
+        p3 *= norm.w;
+
+        vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+        m = m * m;
+        return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+    }
+
+    float fbm(vec3 p) {
+        float value = 0.0;
+        float amplitude = 0.5;
+        float frequency = 1.0;
+        for (int i = 0; i < 3; i++) {
+            value += amplitude * snoise(p * frequency);
+            frequency *= 2.0;
+            amplitude *= 0.5;
+        }
+        return value;
+    }
+
+    void main() {
+        vUv = uv;
+        vNormal = normalize(normalMatrix * normal);
+        vPosition = position;
+        vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+        vViewDirection = normalize(cameraPosition - vWorldPosition);
+
+        // Wave displacement
+        vec3 worldPos = normalize(position) * 1.0;
+        float time = uTime * uWaveSpeed;
+        
+        // Multiple octaves of waves for realistic water
+        float wave1 = fbm(worldPos * uWaveFrequency + vec3(0.0, time * 0.5, 0.0));
+        float wave2 = fbm(worldPos * uWaveFrequency * 1.5 + vec3(time * 0.3, 0.0, time * 0.4));
+        float wave3 = fbm(worldPos * uWaveFrequency * 0.7 + vec3(time * 0.7, 0.0, -time * 0.3));
+        
+        float totalWave = (wave1 * 0.6 + wave2 * 0.3 + wave3 * 0.1) * uWaveAmplitude;
+        
+        // Displace vertex along normal
+        vec3 newPosition = position + normal * totalWave * 0.01;
+        
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
+    }
+`;
+
+const waterFragmentShader = `
+    varying vec3 vNormal;
+    varying vec3 vPosition;
+    varying vec3 vWorldPosition;
+    varying vec3 vViewDirection;
+    varying vec2 vUv;
+
+    uniform float uTime;
+    uniform float uWaveSpeed;
+    uniform float uWaveAmplitude;
+    uniform float uWaveFrequency;
+    uniform vec3 uWaterColor;
+    uniform vec3 uLightDirection;
+    uniform vec3 uLightColor;
+    uniform float uLightIntensity;
+    uniform vec3 uAmbientLightColor;
+    uniform float uAmbientLightIntensity;
+    uniform float uOpacity;
+    uniform float uRefractionStrength;
+    uniform float uFresnelPower;
+    uniform float uShallowColorFactor;
+
+    // Same noise functions as vertex shader
+    vec3 mod289(vec3 x) {
+        return x - floor(x * (1.0 / 289.0)) * 289.0;
+    }
+
+    vec4 mod289(vec4 x) {
+        return x - floor(x * (1.0 / 289.0)) * 289.0;
+    }
+
+    vec4 permute(vec4 x) {
+        return mod289(((x*34.0)+1.0)*x);
+    }
+
+    vec4 taylorInvSqrt(vec4 r) {
+        return 1.79284291400159 - 0.85373472095314 * r;
+    }
+
+    float snoise(vec3 v) {
+        const vec2  C = vec2(1.0/6.0, 1.0/3.0);
+        const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);
+        vec3 i  = floor(v + dot(v, C.yyy));
+        vec3 x0 = v - i + dot(i, C.xxx);
+        vec3 g = step(x0.yzx, x0.xyz);
+        vec3 l = 1.0 - g;
+        vec3 i1 = min(g.xyz, l.zxy);
+        vec3 i2 = max(g.xyz, l.zxy);
+        vec3 x1 = x0 - i1 + C.xxx;
+        vec3 x2 = x0 - i2 + C.yyy;
+        vec3 x3 = x0 - D.yyy;
+        i = mod289(i);
+        vec4 p = permute(permute(permute(
+            i.z + vec4(0.0, i1.z, i2.z, 1.0))
+            + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+            + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+        float n_ = 0.142857142857;
+        vec3  ns = n_ * D.wyz - D.xzx;
+        vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+        vec4 x_ = floor(j * ns.z);
+        vec4 y_ = floor(j - 7.0 * x_);
+        vec4 x = x_ *ns.x + ns.yyyy;
+        vec4 y = y_ *ns.x + ns.yyyy;
+        vec4 h = 1.0 - abs(x) - abs(y);
+        vec4 b0 = vec4(x.xy, y.xy);
+        vec4 b1 = vec4(x.zw, y.zw);
+        vec4 s0 = floor(b0)*2.0 + 1.0;
+        vec4 s1 = floor(b1)*2.0 + 1.0;
+        vec4 sh = -step(h, vec4(0.0));
+        vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
+        vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+        vec3 p0 = vec3(a0.xy, h.x);
+        vec3 p1 = vec3(a0.zw, h.y);
+        vec3 p2 = vec3(a1.xy, h.z);
+        vec3 p3 = vec3(a1.zw, h.w);
+        vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
+        p0 *= norm.x;
+        p1 *= norm.y;
+        p2 *= norm.z;
+        p3 *= norm.w;
+        vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+        m = m * m;
+        return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+    }
+
+    float fbm(vec3 p) {
+        float value = 0.0;
+        float amplitude = 0.5;
+        float frequency = 1.0;
+        for (int i = 0; i < 3; i++) {
+            value += amplitude * snoise(p * frequency);
+            frequency *= 2.0;
+            amplitude *= 0.5;
+        }
+        return value;
+    }
+
+    void main() {
+        vec3 worldPos = normalize(vWorldPosition) * 1.0;
+        float time = uTime * uWaveSpeed;
+        
+        // Calculate wave normal for refraction
+        float wave1 = fbm(worldPos * uWaveFrequency + vec3(0.0, time * 0.5, 0.0));
+        float wave2 = fbm(worldPos * uWaveFrequency * 1.5 + vec3(time * 0.3, 0.0, time * 0.4));
+        float wave3 = fbm(worldPos * uWaveFrequency * 0.7 + vec3(time * 0.7, 0.0, -time * 0.3));
+        
+        // Normal calculation from wave gradients
+        float eps = 0.01;
+        float waveX = fbm((worldPos + vec3(eps, 0.0, 0.0)) * uWaveFrequency + vec3(0.0, time * 0.5, 0.0));
+        float waveZ = fbm((worldPos + vec3(0.0, 0.0, eps)) * uWaveFrequency + vec3(0.0, time * 0.5, 0.0));
+        
+        vec3 normal = normalize(vNormal);
+        vec3 tangent = normalize(cross(normal, vec3(0.0, 1.0, 0.0)));
+        if (length(tangent) < 0.1) {
+            tangent = normalize(cross(normal, vec3(1.0, 0.0, 0.0)));
+        }
+        vec3 bitangent = cross(normal, tangent);
+        
+        // Perturb normal based on waves for refraction
+        float wavePerturbX = (waveX - wave1) / eps * uWaveAmplitude;
+        float wavePerturbZ = (waveZ - wave1) / eps * uWaveAmplitude;
+        vec3 waveNormal = normalize(normal + tangent * wavePerturbX * 0.1 + bitangent * wavePerturbZ * 0.1);
+
+        // Fresnel effect for realistic water edges
+        float fresnel = pow(1.0 - max(dot(normalize(vViewDirection), waveNormal), 0.0), uFresnelPower);
+        
+        // Lighting
+        vec3 lightDir = normalize(uLightDirection);
+        float NdotL = max(dot(waveNormal, lightDir), 0.0);
+        
+        // Refraction effect (simulated with normal-based color variation)
+        float refraction = dot(waveNormal, vViewDirection) * uRefractionStrength;
+        
+        // Water color with depth variation
+        vec3 deepColor = uWaterColor;
+        vec3 shallowColor = mix(uWaterColor, uLightColor, uShallowColorFactor);
+        vec3 waterColor = mix(deepColor, shallowColor, fresnel * 0.5 + NdotL * 0.3);
+        
+        // Specular highlights
+        vec3 reflectDir = reflect(-lightDir, waveNormal);
+        float spec = pow(max(dot(normalize(vViewDirection), reflectDir), 0.0), 64.0);
+        vec3 specular = uLightColor * uLightIntensity * spec * 0.5;
+        
+        // Combine lighting
+        vec3 ambient = waterColor * uAmbientLightColor * uAmbientLightIntensity;
+        vec3 diffuse = waterColor * uLightColor * uLightIntensity * NdotL;
+        
+        vec3 finalColor = ambient + diffuse + specular;
+        
+        // Apply refraction tint
+        finalColor = mix(finalColor, uLightColor, refraction * 0.1);
+        
+        // Opacity based on fresnel (more transparent at glancing angles)
+        float finalOpacity = uOpacity * (0.7 + fresnel * 0.3);
+        
+        gl_FragColor = vec4(finalColor, finalOpacity);
+    }
+`;
+
 export class Planet {
     constructor(scene, params, moonSettings, guiControllers, visualSettings, sun) {
         this.scene = scene;
@@ -400,16 +685,32 @@ export class Planet {
         this.atmosphereMesh.receiveShadow = false;
         this.spinGroup.add(this.atmosphereMesh);
 
-        const oceanMaterial = new THREE.MeshPhysicalMaterial({
-            color: new THREE.Color(0x1b3c6d),
+        // Ocean water shader with waves and refraction
+        this.oceanUniforms = {
+            uTime: { value: 0 },
+            uWaveSpeed: { value: 0.5 },
+            uWaveAmplitude: { value: 0.3 },
+            uWaveFrequency: { value: 2.0 },
+            uWaterColor: { value: new THREE.Color(0x1b3c6d) },
+            uLightDirection: { value: new THREE.Vector3(1, 0, 0) },
+            uLightColor: { value: new THREE.Color(0xffffff) },
+            uLightIntensity: { value: 1.0 },
+            uAmbientLightColor: { value: new THREE.Color(0x6f87b6) },
+            uAmbientLightIntensity: { value: 0.35 },
+            uOpacity: { value: 0.7 },
+            uRefractionStrength: { value: 0.5 },
+            uFresnelPower: { value: 2.0 },
+            uShallowColorFactor: { value: 0.3 }
+        };
+        
+        const oceanMaterial = new THREE.ShaderMaterial({
+            vertexShader: waterVertexShader,
+            fragmentShader: waterFragmentShader,
+            uniforms: this.oceanUniforms,
             transparent: true,
-            opacity: 0.6,
-            roughness: 0.35,
-            metalness: 0.02,
-            transmission: 0.7,
-            thickness: 0.2,
-            ior: 1.333,
-            depthWrite: false
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            blending: THREE.NormalBlending
         });
         this.oceanMesh = new THREE.Mesh(new THREE.SphereGeometry(1.0, 128, 128), oceanMaterial);
         this.oceanMesh.castShadow = false;
@@ -1130,7 +1431,25 @@ export class Planet {
           if (oceanVisible) {
             this.oceanMesh.scale.setScalar(oceanScale);
             this.foamMesh.scale.setScalar(foamScale);
-            this.oceanMesh.material.color.set(this.palette.ocean);
+            
+            // Update ocean shader uniforms
+            if (this.oceanUniforms) {
+                this.oceanUniforms.uWaterColor.value.copy(this.palette.ocean);
+                
+                // Update lighting
+                const sunDirection = new THREE.Vector3();
+                if (this.sun?.sunGroup) {
+                    sunDirection.subVectors(this.sun.sunGroup.position, this.planetRoot.position).normalize();
+                } else {
+                    sunDirection.set(1, 0, 0);
+                }
+                this.oceanUniforms.uLightDirection.value.copy(sunDirection);
+                this.oceanUniforms.uLightColor.value.set(this.params.sunColor || 0xffffff);
+                this.oceanUniforms.uLightIntensity.value = this.params.sunIntensity || 1.0;
+                this.oceanUniforms.uAmbientLightColor.value.setHex(0x6f87b6);
+                this.oceanUniforms.uAmbientLightIntensity.value = 0.35;
+            }
+            
             this.foamMesh.material.color.set(this.palette.foam);
 
             const texWidth = 512;

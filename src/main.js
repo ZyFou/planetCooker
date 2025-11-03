@@ -1316,6 +1316,11 @@ function animate(timestamp) {
     uniforms.uTwinkleSpeed.value = params.starTwinkleSpeed;
   }
 
+  // Update ocean time
+  if (planet?.oceanUniforms?.uTime) {
+    planet.oceanUniforms.uTime.value = timestamp * 0.001;
+  }
+
   updateDebugVectors();
   renderer.render(scene, camera);
   updateTimeDisplay(simulationYears);
