@@ -43,7 +43,16 @@ export function initControlSearch({
 
   function applyControlSearch({ scrollToFirst = false } = {}) {
     const root = controlsContainer.querySelector(".lil-gui.root");
-    if (!root) return;
+    if (!root) {
+      // Retry after a short delay if root is not yet available (common on mobile)
+      setTimeout(() => {
+        const retryRoot = controlsContainer.querySelector(".lil-gui.root");
+        if (retryRoot) {
+          applyControlSearch({ scrollToFirst });
+        }
+      }, 100);
+      return;
+    }
 
     const term = controlSearchTerm.trim().toLowerCase();
     const hasTerm = term.length > 0;
@@ -128,7 +137,15 @@ export function initControlSearch({
     setControlSearchTerm(searchInput.value, { scrollToFirst: true });
   }, 120);
 
+  // Also handle immediate input for mobile (no debounce delay for better responsiveness)
+  const handleControlSearchInputImmediate = () => {
+    if (!searchInput) return;
+    setControlSearchTerm(searchInput.value, { scrollToFirst: false });
+  };
+
   if (searchInput) {
+    // Use both immediate and debounced handlers for better mobile responsiveness
+    searchInput.addEventListener("input", handleControlSearchInputImmediate);
     searchInput.addEventListener("input", handleControlSearchInput);
     searchInput.addEventListener("search", () => {
       setControlSearchTerm(searchInput.value, { scrollToFirst: true });
@@ -140,6 +157,13 @@ export function initControlSearch({
         setControlSearchTerm("", { scrollToFirst: false });
         searchInput.blur();
       }
+    });
+    // Ensure input works on mobile by preventing default touch behaviors that might interfere
+    searchInput.addEventListener("touchstart", (e) => {
+      e.stopPropagation();
+    });
+    searchInput.addEventListener("touchend", (e) => {
+      e.stopPropagation();
     });
   }
 

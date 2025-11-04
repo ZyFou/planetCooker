@@ -149,6 +149,18 @@ export class PlanetChunkSystem {
         
         // Générateur de couleurs (sera défini par Planet)
         this.colorGenerator = null;
+        
+        // Background loading system
+        this.backgroundLoadQueue = [];
+        this.backgroundLoadActive = false;
+        this.backgroundLoadIdleCallback = null;
+        this.batchSize = 50; // Process 50 items per batch (increased for faster preloading)
+        this.maxBatchTime = 30; // Maximum 30ms per batch (increased to allow more work per batch)
+        this.totalLODsToPreload = 0;
+        this.totalLODsPreloaded = 0;
+        // Track high-LOD (9-10) preloading progress
+        this.highLODsToPreload = 0;
+        this.highLODsPreloaded = 0;
     }
 
     /**
@@ -219,6 +231,191 @@ export class PlanetChunkSystem {
     }
 
     /**
+     * Prépare la queue de chargement en arrière-plan pour tous les chunks et tous les niveaux de LOD
+     * Génère et stocke toutes les géométries LOD dans le cache avant qu'elles soient nécessaires
+     * @param {THREE.Vector3} cameraPosition - Position de la caméra pour la priorisation (optionnel)
+     */
+    preloadChunkLODs(cameraPosition = null) {
+        // Vérifier que les chunks existent
+        if (this.chunks.size === 0) {
+            console.warn('Cannot preload LODs: no chunks generated yet');
+            return;
+        }
+        
+        // Nettoyer la queue existante et arrêter tout traitement en cours
+        if (this.backgroundLoadActive) {
+            this.backgroundLoadActive = false;
+            if (this.backgroundLoadIdleCallback && typeof cancelIdleCallback !== 'undefined') {
+                cancelIdleCallback(this.backgroundLoadIdleCallback);
+                this.backgroundLoadIdleCallback = null;
+            }
+        }
+        this.backgroundLoadQueue = [];
+        
+        // Calculer la position de référence pour la priorisation
+        const referencePosition = cameraPosition || new THREE.Vector3(0, this.planetRadius * 2.5, this.planetRadius * 2.5);
+        
+        // Pour chaque chunk, créer des entrées pour TOUS les niveaux de LOD (0-10)
+        // L'objectif est de pré-générer toutes les géométries et les stocker dans le cache
+        for (const [chunkId, chunk] of this.chunks) {
+            // Calculer la distance approximative du chunk à la caméra pour la priorisation
+            // Utiliser le centre du triangle du chunk comme référence
+            const chunkCenter = new THREE.Vector3();
+            chunkCenter.addVectors(chunk.vertices[0], chunk.vertices[1]).add(chunk.vertices[2]);
+            chunkCenter.divideScalar(3).normalize().multiplyScalar(this.planetRadius);
+            
+            const distance = referencePosition.distanceTo(chunkCenter);
+            
+            // Ajouter TOUS les niveaux de LOD (0-10) pour ce chunk dans la queue
+            for (let lodLevel = 0; lodLevel <= 10; lodLevel++) {
+                const cacheKey = `${chunkId}_lod${lodLevel}`;
+                
+                // Ne pas ajouter si déjà en cache (déjà généré)
+                if (!this.geometryCache.has(cacheKey)) {
+                    // Calculer la priorité: distance - (lodLevel * 1000)
+                    // Cela garantit que les LOD élevés (9-10) sont traités en premier
+                    // Les valeurs de priorité plus faibles = priorité plus élevée (traités en premier)
+                    // Exemple: LOD 10 proche = priority très négative, LOD 0 loin = priority très positive
+                    const priority = distance - (lodLevel * 1000);
+                    
+                    this.backgroundLoadQueue.push({
+                        chunk: chunk,
+                        lodLevel: lodLevel,
+                        priority: priority, // Plus faible = priorité plus élevée (LOD élevé + proche = traité en premier)
+                        chunkId: chunkId
+                    });
+                }
+            }
+        }
+        
+        // Trier la queue par priorité (ascending: plus faible valeur = priorité plus élevée)
+        // Cela garantit que les chunks proches avec LOD élevés (9-10) sont chargés en premier
+        // Format: LOD 10 proche < LOD 9 proche < LOD 8 proche < ... < LOD 0 loin
+        this.backgroundLoadQueue.sort((a, b) => a.priority - b.priority);
+        
+        // Stocker le nombre total à précharger pour le suivi
+        this.totalLODsToPreload = this.backgroundLoadQueue.length;
+        this.totalLODsPreloaded = 0;
+        
+        // Compter les LOD élevés (9-10) pour le suivi
+        this.highLODsToPreload = this.backgroundLoadQueue.filter(item => item.lodLevel >= 9).length;
+        this.highLODsPreloaded = 0;
+        
+        // Démarrer le traitement en arrière-plan immédiatement
+        // Toutes les géométries LOD (0-10) pour tous les chunks seront générées et stockées dans le cache
+        // Elles seront disponibles instantanément quand le zoom change
+        if (this.backgroundLoadQueue.length > 0 && !this.backgroundLoadActive) {
+            this.startBackgroundProcessing();
+        }
+    }
+
+    /**
+     * Démarre le traitement en arrière-plan de la queue
+     */
+    startBackgroundProcessing() {
+        if (this.backgroundLoadActive) return;
+        
+        this.backgroundLoadActive = true;
+        // Start processing immediately, don't wait for idle
+        this.processBackgroundQueue();
+    }
+
+    /**
+     * Traite la queue de chargement en arrière-plan
+     * Génère toutes les géométries LOD et les stocke dans le cache pour utilisation future
+     */
+    processBackgroundQueue() {
+        if (this.backgroundLoadQueue.length === 0) {
+            this.backgroundLoadActive = false;
+            this.totalLODsPreloaded = this.totalLODsToPreload;
+            return;
+        }
+        
+        const startTime = performance.now();
+        let processed = 0;
+        
+        // Traiter plusieurs items jusqu'à atteindre la limite de temps ou de batch
+        while (this.backgroundLoadQueue.length > 0 && processed < this.batchSize) {
+            const elapsed = performance.now() - startTime;
+            if (elapsed >= this.maxBatchTime) {
+                break; // Arrêter si on a dépassé le temps maximum
+            }
+            
+            const item = this.backgroundLoadQueue.shift();
+            if (!item) break;
+            
+            const { chunk, lodLevel, chunkId } = item;
+            const cacheKey = `${chunkId}_lod${lodLevel}`;
+            
+            // Vérifier à nouveau le cache (peut avoir été généré entre temps)
+            if (!this.geometryCache.has(cacheKey)) {
+                try {
+                    // Générer la géométrie directement (même méthode que generateChunkGeometry)
+                    const detail = lodLevel;
+                    const geometry = this.buildChunkGeometry(chunk.vertices, detail);
+                    // Stocker la géométrie dans le cache (cloner avant de stocker, comme dans generateChunkGeometry)
+                    // Ceci est important pour éviter que les géométries partagées soient modifiées
+                    this.geometryCache.set(cacheKey, geometry.clone());
+                    this.totalLODsPreloaded++;
+                    
+                    // Suivre les LOD élevés (9-10)
+                    if (lodLevel >= 9) {
+                        this.highLODsPreloaded++;
+                        const highLODPercent = ((this.highLODsPreloaded / this.highLODsToPreload) * 100).toFixed(1);
+                        if (this.highLODsPreloaded % 10 === 0 || this.highLODsPreloaded === this.highLODsToPreload) {
+                            console.log(`High-LOD preloading: ${this.highLODsPreloaded}/${this.highLODsToPreload} (${highLODPercent}%) - LOD ${lodLevel} cached`);
+                        }
+                    }
+                } catch (error) {
+                    console.warn(`Failed to generate geometry for ${cacheKey}:`, error);
+                    // Compter quand même comme préchargé pour éviter de bloquer
+                    this.totalLODsPreloaded++;
+                    if (lodLevel >= 9) {
+                        this.highLODsPreloaded++;
+                    }
+                }
+            } else {
+                // Déjà en cache, compter comme préchargé
+                this.totalLODsPreloaded++;
+                if (lodLevel >= 9) {
+                    this.highLODsPreloaded++;
+                }
+            }
+            
+            processed++;
+        }
+        
+        // Continuer le traitement agressivement jusqu'à ce que toutes les géométries LOD soient générées
+        // Utiliser requestIdleCallback si disponible pour ne pas bloquer le rendu, sinon setTimeout
+        if (this.backgroundLoadQueue.length > 0) {
+            // Prioriser le rendu en utilisant requestIdleCallback si disponible
+            if (typeof requestIdleCallback !== 'undefined') {
+                this.backgroundLoadIdleCallback = requestIdleCallback(() => {
+                    // Continuer le traitement (processBackgroundQueue gère déjà le batch)
+                    this.processBackgroundQueue();
+                }, { timeout: 1000 });
+            } else {
+                // Fallback: setTimeout avec 0 delay pour traitement continu
+                setTimeout(() => {
+                    this.processBackgroundQueue();
+                }, 0);
+            }
+        } else {
+            // Toutes les géométries LOD ont été générées et stockées
+            this.backgroundLoadActive = false;
+            this.totalLODsPreloaded = this.totalLODsToPreload;
+            if (this.backgroundLoadIdleCallback && typeof cancelIdleCallback !== 'undefined') {
+                cancelIdleCallback(this.backgroundLoadIdleCallback);
+                this.backgroundLoadIdleCallback = null;
+            }
+            const highLODPercent = this.highLODsToPreload > 0 
+                ? ((this.highLODsPreloaded / this.highLODsToPreload) * 100).toFixed(1)
+                : '100.0';
+            console.log(`Preloading complete: ${this.totalLODsPreloaded}/${this.totalLODsToPreload} LOD geometries cached (High-LOD 9-10: ${this.highLODsPreloaded}/${this.highLODsToPreload}, ${highLODPercent}%)`);
+        }
+    }
+
+    /**
      * Subdivise une face triangulaire en plusieurs chunks
      */
     subdivideFace(v0, v1, v2, subdivisionLevel) {
@@ -255,19 +452,18 @@ export class PlanetChunkSystem {
 
     /**
      * Génère la géométrie pour un chunk donné avec un niveau de LOD spécifique
+     * Vérifie d'abord le cache, puis génère si nécessaire
      */
     generateChunkGeometry(chunk, lodLevel) {
         const cacheKey = `${chunk.chunkId}_lod${lodLevel}`;
         
-        // Vérifier le cache
+        // Vérifier le cache en premier (optimisé pour les géométries préchargées)
         if (this.geometryCache.has(cacheKey)) {
             // Toujours cloner pour éviter le partage d'objets
             return this.geometryCache.get(cacheKey).clone();
         }
 
-        // Calculer le niveau de détail basé sur le LOD
-        // LOD 0-10 : 0 = très faible, 5 = intermédiaire (parfait), 10 = très élevé
-        // Le niveau 5 correspond au rendu parfait actuel
+        // Si pas en cache, générer à la demande (ne devrait pas arriver après préchargement)
         const detail = lodLevel; // Utiliser directement le niveau LOD (0-10)
         
         // Créer une géométrie basée sur le triangle du chunk
@@ -497,55 +693,82 @@ export class PlanetChunkSystem {
 
     /**
      * Met à jour tous les chunks en fonction de la position de la caméra
+     * Les géométries LOD devraient être déjà préchargées en cache pour éviter les lags
      */
     update(cameraPosition) {
         if (!cameraPosition) return;
 
         // Limiter le nombre de mises à jour par frame pour éviter les blocages
-        // Commencer avec un nombre plus faible et augmenter progressivement
-        const maxUpdatesPerFrame = 2; // Réduire à 2 pour un chargement plus progressif
+        // Le maxUpdatesPerFrame s'applique maintenant principalement à la création de mesh
+        // car les géométries devraient être déjà en cache grâce au préchargement
+        const maxUpdatesPerFrame = 4; // Augmenter car les géométries sont déjà en cache
         let updatesThisFrame = 0;
 
+        // First pass: collect chunks that need geometry updates and check cache status
+        const chunksNeedingGeometry = [];
         for (const [chunkId, chunk] of this.chunks) {
             // Mettre à jour le LOD du chunk
-            const previousLOD = chunk.lodLevel;
             chunk.updateLOD(cameraPosition, this.planetRadius, {});
 
-            // Générer ou mettre à jour la géométrie si le LOD a changé
+            // Vérifier si la géométrie doit être mise à jour
             if (!chunk.geometry || chunk.lodLevel !== chunk.mesh?.userData?.lastLOD) {
-                // Limiter les mises à jour pour cette frame
+                const cacheKey = `${chunkId}_lod${chunk.lodLevel}`;
+                const isCached = this.geometryCache.has(cacheKey);
+                
+                chunksNeedingGeometry.push({
+                    chunk: chunk,
+                    chunkId: chunkId,
+                    lodLevel: chunk.lodLevel,
+                    isCached: isCached,
+                    distance: chunk.lastCameraDistance || Infinity
+                });
+            }
+        }
+
+        // Sort by cache status (cached first) then by distance (closer first)
+        chunksNeedingGeometry.sort((a, b) => {
+            if (a.isCached !== b.isCached) {
+                return a.isCached ? -1 : 1; // Cached items first
+            }
+            return a.distance - b.distance; // Closer items first
+        });
+
+        // Process chunks that need geometry updates
+        for (const item of chunksNeedingGeometry) {
+            const { chunk, lodLevel } = item;
+            
+            // La géométrie devrait être en cache grâce au préchargement
+            // Si ce n'est pas le cas, elle sera générée à la demande (fallback)
+            chunk.geometry = this.generateChunkGeometry(chunk, lodLevel);
+            
+            if (chunk.mesh) {
+                if (chunk.mesh.geometry && chunk.mesh.geometry !== chunk.geometry) {
+                    chunk.mesh.geometry.dispose();
+                }
+                chunk.mesh.geometry = chunk.geometry;
+                chunk.mesh.userData.lastLOD = lodLevel;
+                
+                // Mettre à jour le bounding sphere pour le frustum culling
+                chunk.geometry.computeBoundingSphere();
+                chunk.boundingSphere = chunk.geometry.boundingSphere;
+            } else {
+                // Limiter les créations de mesh par frame
                 if (updatesThisFrame >= maxUpdatesPerFrame) {
-                    // Reporter à la prochaine frame
                     continue;
                 }
-
-                chunk.geometry = this.generateChunkGeometry(chunk, chunk.lodLevel);
-                
-                if (chunk.mesh) {
-                    if (chunk.mesh.geometry && chunk.mesh.geometry !== chunk.geometry) {
-                        chunk.mesh.geometry.dispose();
-                    }
-                    chunk.mesh.geometry = chunk.geometry;
-                    chunk.mesh.userData.lastLOD = chunk.lodLevel;
-                    
-                    // Mettre à jour le bounding sphere pour le frustum culling
-                    chunk.geometry.computeBoundingSphere();
-                    chunk.boundingSphere = chunk.geometry.boundingSphere;
-                } else {
-                    chunk.createMesh();
-                }
-                
+                chunk.createMesh();
                 updatesThisFrame++;
-            } else if (!chunk.mesh) {
-                // Créer le mesh si nécessaire
+            }
+        }
+
+        // Second pass: create meshes for chunks that have geometry but no mesh
+        for (const [chunkId, chunk] of this.chunks) {
+            if (chunk.geometry && !chunk.mesh) {
                 if (updatesThisFrame < maxUpdatesPerFrame) {
                     chunk.createMesh();
                     updatesThisFrame++;
                 }
             }
-
-            // Le frustum culling est géré automatiquement par Three.js
-            // grâce à frustumCulled = true sur le mesh
         }
     }
 
@@ -560,6 +783,16 @@ export class PlanetChunkSystem {
      * Libère toutes les ressources
      */
     dispose() {
+        // Arrêter le chargement en arrière-plan si actif
+        if (this.backgroundLoadActive) {
+            this.backgroundLoadActive = false;
+            if (this.backgroundLoadIdleCallback && typeof cancelIdleCallback !== 'undefined') {
+                cancelIdleCallback(this.backgroundLoadIdleCallback);
+                this.backgroundLoadIdleCallback = null;
+            }
+            this.backgroundLoadQueue = [];
+        }
+        
         for (const chunk of this.chunks.values()) {
             chunk.dispose();
         }

@@ -1333,6 +1333,16 @@ export class Planet {
             // Ajouter le groupe de chunks au spinGroup
             const chunkGroup = this.chunkSystem.getGroup();
             this.spinGroup.add(chunkGroup);
+            
+            // Démarrer le préchargement en arrière-plan de tous les niveaux de LOD
+            // Utiliser une position de caméra par défaut si pas disponible
+            // Le préchargement génère toutes les géométries LOD (0-10) pour tous les chunks
+            const defaultCameraPos = new THREE.Vector3(0, this.params.radius * 2.5, this.params.radius * 2.5);
+            // Start preloading immediately - this will generate all LOD levels in background
+            // Use requestAnimationFrame to ensure it starts after current frame completes
+            requestAnimationFrame(() => {
+                this.chunkSystem.preloadChunkLODs(defaultCameraPos);
+            });
 
             // Cacher les meshes LOD traditionnels (seulement pour les chunks rocheux)
             if (this.surfaceLOD) {

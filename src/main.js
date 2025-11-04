@@ -131,7 +131,10 @@ let fpsController = {
   position: new THREE.Vector3(),
   rotation: new THREE.Euler(0, 0, 0, 'YXZ'),
   velocity: new THREE.Vector3(),
-  speed: 0.4, // Reduced by 5 (was 2.0)
+  speed: 0.4, // Base speed (will be scaled by distance to planet)
+  baseSpeed: 0.4, // Base speed reference
+  minSpeed: 0.05, // Minimum speed when very close to planet
+  maxSpeed: 0.8, // Maximum speed when far from planet
   accelerationMultiplier: 2.0,
   slowMultiplier: 0.3,
   dashBoost: 1.0,
@@ -153,8 +156,8 @@ function createShip() {
     return ship;
   }
   
-  // Create a triangular ship using a cone geometry (reduced size by 5)
-  const shipGeometry = new THREE.ConeGeometry(0.03, 0.06, 3);
+  // Create a triangular ship using a cone geometry (very small - reduced further for scale)
+  const shipGeometry = new THREE.ConeGeometry(0.01, 0.02, 3);
   
   // Create glowing blue material
   const shipMaterial = new THREE.MeshStandardMaterial({
@@ -169,7 +172,7 @@ function createShip() {
   ship.rotation.x = Math.PI / 2; // Rotate to point forward
   
   // Add glow effect with additional geometry
-  const glowGeometry = new THREE.ConeGeometry(0.036, 0.07, 3);
+  const glowGeometry = new THREE.ConeGeometry(0.012, 0.024, 3);
   const glowMaterial = new THREE.MeshBasicMaterial({
     color: 0x00aaff,
     transparent: true,
@@ -831,6 +834,7 @@ if (debugPanel) {
 //#endregion
 
 randomizeSeedButton?.addEventListener("click", () => {
+  // "New Planet Shape" should regenerate the planet with a new seed (same parameters, new shape)
   const nextSeed = generateSeed();
   params.seed = nextSeed;
   guiControllers.seed?.setValue?.(nextSeed);
@@ -854,6 +858,17 @@ surpriseMeButton?.addEventListener("click", () => {
     scheduleShareUpdate();
   } catch (e) {
     console.warn("Surprise Me failed:", e);
+  }
+});
+
+surpriseMeMobileButton?.addEventListener("click", () => {
+  try {
+    surpriseMe();
+    updateSeedDisplay();
+    updateGravityDisplay();
+    scheduleShareUpdate();
+  } catch (e) {
+    console.warn("Surprise Me (mobile) failed:", e);
   }
 });
 
@@ -1576,7 +1591,7 @@ function toggleFpsMode() {
       camera.rotation.copy(euler);
       
       const quaternion = new THREE.Quaternion().setFromEuler(euler);
-      const cameraOffset = new THREE.Vector3(0, 0.02, 0.04); // Reduced by 5
+      const cameraOffset = new THREE.Vector3(0, 0.005, 0.01); // Very small for scale
       cameraOffset.applyQuaternion(quaternion);
       camera.position.copy(fpsController.position).add(cameraOffset);
     }
@@ -1620,7 +1635,44 @@ function requestPointerLockOnClick() {
 
 // Update ship movement in FPS mode
 function updateShipMovement(delta) {
-  if (!ship || !isFpsMode) return;
+  if (!ship || !isFpsMode || !planet) return;
+  
+  // Get planet center for distance calculation
+  const planetCenter = new THREE.Vector3(0, 0, 0);
+  if (planet.planetRoot) {
+    planet.planetRoot.getWorldPosition(planetCenter);
+  }
+  
+  // Calculate distance from ship to planet center
+  const distanceToPlanet = fpsController.position.distanceTo(planetCenter);
+  const planetRadius = params.radius || 1.32;
+  
+  // Scale speed based on distance to planet - closer = slower (simulates scale)
+  // When very close (within 2x radius), slow down significantly
+  // When far (beyond 10x radius), use max speed
+  let distanceSpeedMultiplier = 1.0;
+  const closeDistance = planetRadius * 2.0; // Start slowing at 2x radius
+  const farDistance = planetRadius * 10.0; // Full speed beyond 10x radius
+  
+  if (distanceToPlanet < closeDistance) {
+    // Very close - slow down dramatically (scale factor: 0.1 to 0.5)
+    const closeFactor = distanceToPlanet / closeDistance; // 0 to 1 as we approach
+    distanceSpeedMultiplier = THREE.MathUtils.lerp(0.1, 0.5, closeFactor);
+  } else if (distanceToPlanet < farDistance) {
+    // Medium distance - interpolate between slow and fast
+    const t = (distanceToPlanet - closeDistance) / (farDistance - closeDistance);
+    distanceSpeedMultiplier = THREE.MathUtils.lerp(0.5, 1.0, t);
+  } else {
+    // Far away - full speed
+    distanceSpeedMultiplier = 1.0;
+  }
+  
+  // Apply distance-based speed scaling to base speed
+  fpsController.speed = THREE.MathUtils.lerp(
+    fpsController.minSpeed,
+    fpsController.maxSpeed,
+    distanceSpeedMultiplier
+  );
   
   // Calculate movement direction based on ship orientation
   const moveDirection = new THREE.Vector3();
@@ -1677,7 +1729,7 @@ function updateShipMovement(delta) {
     fpsController.dashCooldown -= delta;
   }
   
-  // Calculate velocity
+  // Calculate velocity (speed already scaled by distance)
   const targetVelocity = moveDirection.multiplyScalar(fpsController.speed * speedMultiplier);
   fpsController.velocity.lerp(targetVelocity, delta * 10); // Smooth acceleration
   
@@ -1687,8 +1739,8 @@ function updateShipMovement(delta) {
   // Update ship position
   ship.position.copy(fpsController.position);
   
-  // Update camera position (behind and slightly above ship) - reduced by 5
-  const cameraOffset = new THREE.Vector3(0, 0.02, 0.04);
+  // Update camera position (behind and slightly above ship) - very small for scale
+  const cameraOffset = new THREE.Vector3(0, 0.005, 0.01);
   cameraOffset.applyQuaternion(quaternion);
   camera.position.copy(fpsController.position).add(cameraOffset);
   
@@ -1822,14 +1874,11 @@ function setupMobilePanelToggle() {
     mobileRandomize?.addEventListener("click", () => {
       mobileMenu?.setAttribute("hidden", "");
       mobileMenuToggle?.setAttribute("aria-expanded", "false");
-      try {
-        surpriseMe();
-        updateSeedDisplay();
-        updateGravityDisplay();
-        scheduleShareUpdate();
-      } catch (e) {
-        console.warn("Surprise Me failed:", e);
-      }
+      // "New Planet Shape" should only change the seed (same as desktop randomize-seed button)
+      const nextSeed = generateSeed();
+      params.seed = nextSeed;
+      guiControllers.seed?.setValue?.(nextSeed);
+      handleSeedChanged();
     });
 
     mobileCopy?.addEventListener("click", () => {
