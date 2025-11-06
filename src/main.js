@@ -78,15 +78,6 @@ const previewMode = new URLSearchParams(window.location.search).get("preview") =
 if (previewMode) {
   document.body.classList.add("preview-mode");
 }
-const loadShareParam = new URLSearchParams(window.location.search).get("load");
-if (loadShareParam) {
-  try {
-    const cleaned = loadShareParam.trim();
-    if (cleaned.length) {
-      window.location.hash = `#${cleaned}`;
-    }
-  } catch {}
-}
 if (!sceneContainer) {
   throw new Error("Missing scene container element");
 }
@@ -497,7 +488,8 @@ const params = {
   impactStrengthMul: 2.5,
   impactSpeedMul: 1.2,
   impactMassMul: 2.0,
-  impactElongationMul: 1.6
+  impactElongationMul: 1.6,
+  gravity: 9.81
 };
 
 const presets = {
@@ -667,6 +659,7 @@ const {
   unregisterFolder,
   applyControlSearch,
   scheduleShareUpdate: () => { shareDirty = true; debounceShare(); },
+  markMoonsDirty: () => { planetDirty = true; }, // Moons are part of the planet
   getIsApplyingPreset: () => isApplyingPreset
 });
 
@@ -781,6 +774,10 @@ randomizeSeedButton?.addEventListener("click", () => {
   }
   
   handleSeedChanged();
+  // Clear saved ID and update URL with new share code
+  currentShareId = null;
+  currentHashIsApiId = false;
+  scheduleShareUpdate();
 });
 
 resetAllButton?.addEventListener("click", () => {
@@ -991,24 +988,31 @@ function applyVisualSettings() {
 
 //#region Initialization
 async function initFromHash() {
+  // Check both hash and query parameter for load ID
   const hash = window.location.hash.slice(1); // Remove the # symbol
-  if (!hash) return false;
+  const loadParam = new URLSearchParams(window.location.search).get("load");
+  const loadId = hash || loadParam;
   
-  try {
-    // Only try API if hash looks like a short saved ID (nanoid-like)
-    const isLikelyApiId = /^[A-Za-z0-9_-]{6,12}$/.test(hash);
-    currentHashIsApiId = isLikelyApiId;
-    if (isLikelyApiId) {
-      // Preserve hash URL and remember id, even if API fails
-      currentShareId = hash;
-      // Don't change URL format - keep hash for better reload handling
-      const configData = await loadConfigurationFromAPIExt(hash);
+  if (!loadId) return false;
+  
+  // Only try API if loadId looks like a short saved ID (nanoid-like)
+  const isLikelyApiId = /^[A-Za-z0-9_-]{6,12}$/.test(loadId);
+  currentHashIsApiId = isLikelyApiId;
+  
+  if (isLikelyApiId) {
+    // Preserve hash URL and remember id, even if API fails
+    currentShareId = loadId;
+    // Don't change URL format - keep hash for better reload handling
+    try {
+      const configData = await loadConfigurationFromAPIExt(loadId);
       if (configData && configData.data) {
-        currentShareId = configData.id || hash;
+        currentShareId = configData.id || loadId;
         // Apply the loaded configuration
         const prevType = params.planetType;
+        const prevSeed = params.seed;
         const data = configData.data || {};
         Object.keys(data).forEach(k => { params[k] = data[k]; });
+        
         // Guard against GUI onChange side-effects while syncing controls
         isApplyingPreset = true;
         try {
@@ -1019,7 +1023,14 @@ async function initFromHash() {
           }
           if (sun) sun.updateSun();
           updateSeedDisplay();
+          updateGravityDisplay();
+          syncMoonSettings();
           if (prevType !== params.planetType) {
+            markPlanetDirty();
+          }
+          // If seed changed, regenerate starfield and mark planet dirty
+          if (prevSeed !== params.seed) {
+            regenerateStarfield();
             markPlanetDirty();
           }
           
@@ -1038,20 +1049,40 @@ async function initFromHash() {
         } catch {}
         return true;
       }
+    } catch (apiError) {
+      // Only log API errors if they're not "not found" errors
+      if (!apiError.message || !apiError.message.includes('Configuration not found')) {
+        console.warn('Failed to load configuration from API:', apiError);
+      }
+      // Fall through to try decoding as share code
     }
-  } catch (error) {
-    // Only log API errors if they're not "not found" errors
-    if (!error.message.includes('Configuration not found')) {
-      console.warn('Failed to load configuration from API:', error);
-    }
-    
-    // Fallback: try to decode as direct share code
-    try {
-      const decoded = decodeShareExt(hash);
+  }
+  
+  // Fallback: try to decode as direct share code (for both API failures and non-API hashes)
+  try {
+    const decoded = decodeShareExt(loadId);
       if (decoded) {
         const loadedData = decoded?.data ?? decoded;
         const prevType = params.planetType;
-        // Moons removed - no longer supported
+        const prevSeed = params.seed;
+        
+        // Handle moons if present
+        let moonsFromShare = null;
+        if (Array.isArray(decoded?.moons)) {
+          moonsFromShare = decoded.moons.map((m) => ({ ...m }));
+        }
+        if (!moonsFromShare && Array.isArray(loadedData?.moons)) {
+          moonsFromShare = loadedData.moons.map((m) => ({ ...m }));
+          delete loadedData.moons;
+        }
+        if (moonsFromShare) {
+          moonSettings.splice(0, moonSettings.length, ...moonsFromShare.map((m) => ({ ...m })));
+          params.moonCount = moonsFromShare.length;
+          if (loadedData && typeof loadedData === "object") {
+            loadedData.moonCount = moonsFromShare.length;
+          }
+        }
+        
         Object.keys(loadedData || {}).forEach(k => { params[k] = loadedData[k]; });
         
         isApplyingPreset = true;
@@ -1063,7 +1094,14 @@ async function initFromHash() {
           }
           if (sun) sun.updateSun();
           updateSeedDisplay();
+          updateGravityDisplay();
+          syncMoonSettings();
           if (prevType !== params.planetType) {
+            markPlanetDirty();
+          }
+          // If seed changed, regenerate starfield and mark planet dirty
+          if (prevSeed !== params.seed) {
+            regenerateStarfield();
             markPlanetDirty();
           }
           
@@ -1081,19 +1119,19 @@ async function initFromHash() {
           if (currentHashIsApiId && currentShareId) {
             history.replaceState(null, "", `#${currentShareId}`);
           } else {
-            const encoded = encodeShare({ version: 1, preset: params.preset, data: loadedData });
+            const encoded = encodeShare({ version: SHARE_VERSION || 1, preset: params.preset, data: loadedData });
             history.replaceState(null, "", `#${encoded}`);
           }
         } catch {}
         return true;
       }
-    } catch (decodeError) {
-      console.warn('Failed to decode share code:', decodeError);
-    }
-    // If we got here and hash looked like an API id, keep short URL and skip default preset
-    if (currentHashIsApiId) {
-      return true;
-    }
+  } catch (decodeError) {
+    console.warn('Failed to decode share code:', decodeError);
+  }
+  
+  // If we got here and hash looked like an API id, keep short URL and skip default preset
+  if (currentHashIsApiId) {
+    return true;
   }
   
   return false;
@@ -1345,7 +1383,12 @@ function updateSeedDisplay() {
 }
   
 function updateGravityDisplay() {
-    if (gravityDisplay) gravityDisplay.textContent = `${params.gravity.toFixed(2)} m/s^2`;
+    if (gravityDisplay) {
+      const gravity = typeof params.gravity === 'number' && !Number.isNaN(params.gravity) 
+        ? params.gravity 
+        : 9.81; // Default to Earth gravity
+      gravityDisplay.textContent = `${gravity.toFixed(2)} m/s^2`;
+    }
 }
 
 function updateStabilityDisplay(boundCount, totalCount) {
@@ -1816,6 +1859,10 @@ function setupMobilePanelToggle() {
       }
       
       handleSeedChanged();
+      // Clear saved ID and update URL with new share code
+      currentShareId = null;
+      currentHashIsApiId = false;
+      scheduleShareUpdate();
     });
 
     mobileCopy?.addEventListener("click", () => {
@@ -2619,6 +2666,12 @@ function surpriseMe() {
     
     // Update seed display
     updateSeedDisplay();
+    
+    // Clear saved ID and update URL with new share code
+    currentShareId = null;
+    currentHashIsApiId = false;
+    handleSeedChanged();
+    scheduleShareUpdate();
     
     return;
     
