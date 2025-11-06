@@ -280,7 +280,6 @@ export const gasPlanetVertexShader = `
 
     uniform float uTime;
     uniform float uTurbulence;
-    uniform float uGasPlanetSize;
 
     varying vec3 vNormal;
     varying vec3 vPosition;
@@ -301,7 +300,7 @@ export const gasPlanetVertexShader = `
         vec3 displacedPosition = pos + normal * turbulence;
         
         vPosition = (modelMatrix * vec4(displacedPosition, 1.0)).xyz;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(displacedPosition * uGasPlanetSize, 1.0);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(displacedPosition, 1.0);
     }
 `;
 
@@ -331,45 +330,49 @@ export const gasPlanetFragmentShader = `
         vec3 lightDir = normalize(uSunDirection);
         vec3 viewDir = normalize(cameraPosition - vPosition);
         
-        // Get latitude for horizontal stripes (normalized to [0, 1])
-        float lat = (vLatitude + 1.0) * 0.5; // Normalize from [-1,1] to [0,1]
+        // Normalize local position to get unit sphere coordinates
+        vec3 pos = normalize(vLocalPos);
         
-        // Calculate longitude for seamless wrapping around the planet
-        float longitude = atan(vLocalPos.z, vLocalPos.x) / 3.14159; // [-1, 1]
-        longitude = (longitude + 1.0) * 0.5; // Normalize to [0, 1]
+        // Get latitude for horizontal stripes (normalized to [0, 1])
+        float lat = (pos.y + 1.0) * 0.5; // Normalize from [-1,1] to [0,1]
+        
+        // Calculate longitude using atan2 for proper wrapping (range: -π to π)
+        // Then normalize to [0, 2π] for seamless wrapping
+        float longitude = atan(pos.z, pos.x); // Range: [-π, π]
+        float lonWrapped = longitude + 3.14159; // Range: [0, 2π]
         
         // Wrap time for seamless looping using fract
-        // Scale time so one full cycle = 1.0
         float timeScale = uStripeSpeed * 0.5;
         float wrappedTime = fract(uTime * timeScale);
         
-        // Create animated stripe pattern with seamless longitude wrapping
-        // Use longitude that wraps from 0 to 2π for seamless noise
-        float lonWrapped = longitude * 2.0 * 3.14159; // 0 to 2π
+        // Use spherical coordinates for noise that naturally wrap
+        // Convert to 3D coordinates on unit sphere for seamless noise sampling
+        float latRad = (lat - 0.5) * 3.14159; // Latitude in radians: [-π/2, π/2]
+        float cosLat = cos(latRad);
         
-        // Create noise coordinates that wrap seamlessly around longitude
+        // Create noise coordinates using spherical coordinates that wrap seamlessly
+        // The key is to use cos/sin of longitude which naturally wraps
         vec3 noiseCoord = vec3(
-            lonWrapped + wrappedTime * 2.0,  // Wraps seamlessly at 2π
-            lat * uStripeFrequency * 2.0 + wrappedTime * uStripeFrequency * 2.0,
-            wrappedTime * 5.0  // Time component
+            cos(lonWrapped) * cosLat * 2.0 + wrappedTime * 0.5,
+            sin(lonWrapped) * cosLat * 2.0 + wrappedTime * 0.5,
+            sin(latRad) * 2.0 + wrappedTime * 0.3
         );
         
-        // Multi-octave noise for complex patterns - all using wrapped longitude
+        // Multi-octave noise for complex patterns - using wrapped coordinates
         float n1 = snoise(noiseCoord);
         float n2 = snoise(noiseCoord * 2.0 + vec3(100.0)) * 0.5;
         float n3 = snoise(noiseCoord * 4.0 + vec3(200.0)) * 0.25;
         float turbulenceNoise = (n1 + n2 + n3) * uTurbulence;
         
         // Base stripe pattern (horizontal bands) - seamless loop
-        // sin() naturally repeats every 2π, so the pattern will loop seamlessly
         float stripePhase = (lat + wrappedTime) * uStripeFrequency * 2.0 * 3.14159;
         float stripe = sin(stripePhase + turbulenceNoise * 2.0);
         
         // Add vertical swirls using longitude-based noise - ensure seamless wrapping
         vec3 swirlCoord = vec3(
-            lonWrapped + wrappedTime * 1.0,  // Wraps seamlessly
-            lat * 3.0,
-            wrappedTime * 5.0
+            cos(lonWrapped) * cosLat * 3.0 + wrappedTime * 0.3,
+            sin(lonWrapped) * cosLat * 3.0 + wrappedTime * 0.3,
+            sin(latRad) * 3.0 + wrappedTime * 0.2
         );
         float swirl = snoise(swirlCoord) * 0.3;
         
@@ -396,11 +399,17 @@ export const gasPlanetFragmentShader = `
             color = mix(uColor5, uColor1, (pattern - 0.8) / 0.2);
         }
         
-        // Add subtle color variation from noise
+        // Add subtle color variation from noise using wrapped coordinates
+        // Use the same spherical coordinate approach for seamless wrapping
+        vec3 colorNoiseCoord = vec3(
+            cos(lonWrapped) * cosLat * 3.0 + uTime * 0.1,
+            sin(lonWrapped) * cosLat * 3.0 + uTime * 0.1,
+            sin(latRad) * 3.0 + uTime * 0.05
+        );
         vec3 colorNoise = vec3(
-            snoise(vLocalPos * 3.0 + vec3(0.0, uTime * 0.1, 0.0)),
-            snoise(vLocalPos * 3.0 + vec3(100.0, uTime * 0.1, 0.0)),
-            snoise(vLocalPos * 3.0 + vec3(200.0, uTime * 0.1, 0.0))
+            snoise(colorNoiseCoord),
+            snoise(colorNoiseCoord + vec3(100.0)),
+            snoise(colorNoiseCoord + vec3(200.0))
         ) * 0.1;
         color += colorNoise;
         

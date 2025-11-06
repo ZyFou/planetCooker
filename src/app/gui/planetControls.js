@@ -363,18 +363,92 @@ export function setupPlanetControls({
     
     // Helper function to add color with lock
     function addColorWithLock(folder, paramName, label, onChange) {
-        const lockObj = { locked: params.locks[paramName] };
-        const lockCtrl = folder.add(lockObj, 'locked').name('🔒').onChange(v => {
-            params.locks[paramName] = v;
-            lockCtrl.name(v ? '🔒' : '🔓');
-        });
-        lockCtrl.name(params.locks[paramName] ? '🔒' : '🔓');
-        
+        // Create color controller first
         const colorCtrl = folder.addColor(params, paramName).name(label).onChange(v => {
             if (onChange) onChange(v);
             if (guiControllers.planet) guiControllers.planet.applyParams({ [paramName]: v });
             if (scheduleShareUpdate) scheduleShareUpdate();
         });
+        
+        // Get the color controller's DOM element
+        const colorElement = colorCtrl.domElement;
+        
+        // Create lock object
+        const lockObj = { locked: params.locks[paramName] };
+        const lockCtrl = folder.add(lockObj, 'locked').name('🔒').onChange(v => {
+            params.locks[paramName] = v;
+        });
+        lockCtrl.name(params.locks[paramName] ? '🔒' : '🔓');
+        
+        // Get the lock controller's DOM element
+        const lockElement = lockCtrl.domElement;
+        
+        // Function to update lock icon
+        const updateLockIcon = (btn, isLocked) => {
+            btn.textContent = isLocked ? '🔒' : '🔓';
+            btn.title = isLocked ? 'Unlock' : 'Lock';
+            btn.style.color = isLocked ? 'rgba(255, 100, 100, 0.9)' : 'rgba(169, 195, 237, 0.75)';
+            btn.style.opacity = isLocked ? '1' : '0.7';
+        };
+        
+        // Create a lock button element (just emoji, no container)
+        const lockButton = document.createElement('button');
+        lockButton.type = 'button';
+        lockButton.className = 'lock-toggle';
+        lockButton.style.cssText = `
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 0.9em;
+            padding: 0;
+            margin: 0;
+            width: auto;
+            height: auto;
+            line-height: 1;
+            color: rgba(169, 195, 237, 0.75);
+            transition: color 0.2s, transform 0.1s;
+            outline: none;
+            flex-shrink: 0;
+            display: inline-block;
+        `;
+        updateLockIcon(lockButton, params.locks[paramName]);
+        
+        // Add click handler
+        lockButton.addEventListener('click', () => {
+            lockObj.locked = !lockObj.locked;
+            params.locks[paramName] = lockObj.locked;
+            updateLockIcon(lockButton, lockObj.locked);
+            if (lockCtrl.object) {
+                lockCtrl.object.locked = lockObj.locked;
+            }
+            lockCtrl.name(lockObj.locked ? '🔒' : '🔓');
+        });
+        
+        // Find the widget container in the color element
+        const colorWidget = colorElement.querySelector('.widget');
+        if (colorWidget) {
+            // Find the color input/swatch
+            const colorInput = colorWidget.querySelector('input[type="text"]') || colorWidget.querySelector('canvas');
+            if (colorInput && colorInput.parentElement) {
+                // Insert lock button after the color input
+                colorInput.parentElement.insertBefore(lockButton, colorInput.nextSibling);
+                // Ensure the widget uses flexbox
+                if (!colorWidget.style.display) {
+                    colorWidget.style.display = 'flex';
+                    colorWidget.style.alignItems = 'center';
+                    colorWidget.style.gap = '4px';
+                }
+            } else {
+                // Fallback: append to widget
+                colorWidget.appendChild(lockButton);
+                colorWidget.style.display = 'flex';
+                colorWidget.style.alignItems = 'center';
+                colorWidget.style.gap = '4px';
+            }
+        }
+        
+        // Hide the original lock controller
+        lockElement.style.display = 'none';
         
         return { color: colorCtrl, lock: lockCtrl };
     }

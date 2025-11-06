@@ -64,7 +64,6 @@ export class Planet {
             uStripeFrequency: { value: params.gasStripeFrequency ?? 3.0 },
             uStripeSharpness: { value: params.gasStripeSharpness ?? 2.0 },
             uTurbulence: { value: params.gasTurbulence ?? 0.75 },
-            uGasPlanetSize: { value: params.gasPlanetSize ?? 1.0 },
             uColor1: { value: new THREE.Color(params.gasColor1 ?? "#d4a574") },
             uColor2: { value: new THREE.Color(params.gasColor2 ?? "#8b6f47") },
             uColor3: { value: new THREE.Color(params.gasColor3 ?? "#ffd4a3") },
@@ -138,17 +137,87 @@ export class Planet {
         canvas.height = 512;
         const ctx = canvas.getContext('2d');
         
-        // Simple cloud generation as in planet.html
+        // Generate seamless cloud texture
         ctx.fillStyle = 'black';
         ctx.fillRect(0, 0, 1024, 512);
+        
+        // Use a seed for consistent random generation
+        let seed = 12345;
+        const random = () => {
+            seed = (seed * 9301 + 49297) % 233280;
+            return seed / 233280;
+        };
+        
+        // Generate clouds with blur
         ctx.filter = 'blur(30px)';
         ctx.fillStyle = 'rgba(255,255,255,0.4)';
+        
+        // Generate clouds, ensuring seamless wrapping
+        // Store cloud positions to duplicate near edges
+        const clouds = [];
         for (let i = 0; i < 100; i++) {
+            const x = random() * 1024;
+            const y = random() * 512;
+            const radius = random() * 50 + 20;
+            clouds.push({ x, y, radius });
+            
             ctx.beginPath();
-            ctx.arc(Math.random() * 1024, Math.random() * 512, Math.random() * 50 + 20, 0, Math.PI * 2);
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
             ctx.fill();
         }
+        
+        // Duplicate clouds near the edges to ensure seamless wrapping
+        // Clouds within 100px of the right edge should also appear on the left
+        for (const cloud of clouds) {
+            if (cloud.x > 1024 - 100) {
+                // Draw on left side (wrapped)
+                ctx.beginPath();
+                ctx.arc(cloud.x - 1024, cloud.y, cloud.radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            if (cloud.x < 100) {
+                // Draw on right side (wrapped)
+                ctx.beginPath();
+                ctx.arc(cloud.x + 1024, cloud.y, cloud.radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        
         ctx.filter = 'none';
+        
+        // Get image data to ensure seamless wrapping
+        const imageData = ctx.getImageData(0, 0, 1024, 512);
+        const data = imageData.data;
+        const edgeBlendWidth = 30; // Pixels to blend at the seam
+        
+        // Make the texture seamless by blending the left and right edges
+        for (let y = 0; y < 512; y++) {
+            for (let x = 0; x < edgeBlendWidth; x++) {
+                // Left edge pixel (from left side)
+                const leftIdx = (y * 1024 + x) * 4;
+                // Right edge pixel (from right side, matching position)
+                const rightIdx = (y * 1024 + (1024 - 1 - x)) * 4;
+                
+                // Average the left and right edge pixels for seamless blending
+                const avgR = (data[leftIdx] + data[rightIdx]) * 0.5;
+                const avgG = (data[leftIdx + 1] + data[rightIdx + 1]) * 0.5;
+                const avgB = (data[leftIdx + 2] + data[rightIdx + 2]) * 0.5;
+                const avgA = (data[leftIdx + 3] + data[rightIdx + 3]) * 0.5;
+                
+                // Apply blended values to both edges
+                data[leftIdx] = avgR;
+                data[leftIdx + 1] = avgG;
+                data[leftIdx + 2] = avgB;
+                data[leftIdx + 3] = avgA;
+                
+                data[rightIdx] = avgR;
+                data[rightIdx + 1] = avgG;
+                data[rightIdx + 2] = avgB;
+                data[rightIdx + 3] = avgA;
+            }
+        }
+        
+        ctx.putImageData(imageData, 0, 0);
 
         const texture = new THREE.CanvasTexture(canvas);
         texture.wrapS = THREE.RepeatWrapping;
@@ -203,7 +272,7 @@ export class Planet {
             if (newParams.gasStripeFrequency !== undefined) this.gasUniforms.uStripeFrequency.value = newParams.gasStripeFrequency;
             if (newParams.gasStripeSharpness !== undefined) this.gasUniforms.uStripeSharpness.value = newParams.gasStripeSharpness;
             if (newParams.gasTurbulence !== undefined) this.gasUniforms.uTurbulence.value = newParams.gasTurbulence;
-            if (newParams.gasPlanetSize !== undefined) this.gasUniforms.uGasPlanetSize.value = newParams.gasPlanetSize;
+            // gasPlanetSize is handled by mesh scale, not shader uniform
             if (newParams.gasColor1) this.gasUniforms.uColor1.value.set(newParams.gasColor1);
             if (newParams.gasColor2) this.gasUniforms.uColor2.value.set(newParams.gasColor2);
             if (newParams.gasColor3) this.gasUniforms.uColor3.value.set(newParams.gasColor3);
@@ -425,3 +494,4 @@ export class Planet {
     }
 
 }
+

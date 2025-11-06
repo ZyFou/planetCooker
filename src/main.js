@@ -106,7 +106,7 @@ sceneContainer.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x05070f);
 
-const camera = new THREE.PerspectiveCamera(55, sceneContainer.clientWidth / sceneContainer.clientHeight, 0.1, 500);
+const camera = new THREE.PerspectiveCamera(55, sceneContainer.clientWidth / sceneContainer.clientHeight, 0.01, 50); // Clipping divided by 10
 camera.position.set(0, 2.4, 8.5);
 
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -132,10 +132,10 @@ let fpsController = {
   position: new THREE.Vector3(),
   rotation: new THREE.Euler(0, 0, 0, 'YXZ'),
   velocity: new THREE.Vector3(),
-  speed: 0.4, // Base speed (will be scaled by distance to planet)
-  baseSpeed: 0.4, // Base speed reference
-  minSpeed: 0.05, // Minimum speed when very close to planet
-  maxSpeed: 0.8, // Maximum speed when far from planet
+  speed: 0.04, // Base speed (divided by 10)
+  baseSpeed: 0.04, // Base speed reference (divided by 10)
+  minSpeed: 0.005, // Minimum speed when very close to planet (divided by 10)
+  maxSpeed: 0.08, // Maximum speed when far from planet (divided by 10)
   accelerationMultiplier: 2.0,
   slowMultiplier: 0.3,
   dashBoost: 1.0,
@@ -157,8 +157,8 @@ function createShip() {
     return ship;
   }
   
-  // Create a triangular ship using a cone geometry (very small - reduced further for scale)
-  const shipGeometry = new THREE.ConeGeometry(0.01, 0.02, 3);
+  // Create a triangular ship using a cone geometry (very small - divided by 10)
+  const shipGeometry = new THREE.ConeGeometry(0.001, 0.002, 3);
   
   // Create glowing blue material
   const shipMaterial = new THREE.MeshStandardMaterial({
@@ -172,8 +172,8 @@ function createShip() {
   ship = new THREE.Mesh(shipGeometry, shipMaterial);
   ship.rotation.x = Math.PI / 2; // Rotate to point forward
   
-  // Add glow effect with additional geometry
-  const glowGeometry = new THREE.ConeGeometry(0.012, 0.024, 3);
+  // Add glow effect with additional geometry (divided by 10)
+  const glowGeometry = new THREE.ConeGeometry(0.0012, 0.0024, 3);
   const glowMaterial = new THREE.MeshBasicMaterial({
     color: 0x00aaff,
     transparent: true,
@@ -1014,15 +1014,12 @@ async function initFromHash() {
         isApplyingPreset = true;
         try {
           // Update all the UI elements and regenerate the planet
-          planet.updatePalette();
-          planet.updateClouds();
-          planet.updateCore();
-          sun.updateSun();
-          planet.updateRings();
-          planet.updateTilt();
+          if (planet) {
+            planet.setPlanetType(params.planetType || 'earth');
+            planet.applyParams(params);
+          }
+          if (sun) sun.updateSun();
           updateSeedDisplay();
-          updateGravityDisplay();
-          syncMoonSettings();
           if (prevType !== params.planetType) {
             markPlanetDirty();
           }
@@ -1055,27 +1052,18 @@ async function initFromHash() {
       if (decoded) {
         const loadedData = decoded?.data ?? decoded;
         const prevType = params.planetType;
-        // Apply moons if present
-        if (Array.isArray(decoded?.moons)) {
-          try {
-            moonSettings.splice(0, moonSettings.length, ...decoded.moons.map(m => ({ ...m })));
-            params.moonCount = decoded.moons.length;
-          } catch {}
-        }
+        // Moons removed - no longer supported
         Object.keys(loadedData || {}).forEach(k => { params[k] = loadedData[k]; });
         
         isApplyingPreset = true;
         try {
           // Update all the UI elements and regenerate the planet
-          planet.updatePalette();
-          planet.updateClouds();
-          planet.updateCore();
-          sun.updateSun();
-          planet.updateRings();
-          planet.updateTilt();
+          if (planet) {
+            planet.setPlanetType(params.planetType || 'earth');
+            planet.applyParams(params);
+          }
+          if (sun) sun.updateSun();
           updateSeedDisplay();
-          updateGravityDisplay();
-          syncMoonSettings();
           if (prevType !== params.planetType) {
             markPlanetDirty();
           }
@@ -1094,7 +1082,7 @@ async function initFromHash() {
           if (currentHashIsApiId && currentShareId) {
             history.replaceState(null, "", `#${currentShareId}`);
           } else {
-            const encoded = encodeShare({ version: 1, preset: params.preset, data: loadedData, moons: moonSettings.slice(0, params.moonCount) });
+            const encoded = encodeShare({ version: 1, preset: params.preset, data: loadedData });
             history.replaceState(null, "", `#${encoded}`);
           }
         } catch {}
@@ -1506,7 +1494,7 @@ function toggleFpsMode() {
       camera.rotation.copy(euler);
       
       const quaternion = new THREE.Quaternion().setFromEuler(euler);
-      const cameraOffset = new THREE.Vector3(0, 0.005, 0.01); // Very small for scale
+      const cameraOffset = new THREE.Vector3(0, 0.0005, 0.001); // Very small for scale (divided by 10)
       cameraOffset.applyQuaternion(quaternion);
       camera.position.copy(fpsController.position).add(cameraOffset);
     }
@@ -1987,12 +1975,12 @@ function setupMobilePanelToggle() {
         // Apply
         isApplyingPreset = true;
         try {
-          planet.updatePalette();
-          planet.updateClouds();
-          planet.updateCore();
-          sun.updateSun();
-          planet.updateRings();
-          planet.updateTilt();
+          // Update all the UI elements and regenerate the planet
+          if (planet) {
+            planet.setPlanetType(params.planetType || 'earth');
+            planet.applyParams(params);
+          }
+          if (sun) sun.updateSun();
           updateSeedDisplay();
           updateGravityDisplay();
           syncMoonSettings();
@@ -2091,12 +2079,8 @@ function buildSharePayload() {
       }));
       data.ringCount = params.ringCount ?? params.rings.length;
     }
-    const moons = moonSettings.slice(0, params.moonCount).map((moon) => ({
-      size: moon.size, distance: moon.distance, orbitSpeed: moon.orbitSpeed,
-      inclination: moon.inclination, color: moon.color, phase: moon.phase,
-      eccentricity: moon.eccentricity
-    }));
-    return { version: 1, preset: params.preset, data, moons };
+    // Moons removed - no longer supported
+    return { version: 1, preset: params.preset, data };
 }
 
 function encodeShare(payload) { return encodeShareExt(payload); }
