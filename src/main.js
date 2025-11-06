@@ -1949,29 +1949,57 @@ function setupMobilePanelToggle() {
     // Import share handlers
     importShareLoad?.addEventListener("click", async () => {
       const code = (importShareInput?.value || '').trim();
-      if (!code) return;
+      if (!code) {
+        showNotification('Please enter a share code', 'error');
+        return;
+      }
       try {
+        let loadedData = null;
+        let loadedFromAPI = false;
+        
         // Try API if code looks like an ID, else decode locally
         const isLikelyApiId = /^[A-Za-z0-9_-]{6,12}$/.test(code);
         if (isLikelyApiId) {
-          const cfg = await loadConfigurationFromAPIExt(code);
-          if (cfg?.data) {
-          const prevType = params.planetType;
-          const data = cfg.data || {};
-          Object.keys(data).forEach(k => { params[k] = data[k]; });
-            if (prevType !== params.planetType) markPlanetDirty();
+          try {
+            const cfg = await loadConfigurationFromAPIExt(code);
+            if (cfg?.data) {
+              loadedData = cfg.data;
+              loadedFromAPI = true;
+              currentShareId = cfg.id || code;
+              currentHashIsApiId = true;
+            } else {
+              throw new Error('No data in API response');
+            }
+          } catch (apiError) {
+            console.warn('API load failed, trying as local code:', apiError);
+            // Fall through to try as local code
           }
-        } else {
-          const decoded = decodeShareExt(code);
-          const loadedData = decoded?.data ?? decoded;
-          if (Array.isArray(decoded?.moons)) {
-            moonSettings.splice(0, moonSettings.length, ...decoded.moons.map(m => ({ ...m })));
-            params.moonCount = decoded.moons.length;
-          }
-          const prevType = params.planetType;
-          Object.keys(loadedData || {}).forEach(k => { params[k] = loadedData[k]; });
-          if (prevType !== params.planetType) markPlanetDirty();
         }
+        
+        // If not loaded from API, try as local share code
+        if (!loadedData) {
+          try {
+            const decoded = decodeShareExt(code);
+            loadedData = decoded?.data ?? decoded;
+            if (!loadedData) {
+              throw new Error('Invalid share code format');
+            }
+            if (Array.isArray(decoded?.moons)) {
+              moonSettings.splice(0, moonSettings.length, ...decoded.moons.map(m => ({ ...m })));
+              params.moonCount = decoded.moons.length;
+            }
+            currentShareId = null;
+            currentHashIsApiId = false;
+          } catch (decodeError) {
+            throw new Error('Invalid share code. Please check the code and try again.');
+          }
+        }
+        
+        // Apply the loaded configuration
+        const prevType = params.planetType;
+        Object.keys(loadedData || {}).forEach(k => { params[k] = loadedData[k]; });
+        if (prevType !== params.planetType) markPlanetDirty();
+        
         // Apply
         isApplyingPreset = true;
         try {
@@ -1992,11 +2020,27 @@ function setupMobilePanelToggle() {
         } finally {
           isApplyingPreset = false;
         }
+        
+        // Update URL
+        try {
+          if (currentShareId && currentHashIsApiId) {
+            window.history.replaceState({}, '', `#${currentShareId}`);
+          } else {
+            const encoded = encodeShare({ version: 1, preset: params.preset, data: loadedData });
+            window.history.replaceState({}, '', `#${encoded}`);
+          }
+        } catch {}
+        
         scheduleShareUpdate();
-        showNotification('Configuration loaded');
+        const source = loadedFromAPI ? 'API' : 'local code';
+        showNotification(`✅ Planet loaded from ${source}!`);
+        
+        // Clear input
+        if (importShareInput) importShareInput.value = '';
       } catch (e) {
-        console.warn('Import failed:', e);
-        showNotification('Failed to load configuration', 'error');
+        console.error('Import failed:', e);
+        const errorMsg = e.message || 'Failed to load configuration';
+        showNotification(errorMsg, 'error');
       }
     });
 
@@ -2048,17 +2092,25 @@ function scheduleShareUpdate() {
 function updateShareCode() {
     const payload = buildSharePayload();
     const encoded = encodeShare(payload);
-    const formatted = chunkCode(encoded, 5).join(" ");
 
     if (shareDisplay) {
-      shareDisplay.textContent = formatted;
-      shareDisplay.dataset.code = encoded;
-      shareDisplay.title = `Local code - Click \"Copy Share Code\" to save to API`;
+      if (currentShareId && currentHashIsApiId) {
+        // Show API ID (short code)
+        shareDisplay.textContent = currentShareId;
+        shareDisplay.dataset.code = currentShareId;
+        shareDisplay.title = `Saved! API code - Click \"Copy Share Code\" to copy\n${currentShareId}`;
+      } else {
+        // Show local code (formatted)
+        const formatted = chunkCode(encoded, 5).join(" ");
+        shareDisplay.textContent = formatted;
+        shareDisplay.dataset.code = encoded;
+        shareDisplay.title = `Local code - Click \"Copy Share Code\" to save to API\n${encoded}`;
+      }
     }
 
     // Keep hash format for better reload handling
     try {
-      if (currentShareId) {
+      if (currentShareId && currentHashIsApiId) {
         history.replaceState(null, "", `#${currentShareId}`);
       } else {
         history.replaceState(null, "", `#${encoded}`);
@@ -2097,36 +2149,48 @@ async function copyShareCode() {
       if (result && result.id) {
         // Update URL with API ID in hash format
         currentShareId = result.id;
+        currentHashIsApiId = true;
         try { window.history.replaceState({}, '', `#${result.id}`); } catch {}
         if (shareDisplay) {
           shareDisplay.textContent = result.id;
-          shareDisplay.title = `API code - Click to copy\n${result.id}`;
+          shareDisplay.title = `Saved! API code - Click to copy\n${result.id}`;
+          shareDisplay.dataset.code = result.id;
         }
         
         // Copy to clipboard
         await navigator.clipboard.writeText(result.id);
-        showNotification("Planet saved to API and copied to clipboard!");
+        showNotification("✅ Planet saved! Code copied to clipboard.");
+        scheduleShareUpdate();
         return;
       }
     } catch (apiError) {
       console.warn("Failed to save to API, using local code:", apiError);
+      // Show a warning but still proceed with local code
+      const errorMsg = apiError.message || 'API unavailable';
+      console.warn("API save failed:", errorMsg);
     }
     
-    // Fallback to local code
-    window.history.replaceState({}, '', `#${shareCode}`);
+    // Fallback to local code (always works, even if API fails)
     currentShareId = null;
+    currentHashIsApiId = false;
+    try { 
+      window.history.replaceState({}, '', `#${shareCode}`);
+    } catch {}
+    
     if (shareDisplay) {
-      shareDisplay.textContent = shareCode;
-      shareDisplay.title = `Local code - Click to copy\n${shareCode}`;
+      shareDisplay.textContent = chunkCode(shareCode, 5).join(" ");
+      shareDisplay.title = `Local code (works offline) - Click to copy\n${shareCode}`;
+      shareDisplay.dataset.code = shareCode;
     }
     
     // Copy to clipboard
     await navigator.clipboard.writeText(shareCode);
-    showNotification("Share code copied to clipboard!");
+    showNotification("Share code copied to clipboard! (Local code - works offline)");
+    scheduleShareUpdate();
     
   } catch (error) {
     console.error("Failed to copy share code:", error);
-    showNotification("Failed to copy share code", "error");
+    showNotification("Failed to copy share code: " + (error.message || "Unknown error"), "error");
   }
 }
 
