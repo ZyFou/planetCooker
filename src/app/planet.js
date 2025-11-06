@@ -29,6 +29,11 @@ export class Planet {
         this.ringMeshes = [];
         this.ringTextures = [];
         
+        // Create groups for moons
+        this.moonsGroup = new THREE.Group();
+        this.planetRoot.add(this.moonsGroup);
+        this.orbitLinesGroup = new THREE.Group();
+        this.scene.add(this.orbitLinesGroup);
 
         // Initialize default sun direction (will be updated from spotlight)
         this.sunDirection = new THREE.Vector3(1.0, 0.5, 1.0).normalize();
