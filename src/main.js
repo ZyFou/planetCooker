@@ -1655,8 +1655,16 @@ function enterWalkMode(hit, rayDirection) {
   }
   tempVec3.normalize();
 
-  const surfaceRadius = getEffectivePlanetRadius() + walkController.eyeHeight;
-  walkController.position.copy(planetCenter).addScaledVector(tempVec3, surfaceRadius);
+  // Get terrain height at the hit point
+  const baseRadius = getEffectivePlanetRadius();
+  const planetRotation = planet.spinGroup ? planet.spinGroup.rotation.y : 0;
+  const rotationQuat = tempQuat1.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -planetRotation);
+  const localUpForTerrain = tempVec4.copy(tempVec3).applyQuaternion(rotationQuat);
+  const terrainDisplacement = getTerrainHeightAtPosition([localUpForTerrain.x, localUpForTerrain.y, localUpForTerrain.z]);
+  const surfaceRadius = baseRadius + terrainDisplacement;
+  const desiredRadius = surfaceRadius + walkController.eyeHeight;
+  
+  walkController.position.copy(planetCenter).addScaledVector(tempVec3, desiredRadius);
   walkController.velocity.set(0, 0, 0);
   walkController.up.copy(tempVec3);
   walkController.onGround = true;
@@ -2160,10 +2168,15 @@ function updateWalkMovement(delta) {
   const correctedTerrainDisplacement = getTerrainHeightAtPosition([correctedLocalUp.x, correctedLocalUp.y, correctedLocalUp.z]);
   const correctedSurfaceRadius = baseRadius + correctedTerrainDisplacement;
   const correctedDesiredRadius = correctedSurfaceRadius + walkController.eyeHeight;
+  
+  // Add a safety margin to prevent glitching (larger margin for stability)
+  const safetyMargin = 0.002;
+  const minRadius = correctedDesiredRadius + safetyMargin;
 
-  if (correctedDistance < correctedDesiredRadius) {
-    // Push up to terrain surface
-    currentLocalPos.setLength(correctedDesiredRadius);
+  // Always ensure player is at least at the minimum radius (prevents glitching)
+  if (correctedDistance < minRadius) {
+    // Push up to terrain surface (with safety margin)
+    currentLocalPos.setLength(minRadius);
     // Transform back to world space
     const worldPos = tempVec4.copy(currentLocalPos).applyQuaternion(invRotationQuat);
     walkController.position.copy(planetCenter).add(worldPos);
@@ -2176,6 +2189,11 @@ function updateWalkMovement(delta) {
       walkController.velocity.addScaledVector(correctedWorldUp, -normalVelocity);
     }
     walkController.up.copy(correctedWorldUp);
+  } else if (correctedDistance < correctedDesiredRadius + safetyMargin * 0.5) {
+    // Close to ground but not quite - still consider on ground
+    walkController.onGround = true;
+    const currentWorldUp = tempVec5.copy(correctedLocalUp).applyQuaternion(invRotationQuat);
+    walkController.up.copy(currentWorldUp);
   } else {
     walkController.onGround = false;
     // Update up vector based on current position
