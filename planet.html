@@ -149,6 +149,7 @@
         const params = {
             planetType: 'earth', // 'earth' or 'gas'
             rotationSpeed: 0.05,
+            planetSize: 1.0,      // Planet scale (0.5 to 2.0)
             seaLevel: 0.52,
             continentSize: 1.5,    // Lower frequency noise
             mountainHeight: 0.4,   // Displacement scale (0-1 range)
@@ -166,6 +167,7 @@
             atmosphereDensity: 0.3,
             atmosphereColor: "#3a9eff",
             // Gas Planet Params
+            gasPlanetSize: 1.0,    // Gas planet scale (0.5 to 2.0)
             gasStripeSpeed: 0.02,
             gasStripeFrequency: 3.0,
             gasStripeSharpness: 2.0,
@@ -175,6 +177,37 @@
             gasColor3: "#ffd4a3",  // Light beige
             gasColor4: "#5c4a2e",  // Dark brown
             gasColor5: "#f5e6d3"   // Cream
+        };
+
+        // Lock states for parameters (prevents randomization)
+        const locks = {
+            planetSize: false,
+            seaLevel: false,
+            continentSize: false,
+            mountainHeight: false,
+            roughness: false,
+            detail: false,
+            iceCapThreshold: false,
+            colorDeepWater: false,
+            colorShallowWater: false,
+            colorBeach: false,
+            colorGrass: false,
+            colorForest: false,
+            colorMountain: false,
+            colorMountainHigh: false,
+            colorSnow: false,
+            atmosphereDensity: false,
+            atmosphereColor: false,
+            gasPlanetSize: false,
+            gasStripeSpeed: false,
+            gasStripeFrequency: false,
+            gasStripeSharpness: false,
+            gasTurbulence: false,
+            gasColor1: false,
+            gasColor2: false,
+            gasColor3: false,
+            gasColor4: false,
+            gasColor5: false
         };
 
         const uniforms = {
@@ -566,16 +599,26 @@
 
         const planet = new THREE.Mesh(geometry, material);
         scene.add(planet);
+        
+        // Initialize planet scale
+        planet.scale.setScalar(params.planetSize);
 
         // Function to switch planet type
         function switchPlanetType(type) {
             if (type === 'gas') {
                 planet.material = gasMaterial;
+                // Update scale for gas planet
+                planet.scale.setScalar(params.gasPlanetSize);
+                atmosphere.scale.setScalar(params.gasPlanetSize * 1.15);
                 // Hide clouds and atmosphere for gas planets (or adjust them)
                 cloudMesh.visible = false;
                 atmosphere.visible = false;
             } else {
                 planet.material = material;
+                // Update scale for rocky planet
+                planet.scale.setScalar(params.planetSize);
+                atmosphere.scale.setScalar(params.planetSize * 1.15);
+                cloudMesh.scale.setScalar(params.planetSize * 1.03);
                 cloudMesh.visible = true;
                 atmosphere.visible = true;
             }
@@ -598,6 +641,8 @@
         });
         const atmosphere = new THREE.Mesh(atmoGeometry, atmoMaterial);
         scene.add(atmosphere);
+        // Initialize atmosphere scale
+        atmosphere.scale.setScalar(params.planetSize * 1.15);
 
         // --- BUILD CLOUDS ---
         // Simple textured sphere for clouds, rotating separately
@@ -643,6 +688,8 @@
         
         const cloudMesh = new THREE.Mesh(new THREE.SphereGeometry(1.03, 64, 64), cloudMaterial);
         scene.add(cloudMesh);
+        // Initialize cloud scale
+        cloudMesh.scale.setScalar(params.planetSize * 1.03);
 
         // --- STARS BACKGROUND ---
         const starGeometry = new THREE.BufferGeometry();
@@ -864,15 +911,19 @@
 
         // Function to randomize rocky planet
         function randomizeRockyPlanet() {
-            // Random terrain properties
-            params.seaLevel = Math.random() * 0.7 + 0.1; // 0.1 to 0.8
-            params.continentSize = Math.random() * 3.0 + 0.5; // 0.5 to 3.5
-            params.mountainHeight = Math.random(); // 0.0 to 1.0
-            params.roughness = Math.random() * 0.6 + 0.2; // 0.2 to 0.8
-            params.detail = Math.random() * 5.0 + 3.0; // 3.0 to 8.0
-            params.iceCapThreshold = Math.random() * 0.5 + 0.5; // 0.5 to 1.0
-            params.atmosphereDensity = Math.random() * 0.8;
-            params.atmosphereColor = '#' + new THREE.Color().setHSL(Math.random(), 0.5 + Math.random() * 0.5, 0.4 + Math.random() * 0.4).getHexString();
+            // Random terrain properties (only if not locked)
+            if (!locks.planetSize) params.planetSize = Math.random() * 1.5 + 0.5; // 0.5 to 2.0
+            if (!locks.seaLevel) params.seaLevel = Math.random() * 0.7 + 0.1; // 0.1 to 0.8
+            if (!locks.continentSize) params.continentSize = Math.random() * 3.0 + 0.5; // 0.5 to 3.5
+            if (!locks.mountainHeight) params.mountainHeight = Math.random(); // 0.0 to 1.0
+            if (!locks.roughness) params.roughness = Math.random() * 0.6 + 0.2; // 0.2 to 0.8
+            // Detail is automatically set based on planet size (unless locked)
+            if (!locks.detail) {
+                params.detail = 3.0 + ((params.planetSize - 0.5) / 1.5) * 5.0;
+            }
+            if (!locks.iceCapThreshold) params.iceCapThreshold = Math.random() * 0.5 + 0.5; // 0.5 to 1.0
+            if (!locks.atmosphereDensity) params.atmosphereDensity = Math.random() * 0.8;
+            if (!locks.atmosphereColor) params.atmosphereColor = '#' + new THREE.Color().setHSL(Math.random(), 0.5 + Math.random() * 0.5, 0.4 + Math.random() * 0.4).getHexString();
             
             // Random color scheme - generate unique, varied colors with coherence
             const baseHue = Math.random();
@@ -968,7 +1019,19 @@
             ];
             
             const colorScheme = schemes[Math.floor(Math.random() * schemes.length)]();
-            Object.assign(params, colorScheme);
+            // Only assign colors that aren't locked
+            Object.keys(colorScheme).forEach(key => {
+                if (!locks[key]) {
+                    params[key] = colorScheme[key];
+                }
+            });
+            
+            // Update planet scale
+            if (!locks.planetSize) {
+                planet.scale.setScalar(params.planetSize);
+                atmosphere.scale.setScalar(params.planetSize * 1.15);
+                cloudMesh.scale.setScalar(params.planetSize * 1.03);
+            }
             
             // Update uniforms
             uniforms.uSeaLevel.value = params.seaLevel;
@@ -1055,27 +1118,137 @@
         // --- GUI SETUP ---
         const gui = new GUI();
         
+        // Store references to percentage wrappers for updating
+        const percentWrappers = {};
+        
+        // Helper function to add slider with percentage display and lock
+        function addSliderWithPercentAndLock(folder, paramName, label, min, max, onChange) {
+            // Lock button
+            const lockObj = { locked: locks[paramName] };
+            const lockCtrl = folder.add(lockObj, 'locked').name('🔒').onChange(v => {
+                locks[paramName] = v;
+                lockCtrl.name(v ? '🔒' : '🔓');
+            });
+            lockCtrl.name(locks[paramName] ? '🔒' : '🔓');
+            
+            // Create percentage wrapper object
+            const percentWrapper = {
+                get value() {
+                    // Convert actual value to percentage (0-100)
+                    return ((params[paramName] - min) / (max - min) * 100);
+                },
+                set value(percent) {
+                    // Convert percentage (0-100) to actual value
+                    params[paramName] = min + (percent / 100) * (max - min);
+                    if (onChange) onChange(params[paramName]);
+                }
+            };
+            
+            // Store wrapper reference for later updates
+            percentWrappers[paramName] = percentWrapper;
+            
+            // Initialize percentage value
+            percentWrapper.value = percentWrapper.value;
+            
+            // Slider showing only percentage
+            const sliderCtrl = folder.add(percentWrapper, 'value', 0, 100).name(label).onChange(v => {
+                // Value is already set in the setter, but ensure onChange is called
+                if (onChange) onChange(params[paramName]);
+            });
+            
+            // Format display to show percentage
+            sliderCtrl.listen();
+            
+            return { slider: sliderCtrl, lock: lockCtrl, wrapper: percentWrapper };
+        }
+        
+        // Helper function to add color with lock
+        function addColorWithLock(folder, paramName, label, onChange) {
+            // Lock button
+            const lockObj = { locked: locks[paramName] };
+            const lockCtrl = folder.add(lockObj, 'locked').name('🔒').onChange(v => {
+                locks[paramName] = v;
+                lockCtrl.name(v ? '🔒' : '🔓');
+            });
+            lockCtrl.name(locks[paramName] ? '🔒' : '🔓');
+            
+            // Color picker
+            const colorCtrl = folder.addColor(params, paramName).name(label).onChange(v => {
+                if (onChange) onChange(v);
+            });
+            
+            return { color: colorCtrl, lock: lockCtrl };
+        }
+        
         // Planet Type Selector
         const planetTypeController = gui.add(params, 'planetType', { 'Earth-like': 'earth', 'Gas Planet': 'gas' }).name('Planet Type');
         planetTypeController.onChange(v => {
             switchPlanetType(v);
         });
         
-        // Terrain display helpers
-        const terrainDisplay = {
-            get mountainHeightPercent() { return (params.mountainHeight * 100).toFixed(0) + '%'; }
-        };
-        
         const folderTerrain = gui.addFolder('Terrain Generation');
-        folderTerrain.add(params, 'seaLevel', 0.0, 1.0).name('Sea Level').onChange(v => uniforms.uSeaLevel.value = v);
-        folderTerrain.add(params, 'continentSize', 0.1, 5.0).name('Continent Freq').onChange(v => uniforms.uContinentSize.value = v);
-        folderTerrain.add(params, 'mountainHeight', 0.0, 1.0).name('Mtn Height').onChange(v => {
-            uniforms.uMountainHeight.value = v;
-            if (mountainHeightDisplayCtrl) mountainHeightDisplayCtrl.updateDisplay();
-        });
-        const mountainHeightDisplayCtrl = folderTerrain.add(terrainDisplay, 'mountainHeightPercent').name('  → ').listen().disable();
-        folderTerrain.add(params, 'roughness', 0.1, 0.9).name('Roughness').onChange(v => uniforms.uRoughness.value = v);
-        folderTerrain.add(params, 'iceCapThreshold', 0.0, 1.0).name('Ice Caps').onChange(v => uniforms.uIceCapThreshold.value = v);
+        
+        // Planet Size - automatically adjusts detail based on size
+        const planetSizeCtrl = addSliderWithPercentAndLock(
+            folderTerrain, 'planetSize', 'Planet Size', 0.5, 2.0,
+            v => {
+                planet.scale.setScalar(v);
+                atmosphere.scale.setScalar(v * 1.15);
+                cloudMesh.scale.setScalar(v * 1.03);
+                
+                // Scale detail with planet size: size 0.5 -> detail 3.0, size 2.0 -> detail 8.0
+                // Linear mapping: detail = 3.0 + (size - 0.5) / (2.0 - 0.5) * (8.0 - 3.0)
+                if (!locks.detail) {
+                    const newDetail = 3.0 + ((v - 0.5) / 1.5) * 5.0;
+                    // Update via wrapper to trigger slider update
+                    if (percentWrappers.detail) {
+                        // Calculate percentage: (value - min) / (max - min) * 100
+                        const detailPercent = ((newDetail - 3.0) / (8.0 - 3.0)) * 100;
+                        percentWrappers.detail.value = detailPercent;
+                    } else {
+                        // Fallback if wrapper not yet created
+                        params.detail = newDetail;
+                        uniforms.uDetail.value = params.detail;
+                    }
+                }
+            }
+        );
+        
+        // Sea Level
+        addSliderWithPercentAndLock(
+            folderTerrain, 'seaLevel', 'Sea Level', 0.0, 1.0,
+            v => uniforms.uSeaLevel.value = v
+        );
+        
+        // Continent Frequency
+        addSliderWithPercentAndLock(
+            folderTerrain, 'continentSize', 'Continent Freq', 0.1, 5.0,
+            v => uniforms.uContinentSize.value = v
+        );
+        
+        // Mountain Height
+        addSliderWithPercentAndLock(
+            folderTerrain, 'mountainHeight', 'Mtn Height', 0.0, 1.0,
+            v => uniforms.uMountainHeight.value = v
+        );
+        
+        // Roughness
+        addSliderWithPercentAndLock(
+            folderTerrain, 'roughness', 'Roughness', 0.1, 0.9,
+            v => uniforms.uRoughness.value = v
+        );
+        
+        // Detail (FBM Lacunarity) - auto-adjusted by planet size
+        const detailSliderCtrl = addSliderWithPercentAndLock(
+            folderTerrain, 'detail', 'Detail', 3.0, 8.0,
+            v => uniforms.uDetail.value = v
+        );
+        
+        // Ice Caps
+        addSliderWithPercentAndLock(
+            folderTerrain, 'iceCapThreshold', 'Ice Caps', 0.0, 1.0,
+            v => uniforms.uIceCapThreshold.value = v
+        );
         
         // Rocky Planet Presets and Randomize
         const folderRocky = gui.addFolder('Rocky Planet');
@@ -1085,20 +1258,23 @@
         folderRocky.close();
         
         const folderColors = gui.addFolder('Colors');
-        folderColors.addColor(params, 'colorDeepWater').name('Deep Water').onChange(v => uniforms.uColorDeepWater.value.set(v));
-        folderColors.addColor(params, 'colorShallowWater').name('Shallow Water').onChange(v => uniforms.uColorShallowWater.value.set(v));
-        folderColors.addColor(params, 'colorBeach').name('Beach').onChange(v => uniforms.uColorBeach.value.set(v));
-        folderColors.addColor(params, 'colorGrass').name('Grass').onChange(v => uniforms.uColorGrass.value.set(v));
-        folderColors.addColor(params, 'colorForest').name('Forest').onChange(v => uniforms.uColorForest.value.set(v));
-        folderColors.addColor(params, 'colorMountain').name('Mountain').onChange(v => uniforms.uColorMountain.value.set(v));
-        folderColors.addColor(params, 'colorMountainHigh').name('Mountain High').onChange(v => uniforms.uColorMountainHigh.value.set(v));
-        folderColors.addColor(params, 'colorSnow').name('Snow').onChange(v => uniforms.uColorSnow.value.set(v));
+        addColorWithLock(folderColors, 'colorDeepWater', 'Deep Water', v => uniforms.uColorDeepWater.value.set(v));
+        addColorWithLock(folderColors, 'colorShallowWater', 'Shallow Water', v => uniforms.uColorShallowWater.value.set(v));
+        addColorWithLock(folderColors, 'colorBeach', 'Beach', v => uniforms.uColorBeach.value.set(v));
+        addColorWithLock(folderColors, 'colorGrass', 'Grass', v => uniforms.uColorGrass.value.set(v));
+        addColorWithLock(folderColors, 'colorForest', 'Forest', v => uniforms.uColorForest.value.set(v));
+        addColorWithLock(folderColors, 'colorMountain', 'Mountain', v => uniforms.uColorMountain.value.set(v));
+        addColorWithLock(folderColors, 'colorMountainHigh', 'Mountain High', v => uniforms.uColorMountainHigh.value.set(v));
+        addColorWithLock(folderColors, 'colorSnow', 'Snow', v => uniforms.uColorSnow.value.set(v));
         folderColors.close(); // Save space
 
         const folderAtmo = gui.addFolder('Atmosphere & Misc');
-        folderAtmo.add(params, 'atmosphereDensity', 0.0, 1.0).name('Atmo Density').onChange(v => atmoMaterial.uniforms.uAtmosphereDensity.value = v);
-        folderAtmo.addColor(params, 'atmosphereColor').name('Atmo Color').onChange(v => atmoMaterial.uniforms.uAtmosphereColor.value.set(v));
-        folderAtmo.add(params, 'rotationSpeed', 0.0, 0.5).name('Rotation Speed');
+        addSliderWithPercentAndLock(
+            folderAtmo, 'atmosphereDensity', 'Atmo Density', 0.0, 1.0,
+            v => atmoMaterial.uniforms.uAtmosphereDensity.value = v
+        );
+        addColorWithLock(folderAtmo, 'atmosphereColor', 'Atmo Color', v => atmoMaterial.uniforms.uAtmosphereColor.value.set(v));
+        folderAtmo.add(params, 'rotationSpeed', 0.0, 0.5).name('Rotation Speed').onChange(v => {});
 
         // Gas Planet Style Presets
         const gasPlanetPresets = {
@@ -1227,11 +1403,15 @@
 
         // Function to randomize gas planet
         function randomizeGasPlanet() {
-            // Random properties within new ranges
-            params.gasStripeSpeed = Math.random() * 0.035;
-            params.gasStripeFrequency = Math.random() * 4.0 + 1.0; // 1.0 to 5.0
-            params.gasStripeSharpness = Math.random() * 3.0 + 1.0;
-            params.gasTurbulence = Math.random() * 0.5 + 0.5; // 0.5 to 1.0
+            // Random properties within new ranges (only if not locked)
+            if (!locks.gasPlanetSize) params.gasPlanetSize = Math.random() * 1.5 + 0.5; // 0.5 to 2.0
+            if (!locks.gasStripeSpeed) params.gasStripeSpeed = Math.random() * 0.035;
+            // Stripe frequency is automatically set based on planet size (unless locked)
+            if (!locks.gasStripeFrequency) {
+                params.gasStripeFrequency = 1.0 + ((params.gasPlanetSize - 0.5) / 1.5) * 4.0;
+            }
+            if (!locks.gasStripeSharpness) params.gasStripeSharpness = Math.random() * 3.0 + 1.0;
+            if (!locks.gasTurbulence) params.gasTurbulence = Math.random() * 0.5 + 0.5; // 0.5 to 1.0
             
             // Random colors - generate harmonious color schemes
             const schemes = [
@@ -1267,12 +1447,18 @@
             const colorScheme = schemes[Math.floor(Math.random() * schemes.length)]();
             const colors = colorScheme.map(c => '#' + c.getHexString());
             
-            // Update params
-            params.gasColor1 = colors[0];
-            params.gasColor2 = colors[1];
-            params.gasColor3 = colors[2];
-            params.gasColor4 = colors[3];
-            params.gasColor5 = colors[4];
+            // Update params (only if not locked)
+            if (!locks.gasColor1) params.gasColor1 = colors[0];
+            if (!locks.gasColor2) params.gasColor2 = colors[1];
+            if (!locks.gasColor3) params.gasColor3 = colors[2];
+            if (!locks.gasColor4) params.gasColor4 = colors[3];
+            if (!locks.gasColor5) params.gasColor5 = colors[4];
+            
+            // Update planet scale
+            if (!locks.gasPlanetSize) {
+                planet.scale.setScalar(params.gasPlanetSize);
+                atmosphere.scale.setScalar(params.gasPlanetSize * 1.15);
+            }
             
             // Update uniforms
             gasUniforms.uStripeSpeed.value = params.gasStripeSpeed;
@@ -1306,9 +1492,15 @@
                 const colorNames = ['color1', 'color2', 'color3', 'color4', 'color5'];
                 colorNames.forEach((name, index) => {
                     const controller = colorControllers[name];
-                    if (controller && controller.object) {
-                        controller.object[controller.property] = colors[index];
-                        if (controller.updateDisplay) controller.updateDisplay();
+                    if (controller && controller.color) {
+                        // Update the object property first
+                        if (controller.color.object && controller.color.property) {
+                            controller.color.object[controller.color.property] = colors[index];
+                        }
+                        // Then update the display
+                        if (controller.color.updateDisplay) {
+                            controller.color.updateDisplay();
+                        }
                     }
                 });
             }
@@ -1332,31 +1524,56 @@
             gui.updateDisplay();
         }
 
-        // Gas Planet Controls - Create percentage display helpers
-        const gasDisplay = {
-            get stripeSpeedPercent() { return (params.gasStripeSpeed * 100).toFixed(1) + '%'; },
-            get turbulencePercent() { return (params.gasTurbulence * 100).toFixed(0) + '%'; }
-        };
-        
         const folderGas = gui.addFolder('Gas Planet');
         
-        // Stripe Speed with percentage display
-        folderGas.add(params, 'gasStripeSpeed', 0.0, 0.035).name('Stripe Speed').onChange(v => {
-            gasUniforms.uStripeSpeed.value = v;
-        });
-        const stripeSpeedDisplayCtrl = folderGas.add(gasDisplay, 'stripeSpeedPercent').name('  → ').listen().disable();
+        // Gas Planet Size - automatically adjusts stripe frequency based on size
+        addSliderWithPercentAndLock(
+            folderGas, 'gasPlanetSize', 'Planet Size', 0.5, 2.0,
+            v => {
+                planet.scale.setScalar(v);
+                atmosphere.scale.setScalar(v * 1.15);
+                
+                // Scale stripe frequency with planet size: size 0.5 -> freq 1.0, size 2.0 -> freq 5.0
+                // Linear mapping: frequency = 1.0 + (size - 0.5) / (2.0 - 0.5) * (5.0 - 1.0)
+                if (!locks.gasStripeFrequency) {
+                    const newFreq = 1.0 + ((v - 0.5) / 1.5) * 4.0;
+                    // Update via wrapper to trigger slider update
+                    if (percentWrappers.gasStripeFrequency) {
+                        // Calculate percentage: (value - min) / (max - min) * 100
+                        const freqPercent = ((newFreq - 1.0) / (5.0 - 1.0)) * 100;
+                        percentWrappers.gasStripeFrequency.value = freqPercent;
+                    } else {
+                        // Fallback if wrapper not yet created
+                        params.gasStripeFrequency = newFreq;
+                        gasUniforms.uStripeFrequency.value = params.gasStripeFrequency;
+                    }
+                }
+            }
+        );
         
-        // Stripe Frequency
-        folderGas.add(params, 'gasStripeFrequency', 1.0, 5.0).name('Stripe Frequency').onChange(v => gasUniforms.uStripeFrequency.value = v);
+        // Stripe Speed with percentage display
+        addSliderWithPercentAndLock(
+            folderGas, 'gasStripeSpeed', 'Stripe Speed', 0.0, 0.035,
+            v => gasUniforms.uStripeSpeed.value = v
+        );
+        
+        // Stripe Frequency - auto-adjusted by planet size
+        const stripeFreqSliderCtrl = addSliderWithPercentAndLock(
+            folderGas, 'gasStripeFrequency', 'Stripe Frequency', 1.0, 5.0,
+            v => gasUniforms.uStripeFrequency.value = v
+        );
         
         // Stripe Sharpness
-        folderGas.add(params, 'gasStripeSharpness', 0.5, 5.0).name('Stripe Sharpness').onChange(v => gasUniforms.uStripeSharpness.value = v);
+        addSliderWithPercentAndLock(
+            folderGas, 'gasStripeSharpness', 'Stripe Sharpness', 0.5, 5.0,
+            v => gasUniforms.uStripeSharpness.value = v
+        );
         
         // Turbulence with percentage display (0.5-1.0 range)
-        folderGas.add(params, 'gasTurbulence', 0.5, 1.0).name('Turbulence').onChange(v => {
-            gasUniforms.uTurbulence.value = v;
-        });
-        const turbulenceDisplayCtrl = folderGas.add(gasDisplay, 'turbulencePercent').name('  → ').listen().disable();
+        addSliderWithPercentAndLock(
+            folderGas, 'gasTurbulence', 'Turbulence', 0.5, 1.0,
+            v => gasUniforms.uTurbulence.value = v
+        );
         
         // Style presets
         const presetNames = Object.keys(gasPlanetPresets);
@@ -1367,11 +1584,11 @@
         
         // Store references to color controllers for updating
         const colorControllers = {
-            color1: folderGas.addColor(params, 'gasColor1').name('Color 1').onChange(v => gasUniforms.uColor1.value.set(v)),
-            color2: folderGas.addColor(params, 'gasColor2').name('Color 2').onChange(v => gasUniforms.uColor2.value.set(v)),
-            color3: folderGas.addColor(params, 'gasColor3').name('Color 3').onChange(v => gasUniforms.uColor3.value.set(v)),
-            color4: folderGas.addColor(params, 'gasColor4').name('Color 4').onChange(v => gasUniforms.uColor4.value.set(v)),
-            color5: folderGas.addColor(params, 'gasColor5').name('Color 5').onChange(v => gasUniforms.uColor5.value.set(v))
+            color1: addColorWithLock(folderGas, 'gasColor1', 'Color 1', v => gasUniforms.uColor1.value.set(v)),
+            color2: addColorWithLock(folderGas, 'gasColor2', 'Color 2', v => gasUniforms.uColor2.value.set(v)),
+            color3: addColorWithLock(folderGas, 'gasColor3', 'Color 3', v => gasUniforms.uColor3.value.set(v)),
+            color4: addColorWithLock(folderGas, 'gasColor4', 'Color 4', v => gasUniforms.uColor4.value.set(v)),
+            color5: addColorWithLock(folderGas, 'gasColor5', 'Color 5', v => gasUniforms.uColor5.value.set(v))
         };
         folderGas.close();
 
