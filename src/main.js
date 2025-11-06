@@ -15,6 +15,7 @@ import { Sun } from "./app/sun.js";
 
 let planet;
 let sun;
+const clock = new THREE.Clock();
 
 const debounceShare = debounce(() => {
   if (!shareDirty) return;
@@ -444,132 +445,59 @@ const TARGET_FRAME_TIMES = { "60": 1000 / 60, "30": 1000 / 30, "24": 1000 / 24, 
 
 //#region Parameters and presets
 const params = {
-  preset: "Earth-like",
-  planetType: "rocky",
-  gasGiantStrataCount: 3,
-  gasGiantStrataColor1: "#d2c8b8",
-  gasGiantStrataColor2: "#a08c78",
-  gasGiantStrataColor3: "#8c7c6c",
-  gasGiantStrataColor4: "#786c5c",
-  gasGiantStrataColor5: "#645c4b",
-  gasGiantStrataColor6: "#504b3a",
-  gasGiantStrataSize1: 0.2,
-  gasGiantStrataSize2: 0.2,
-  gasGiantStrataSize3: 0.2,
-  gasGiantStrataSize4: 0.2,
-  gasGiantStrataSize5: 0.1,
-  gasGiantStrataSize6: 0.1,
-  gasGiantNoiseScale: 2.0,
-  gasGiantNoiseStrength: 0.1,
-  gasGiantStrataWarp: 0.03,
-  gasGiantStrataWarpScale: 4.0,
   seed: "BLUEHOME",
-  radius: 1.32,
-  subdivisions: 6,
-  noiseLayers: 5,
-  noiseFrequency: 2.8,
-  noiseAmplitude: 0.52,
-  persistence: 0.48,
-  lacunarity: 2.25,
-  oceanLevel: 0.46,
-  colorOcean: "#1b3c6d",
-  colorShallow: "#2f7fb6",
-  colorFoam: "#ffffff",
-  foamEnabled: false,
-  colorLow: "#305a33",
-  colorMid: "#b49e74",
-  colorHigh: "#f2f6f5",
-  colorCore: "#8b4513",
-  coreEnabled: true,
-  coreSize: 0.4,
-  coreVisible: true,
-  icePolesEnabled: true,
-  icePolesCoverage: 0.15,
-  icePolesColor: "#e8f4f8",
-  icePolesNoiseScale: 2.5,
-  icePolesNoiseStrength: 0.3,
-  atmosphereColor: "#7baeff",
-  atmosphereOpacity: 0.22,
-  atmosphereIntensity: 1.0,
-  atmosphereFresnelPower: 2.0,
-  atmosphereRimPower: 3.0,
-  cloudsOpacity: 0.4,
-  cloudHeight: 0.03,
-  cloudDensity: 0.55,
-  cloudNoiseScale: 3.2,
-  cloudDriftSpeed: 0.02,
-  axisTilt: 23,
-  rotationSpeed: 0.12,
-  simulationSpeed: 0.12,
-  gravity: 9.81,
-  sunPreset: "Sol",
-  sunVariant: "Star",
-  sunColor: "#ffd27f",
-  sunIntensity: 1.6,
-  sunDistance: 48,
-  sunSize: 1,
-  sunHaloSize: 6.5,
-  sunGlowStrength: 1.4,
-  sunPulseSpeed: 0.5,
-  sunNoiseScale: 1.6,
-  sunParticleCount: 240,
-  sunParticleSpeed: 0.65,
-  sunParticleSize: 0.15,
-  sunParticleColor: "#ffbf7a",
-  sunParticleLifetime: 4.2,
-  blackHoleCoreSize: 0.75,
-  blackHoleDiskRadius: 2.6,
-  blackHoleDiskThickness: 0.32,
-  blackHoleDiskIntensity: 1.8,
-  blackHoleDiskTilt: 0,
-  blackHoleDiskYaw: 0,
-  blackHoleDiskTwist: 0,
-  blackHoleSpinSpeed: 0.12,
-  blackHoleHaloSpinSpeed: 0,
-  blackHoleDiskEnabled: true,
-  blackHoleHaloEnabled: true,
-  blackHoleDiskStyle: "Noise",
-  blackHoleHaloStyle: "Noise",
-  blackHoleDiskNoiseScale: 1.3,
-  blackHoleDiskNoiseStrength: 0.35,
-  blackHoleHaloRadius: 3.2,
-  blackHoleHaloAngle: 68,
-  blackHoleHaloThickness: 0.45,
-  blackHoleHaloIntensity: 0.85,
-  blackHoleHaloNoiseScale: 1.15,
-  blackHoleHaloNoiseStrength: 0.4,
-  moonCount: 1,
-  moonMassScale: 1,
+  planetType: "earth", // 'earth' or 'gas'
+  rotationSpeed: 0.05,
+  planetSize: 1.0,
+  seaLevel: 0.52,
+  continentSize: 1.5,
+  mountainHeight: 0.4,
+  roughness: 0.55,
+  detail: 6.0,
+  iceCapThreshold: 0.9,
+  colorDeepWater: "#002b4d",
+  colorShallowWater: "#006994",
+  colorBeach: "#d4c6a3",
+  colorGrass: "#2a602a",
+  colorForest: "#1a381a",
+  colorMountain: "#666666",
+  colorMountainHigh: "#888888",
+  colorSnow: "#ffffff",
+  atmosphereDensity: 0.3,
+  atmosphereColor: "#3a9eff",
+  // Gas Planet Params
+  gasPlanetSize: 1.0,
+  gasStripeSpeed: 0.02,
+  gasStripeFrequency: 3.0,
+  gasStripeSharpness: 2.0,
+  gasTurbulence: 0.75,
+  gasColor1: "#d4a574",
+  gasColor2: "#8b6f47",
+  gasColor3: "#ffd4a3",
+  gasColor4: "#5c4a2e",
+  gasColor5: "#f5e6d3",
+  // Starfield
   starCount: 2200,
   starBrightness: 0.85,
   starTwinkleSpeed: 0.6,
-  physicsEnabled: true,
-  physicsTwoWay: true,
-  physicsDamping: 0.0005,
-  physicsSubsteps: 2,
-  showOrbitLines: true,
-  impactDeformation: true,
-  impactStrengthMul: 2.5,
-  impactSpeedMul: 1.2,
-  impactMassMul: 2.0,
-  impactElongationMul: 1.6,
-  explosionEnabled: true,
-  explosionColor: "#ffaa66",
-  explosionStrength: 1,
-  explosionParticleBase: 90,
-  explosionSize: 0.8,
-  explosionGravity: 0,
-  explosionDamping: 0.9,
-  explosionLifetime: 1.6,
-  explosionColorVariation: 0.5,
-  explosionSpeedVariation: 1.0,
-  explosionSizeVariation: 1.0,
+  // Moons and Rings
+  moonCount: 0,
+  moonMassScale: 1,
   ringEnabled: false,
   ringAngle: 0,
   ringSpinSpeed: 0.05,
-  ringAllowRandom: true,
   ringCount: 0,
-  rings: []
+  rings: [],
+  showOrbitLines: true,
+  physicsEnabled: false,
+  physicsTwoWay: false,
+  physicsDamping: 0.0005,
+  physicsSubsteps: 2,
+  impactDeformation: false,
+  impactStrengthMul: 2.5,
+  impactSpeedMul: 1.2,
+  impactMassMul: 2.0,
+  impactElongationMul: 1.6
 };
 
 const presets = {
@@ -595,12 +523,11 @@ const starPresets = {
   "Neutron Star": { sunColor: "#9ecaff", sunIntensity: 3.2, sunDistance: 65, sunSize: 0.6, sunHaloSize: 5.2, sunGlowStrength: 2.6, sunPulseSpeed: 1.8, sunNoiseScale: 3.0, sunParticleCount: 260, sunParticleSpeed: 1.4, sunParticleSize: 0.09, sunParticleColor: "#96caff", sunParticleLifetime: 1.8 }
 };
 
-const shareKeys = [ "seed", "planetType", "gasGiantStrataCount", "gasGiantStrataColor1", "gasGiantStrataColor2", "gasGiantStrataColor3", "gasGiantStrataColor4", "gasGiantStrataColor5", "gasGiantStrataColor6", "gasGiantStrataSize1", "gasGiantStrataSize2", "gasGiantStrataSize3", "gasGiantStrataSize4", "gasGiantStrataSize5", "gasGiantStrataSize6", "gasGiantNoiseScale", "gasGiantNoiseStrength", "gasGiantStrataWarp", "gasGiantStrataWarpScale", "radius", "subdivisions", "noiseLayers", "noiseFrequency", "noiseAmplitude", "persistence", "lacunarity", "oceanLevel", "colorOcean", "colorShallow", "colorFoam", "foamEnabled", "colorLow", "colorMid", "colorHigh", "colorCore", "coreEnabled", "coreSize", "coreVisible", "atmosphereColor", "atmosphereOpacity", "cloudsOpacity", "cloudHeight", "cloudDensity", "cloudNoiseScale", "cloudDriftSpeed", "axisTilt", "rotationSpeed", "simulationSpeed", "gravity", "sunColor", "sunIntensity", "sunDistance", "sunSize", "sunHaloSize", "sunGlowStrength", "sunPulseSpeed", "sunVariant", "sunPreset", "sunNoiseScale", "sunParticleCount", "sunParticleSpeed", "sunParticleSize", "sunParticleColor", "sunParticleLifetime", "blackHoleCoreSize", "blackHoleDiskRadius", "blackHoleDiskThickness", "blackHoleDiskIntensity", "blackHoleDiskTilt", "blackHoleDiskYaw", "blackHoleDiskTwist", "blackHoleSpinSpeed", "blackHoleHaloSpinSpeed", "blackHoleDiskStyle", "blackHoleHaloStyle", "blackHoleDiskNoiseScale", "blackHoleDiskNoiseStrength", "blackHoleHaloRadius", "blackHoleHaloAngle", "blackHoleHaloThickness", "blackHoleHaloIntensity", "blackHoleHaloNoiseScale", "blackHoleHaloNoiseStrength", "moonCount", "moonMassScale", "starCount", "starBrightness", "starTwinkleSpeed", "physicsEnabled", "physicsTwoWay", "physicsDamping", "physicsSubsteps", "showOrbitLines", "impactDeformation", "impactStrengthMul", "impactSpeedMul", "impactMassMul", "impactElongationMul", "explosionEnabled", "explosionColor", "explosionStrength", "explosionParticleBase", "explosionSize", "explosionGravity", "explosionDamping", "explosionLifetime", "explosionColorVariation", "explosionSpeedVariation", "explosionSizeVariation", "ringEnabled", "ringAngle", "ringSpinSpeed", "ringAllowRandom", "ringCount", "aurora" ];
+const shareKeys = [ "seed", "planetType", "planetSize", "seaLevel", "continentSize", "mountainHeight", "roughness", "detail", "iceCapThreshold", "colorDeepWater", "colorShallowWater", "colorBeach", "colorGrass", "colorForest", "colorMountain", "colorMountainHigh", "colorSnow", "atmosphereDensity", "atmosphereColor", "rotationSpeed", "gasPlanetSize", "gasStripeSpeed", "gasStripeFrequency", "gasStripeSharpness", "gasTurbulence", "gasColor1", "gasColor2", "gasColor3", "gasColor4", "gasColor5", "starCount", "starBrightness", "starTwinkleSpeed" ];
 //#endregion
 
 //#region State tracking
 let planetDirty = true;
-let moonsDirty = true;
 let shareDirty = true;
 let simulationYears = 0;
 let lastFrameTime = performance.now();
@@ -741,17 +668,11 @@ const {
   unregisterFolder,
   applyControlSearch,
   scheduleShareUpdate: () => { shareDirty = true; debounceShare(); },
-  markMoonsDirty: () => { moonsDirty = true; },
-  updateOrbitLinesVisibility: () => planet?.updateOrbitLinesVisibility(),
-  initMoonPhysics: () => planet?.initMoonPhysics(),
-  resetMoonPhysics: () => planet?.resetMoonPhysics(),
   getIsApplyingPreset: () => isApplyingPreset
 });
 
 // Add moon settings normalization function to guiControllers
 guiControllers.normalizeMoonSettings = normalizeMoonSettings;
-
-// Add moon controls rebuild function to guiControllers
 guiControllers.rebuildMoonControls = rebuildMoonControls;
 
 const { rebuildRingControls } = setupRingControls({
@@ -762,7 +683,7 @@ const { rebuildRingControls } = setupRingControls({
   unregisterFolder,
   applyControlSearch,
   scheduleShareUpdate: () => { shareDirty = true; debounceShare(); },
-  updateRings: () => planet?.updateRings(),
+  updateRings: () => planet?.updateRings?.(),
   getIsApplyingPreset: () => isApplyingPreset,
   getRingsFolder: () => guiControllers?.folders?.ringsFolder
 });
@@ -770,31 +691,11 @@ const { rebuildRingControls } = setupRingControls({
 setupPlanetControls({
     gui,
     params,
-    presets,
-    starPresets,
     guiControllers,
     registerFolder,
     scheduleShareUpdate: () => { shareDirty = true; debounceShare(); },
     markPlanetDirty: () => { planetDirty = true; },
-    markMoonsDirty: () => { moonsDirty = true; },
-    handleSeedChanged,
-    updatePalette: () => planet?.updatePalette(),
-    updateClouds: () => planet?.updateClouds(),
-    updateTilt: () => planet?.updateTilt(),
-    updateSun: () => sun?.updateSun(),
-    updateRings: () => planet?.updateRings(),
-    updateStarfieldUniforms,
-    regenerateStarfield,
-    updateGravityDisplay,
-    initMoonPhysics: () => planet?.initMoonPhysics(),
-    resetMoonPhysics: () => planet?.resetMoonPhysics(),
-    syncMoonSettings,
-    rebuildMoonControls,
-    updateOrbitLinesVisibility: () => planet?.updateOrbitLinesVisibility(),
-    getIsApplyingPreset: () => isApplyingPreset,
-    getIsApplyingStarPreset: () => isApplyingStarPreset,
-    onPresetChange: (value) => applyPreset(value),
-    onStarPresetChange: (value) => applyStarPreset(value)
+    planet: null // Will be set after planet is created
 });
 
 rebuildRingControls();
@@ -834,10 +735,52 @@ if (debugPanel) {
 //#endregion
 
 randomizeSeedButton?.addEventListener("click", () => {
-  // "New Planet Shape" should regenerate the planet with a new seed (same parameters, new shape)
+  // "New Planet Shape" should regenerate the planet with a new seed
+  // Randomize terrain parameters (not colors) and respect locks
   const nextSeed = generateSeed();
   params.seed = nextSeed;
   guiControllers.seed?.setValue?.(nextSeed);
+  
+  // Randomize terrain parameters only (not colors), respecting locks
+  const locks = params.locks || {};
+  
+  if (!locks.seaLevel) params.seaLevel = Math.random() * 0.7 + 0.1; // 0.1 to 0.8
+  if (!locks.continentSize) params.continentSize = Math.random() * 3.0 + 0.5; // 0.5 to 3.5
+  if (!locks.mountainHeight) params.mountainHeight = Math.random(); // 0.0 to 1.0
+  if (!locks.roughness) params.roughness = Math.random() * 0.6 + 0.2; // 0.2 to 0.8
+  if (!locks.detail) {
+    // Auto-scale detail with planet size if not locked
+    params.detail = 3.0 + ((params.planetSize - 0.5) / 1.5) * 5.0;
+  }
+  if (!locks.iceCapThreshold) params.iceCapThreshold = Math.random() * 0.5 + 0.5; // 0.5 to 1.0
+  
+  // For gas planets, randomize gas parameters
+  if (params.planetType === 'gas') {
+    if (!locks.gasStripeSpeed) params.gasStripeSpeed = Math.random() * 0.035;
+    if (!locks.gasStripeFrequency) {
+      // Auto-scale with planet size if not locked
+      params.gasStripeFrequency = 1.0 + ((params.gasPlanetSize - 0.5) / 1.5) * 4.0;
+    }
+    if (!locks.gasStripeSharpness) params.gasStripeSharpness = Math.random() * 3.0 + 1.0;
+    if (!locks.gasTurbulence) params.gasTurbulence = Math.random() * 0.5 + 0.5; // 0.5 to 1.0
+  }
+  
+  // Update planet with new parameters
+  if (planet) {
+    planet.applyParams(params);
+  }
+  
+  // Update GUI controllers to reflect changes
+  if (guiControllers.percentWrappers) {
+    Object.keys(guiControllers.percentWrappers).forEach(key => {
+      if (params.hasOwnProperty(key) && guiControllers.percentWrappers[key]) {
+        // Trigger update by setting the value
+        const wrapper = guiControllers.percentWrappers[key];
+        wrapper.value = wrapper.value; // This will update the slider display
+      }
+    });
+  }
+  
   handleSeedChanged();
 });
 
@@ -916,15 +859,10 @@ function applyPreset(presetName, options = {}) {
     }
     
     // Update all planet components
-    planet.updatePalette();
-    planet.updateClouds();
-    planet.updateCore();
-    sun.updateSun();
-    planet.updateRings();
-    planet.updateTilt();
+    // Removed: updatePalette, updateClouds (not in new shader-based Planet)
+    // Removed: updateCore, updateRings, updateTilt (not in new shader-based Planet)
+    // sun.update() is called in render loop
     updateSeedDisplay();
-    updateGravityDisplay();
-    syncMoonSettings();
     
     // Update share if not skipping
     if (!skipShareUpdate) {
@@ -1035,8 +973,8 @@ function applyVisualSettings() {
   
   // Apply lighting scale
   ambientLight.intensity = 0.35 * visualSettings.lightingScale;
-  if (sun && sun.sunLight) {
-    sun.sunLight.intensity = Math.max(0, params.sunIntensity) * visualSettings.lightingScale;
+  if (sun && sun.light) {
+    sun.light.intensity = Math.max(0, 1.6) * visualSettings.lightingScale;
   }
   
   // Update starfield if it exists
@@ -1219,73 +1157,45 @@ async function initializeApp() {
   renderer.render(scene, camera);
   await yieldToBrowser();
 
-  // Phase 3: Create sun with temporary planetRoot (will be replaced in Phase 4)
-  updateLoadingStatus("Loading star...");
-  // Create temporary group for sun light target to avoid null reference errors
-  const tempPlanetRoot = new THREE.Group();
-  sun = new Sun(scene, tempPlanetRoot, params, visualSettings);
+  // Phase 3: Create planet object
+  updateLoadingStatus("Loading planet...");
+  planet = new Planet(scene, params, guiControllers);
+  // Update planet reference in GUI controllers
+  guiControllers.planet = planet;
   renderer.render(scene, camera);
   await yieldToBrowser();
 
-  // Phase 4: Create planet object
-  updateLoadingStatus("Loading planet...");
-  planet = new Planet(scene, params, moonSettings, guiControllers, visualSettings, sun);
-  // Replace temporary planetRoot with actual planetRoot
-  sun.planetRoot = planet.planetRoot;
-  sun.sunLight.target = planet.planetRoot; // Update light target
-  // Remove temporary group from scene if it was added
-  if (tempPlanetRoot.parent) {
-    tempPlanetRoot.parent.remove(tempPlanetRoot);
-  }
+  // Phase 4: Create sun with planet root
+  updateLoadingStatus("Loading star...");
+  sun = new Sun(scene, planet.planetRoot);
   renderer.render(scene, camera);
   await yieldToBrowser();
 
   // Phase 5: Initialize planet properties
-  planet.updatePalette();
-  planet.updateClouds();
-  planet.updateCore();
-  sun.updateSun();
+  planet.applyParams(params);
   planet.updateRings();
-  planet.updateTilt();
   updateSeedDisplay();
-  updateGravityDisplay();
   renderer.render(scene, camera);
   await yieldToBrowser();
 
   // Phase 6: Load configuration from hash (if present)
   const loadedFromHash = await initFromHash();
   if (!loadedFromHash) {
-    applyPreset(params.preset, { skipShareUpdate: true, keepSeed: true });
-    syncMoonSettings();
+    // Apply default Earth-like preset
+    planet.applyParams(params);
   }
+  planet.updateRings();
   renderer.render(scene, camera);
   await yieldToBrowser();
 
-  // Phase 7: Final planet setup
+  // Phase 7: Final setup
   setupMobilePanelToggle();
-  normalizeMoonSettings();
-  markPlanetDirty();
-  renderer.render(scene, camera);
-  await yieldToBrowser();
-
-  // Phase 8: Create moons (deferred until planet is fully loaded)
-  updateLoadingStatus("Loading moons...");
-  markMoonsDirty();
-  renderer.render(scene, camera);
-  await yieldToBrowser();
-
-  // Phase 9: Final setup (physics, orbit lines, etc.)
   applyInitialVisualSettings();
   if (previewMode) {
     try { applyVisualSettings(); } catch {}
   }
-  planet.initMoonPhysics();
-  planet.updateOrbitLinesVisibility();
   applyControlSearch({ scrollToFirst: false });
   updateShareCode();
-  
-  // Create ship after planet is initialized
-  createShip();
   
   renderer.render(scene, camera);
   await yieldToBrowser();
@@ -1392,18 +1302,25 @@ function animate(timestamp) {
 
   if (planetDirty) {
     showLoading();
-    planet.rebuildPlanet();
+    planet.applyParams(params);
     planetDirty = false;
     hideLoadingSoon();
   }
 
-  if (moonsDirty) {
-    planet.updateMoons();
-    moonsDirty = false;
+  // Update sun and get direction
+  if (sun) {
+    sun.update();
+    const sunDirection = sun.getDirection();
+    if (planet) {
+      planet.updateSunDirection(sunDirection);
+    }
   }
 
-  sun.update(delta, simulationDelta, camera);
-  planet.update(delta, simulationDelta, camera);
+  // Update planet with time
+  const time = clock.getElapsedTime();
+  if (planet) {
+    planet.update(delta, time);
+  }
 
   if (starField && starField.material && starField.material.uniforms) {
     starField.rotation.y += delta * 0.002;
@@ -1429,9 +1346,7 @@ function handleSeedChanged({ skipShareUpdate = false } = {}) {
     updateSeedDisplay();
     regenerateStarfield();
     if (planet) {
-        planet.cloudTextureDirty = true;
         markPlanetDirty();
-        planet.updateRings();
     }
     if (!skipShareUpdate) {
       scheduleShareUpdate();
@@ -1874,10 +1789,45 @@ function setupMobilePanelToggle() {
     mobileRandomize?.addEventListener("click", () => {
       mobileMenu?.setAttribute("hidden", "");
       mobileMenuToggle?.setAttribute("aria-expanded", "false");
-      // "New Planet Shape" should only change the seed (same as desktop randomize-seed button)
+      // "New Planet Shape" - same as desktop randomize-seed button
       const nextSeed = generateSeed();
       params.seed = nextSeed;
       guiControllers.seed?.setValue?.(nextSeed);
+      
+      // Randomize terrain parameters only (not colors), respecting locks
+      const locks = params.locks || {};
+      
+      if (!locks.seaLevel) params.seaLevel = Math.random() * 0.7 + 0.1;
+      if (!locks.continentSize) params.continentSize = Math.random() * 3.0 + 0.5;
+      if (!locks.mountainHeight) params.mountainHeight = Math.random();
+      if (!locks.roughness) params.roughness = Math.random() * 0.6 + 0.2;
+      if (!locks.detail) {
+        params.detail = 3.0 + ((params.planetSize - 0.5) / 1.5) * 5.0;
+      }
+      if (!locks.iceCapThreshold) params.iceCapThreshold = Math.random() * 0.5 + 0.5;
+      
+      if (params.planetType === 'gas') {
+        if (!locks.gasStripeSpeed) params.gasStripeSpeed = Math.random() * 0.035;
+        if (!locks.gasStripeFrequency) {
+          params.gasStripeFrequency = 1.0 + ((params.gasPlanetSize - 0.5) / 1.5) * 4.0;
+        }
+        if (!locks.gasStripeSharpness) params.gasStripeSharpness = Math.random() * 3.0 + 1.0;
+        if (!locks.gasTurbulence) params.gasTurbulence = Math.random() * 0.5 + 0.5;
+      }
+      
+      if (planet) {
+        planet.applyParams(params);
+      }
+      
+      if (guiControllers.percentWrappers) {
+        Object.keys(guiControllers.percentWrappers).forEach(key => {
+          if (params.hasOwnProperty(key) && guiControllers.percentWrappers[key]) {
+            const wrapper = guiControllers.percentWrappers[key];
+            wrapper.value = wrapper.value;
+          }
+        });
+      }
+      
       handleSeedChanged();
     });
 
@@ -1987,7 +1937,6 @@ function setupMobilePanelToggle() {
       
       // Force scene rebuild for settings that require it
       markPlanetDirty();
-      markMoonsDirty();
       
       // Regenerate starfield if star count changed
       regenerateStarfield();
@@ -2102,9 +2051,6 @@ function markPlanetDirty() {
 
 // Aurora removed
 
-function markMoonsDirty() {
-    moonsDirty = true;
-}
 
 function scheduleShareUpdate() {
     shareDirty = true;
@@ -2333,8 +2279,8 @@ function setupVisualSettingsControls() {
     }
     // Apply lighting changes immediately for preview
     ambientLight.intensity = 0.35 * visualSettings.lightingScale;
-    if (sun && sun.sunLight) {
-      sun.sunLight.intensity = Math.max(0, params.sunIntensity) * visualSettings.lightingScale;
+    if (sun && sun.light) {
+      sun.light.intensity = Math.max(0, 1.6) * visualSettings.lightingScale;
     }
   });
   
@@ -2485,7 +2431,38 @@ function hideLoadingSoon() {
 }
   
 function surpriseMe() {
+    // Generate new seed
     const newSeed = generateSeed();
+    params.seed = newSeed;
+    if (guiControllers.seed?.setValue) {
+        guiControllers.seed.setValue(newSeed);
+    }
+    
+    // Gas planets are rare (1/6 chance, like in planet.html)
+    const isGasPlanet = Math.random() < 1 / 6;
+    
+    // Set planet type
+    params.planetType = isGasPlanet ? 'gas' : 'earth';
+    
+    // Use the randomize functions from planetControls
+    if (isGasPlanet && guiControllers.randomizeGasPlanet) {
+        guiControllers.randomizeGasPlanet();
+    } else if (!isGasPlanet && guiControllers.randomizeRockyPlanet) {
+        guiControllers.randomizeRockyPlanet();
+    }
+    
+    // Update planet
+    if (planet) {
+        planet.setPlanetType(params.planetType);
+        planet.applyParams(params);
+    }
+    
+    // Update seed display
+    updateSeedDisplay();
+    
+    return;
+    
+    // OLD CODE BELOW - keeping for reference but not used
     const rng = new SeededRNG(newSeed);
   
     const isGasGiant = rng.next() < 1 / 6;
@@ -2651,17 +2628,11 @@ function surpriseMe() {
 
     normalizeMoonSettings();
     handleSeedChanged({ skipShareUpdate: true });
-    planet.updatePalette();
-    planet.updateClouds();
+    // Removed: updatePalette, updateClouds (not in new shader-based Planet)
     sun.updateSun();
     planet.updateRings();
     planet.updateTilt();
-    updateGravityDisplay();
-    rebuildMoonControls();
-    markMoonsDirty();
-    planet.initMoonPhysics();
     updateStarfieldUniforms();
-    planet.guiControllers.updateStabilityDisplay(moonSettings.length, moonSettings.length);
     scheduleShareUpdate();
     
     // Force immediate URL update for surprise me to prevent loss on reload
