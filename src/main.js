@@ -523,7 +523,6 @@ const starPresets = {
   "Neutron Star": { sunColor: "#9ecaff", sunIntensity: 3.2, sunDistance: 65, sunSize: 0.6, sunHaloSize: 5.2, sunGlowStrength: 2.6, sunPulseSpeed: 1.8, sunNoiseScale: 3.0, sunParticleCount: 260, sunParticleSpeed: 1.4, sunParticleSize: 0.09, sunParticleColor: "#96caff", sunParticleLifetime: 1.8 }
 };
 
-const shareKeys = [ "seed", "planetType", "planetSize", "seaLevel", "continentSize", "mountainHeight", "roughness", "detail", "iceCapThreshold", "colorDeepWater", "colorShallowWater", "colorBeach", "colorGrass", "colorForest", "colorMountain", "colorMountainHigh", "colorSnow", "atmosphereDensity", "atmosphereColor", "rotationSpeed", "gasPlanetSize", "gasStripeSpeed", "gasStripeFrequency", "gasStripeSharpness", "gasTurbulence", "gasColor1", "gasColor2", "gasColor3", "gasColor4", "gasColor5", "starCount", "starBrightness", "starTwinkleSpeed" ];
 //#endregion
 
 //#region State tracking
@@ -1984,10 +1983,24 @@ function setupMobilePanelToggle() {
             if (!loadedData) {
               throw new Error('Invalid share code format');
             }
+            let moonsFromShare = null;
             if (Array.isArray(decoded?.moons)) {
-              moonSettings.splice(0, moonSettings.length, ...decoded.moons.map(m => ({ ...m })));
-              params.moonCount = decoded.moons.length;
+              moonsFromShare = decoded.moons.map((m) => ({ ...m }));
             }
+
+            if (!moonsFromShare && Array.isArray(loadedData?.moons)) {
+              moonsFromShare = loadedData.moons.map((m) => ({ ...m }));
+              delete loadedData.moons;
+            }
+
+            if (moonsFromShare) {
+              moonSettings.splice(0, moonSettings.length, ...moonsFromShare.map((m) => ({ ...m })));
+              params.moonCount = moonsFromShare.length;
+              if (loadedData && typeof loadedData === "object") {
+                loadedData.moonCount = moonsFromShare.length;
+              }
+            }
+
             currentShareId = null;
             currentHashIsApiId = false;
           } catch (decodeError) {
@@ -2118,21 +2131,116 @@ function updateShareCode() {
     } catch {}
 }
 
-function buildSharePayload() {
-    const data = {};
-    shareKeys.forEach((key) => {
-      data[key] = params[key];
+const SHARE_VERSION = 2;
+const SHARE_EXCLUDED_KEYS = new Set(["rings"]);
+
+function cloneShareValue(value) {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value === "function" || typeof value === "symbol") return undefined;
+  if (typeof value === "number" && Number.isNaN(value)) return undefined;
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => cloneShareValue(item))
+      .filter((item) => item !== undefined);
+  }
+  if (typeof value === "object") {
+    const result = {};
+    Object.keys(value).forEach((key) => {
+      const cloned = cloneShareValue(value[key]);
+      if (cloned !== undefined) {
+        result[key] = cloned;
+      }
     });
-    if (Array.isArray(params.rings)) {
-      data.rings = params.rings.map((r) => ({
-        style: r.style, color: r.color, start: r.start, end: r.end,
-        opacity: r.opacity, noiseScale: r.noiseScale, noiseStrength: r.noiseStrength,
-        spinSpeed: r.spinSpeed, brightness: r.brightness
-      }));
-      data.ringCount = params.ringCount ?? params.rings.length;
+    return result;
+  }
+  return value;
+}
+
+function normalizeRingEntry(ring = {}) {
+  const start = typeof ring.start === "number" && !Number.isNaN(ring.start) ? ring.start : 1.4;
+  const end = typeof ring.end === "number" && !Number.isNaN(ring.end) ? ring.end : start + 0.2;
+  return {
+    style: typeof ring.style === "string" && ring.style ? ring.style : "Texture",
+    color: typeof ring.color === "string" && ring.color ? ring.color : "#ffffff",
+    start,
+    end,
+    opacity: typeof ring.opacity === "number" && !Number.isNaN(ring.opacity) ? ring.opacity : 0.6,
+    noiseScale: typeof ring.noiseScale === "number" && !Number.isNaN(ring.noiseScale) ? ring.noiseScale : 3.2,
+    noiseStrength: typeof ring.noiseStrength === "number" && !Number.isNaN(ring.noiseStrength) ? ring.noiseStrength : 0.55,
+    spinSpeed: typeof ring.spinSpeed === "number" && !Number.isNaN(ring.spinSpeed) ? ring.spinSpeed : 0,
+    brightness: typeof ring.brightness === "number" && !Number.isNaN(ring.brightness) ? ring.brightness : 1
+  };
+}
+
+function normalizeMoonEntry(moon = {}) {
+  return {
+    size: typeof moon.size === "number" && !Number.isNaN(moon.size) ? moon.size : 0.18,
+    distance: typeof moon.distance === "number" && !Number.isNaN(moon.distance) ? moon.distance : 3.5,
+    orbitSpeed: typeof moon.orbitSpeed === "number" && !Number.isNaN(moon.orbitSpeed) ? moon.orbitSpeed : 0.4,
+    inclination: typeof moon.inclination === "number" && !Number.isNaN(moon.inclination) ? moon.inclination : 0,
+    color: typeof moon.color === "string" && moon.color ? moon.color : "#cfcfcf",
+    phase: typeof moon.phase === "number" && !Number.isNaN(moon.phase) ? moon.phase : 0,
+    eccentricity: typeof moon.eccentricity === "number" && !Number.isNaN(moon.eccentricity) ? moon.eccentricity : 0
+  };
+}
+
+function collectShareData() {
+  const data = {};
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (SHARE_EXCLUDED_KEYS.has(key)) return;
+    const cloned = cloneShareValue(value);
+    if (cloned !== undefined) {
+      data[key] = cloned;
     }
-    // Moons removed - no longer supported
-    return { version: 1, preset: params.preset, data };
+  });
+
+  const hasRings = Array.isArray(params.rings);
+  if (hasRings) {
+    data.rings = params.rings.map((ring) => normalizeRingEntry(ring));
+  }
+
+  const normalizedMoons = Array.isArray(moonSettings)
+    ? moonSettings.map((moon) => normalizeMoonEntry(moon))
+    : [];
+
+  if (Array.isArray(moonSettings)) {
+    data.moons = normalizedMoons;
+  }
+
+  const moonCount = normalizedMoons.length;
+  data.moonCount = typeof params.moonCount === "number" ? params.moonCount : moonCount;
+
+  if (!Object.prototype.hasOwnProperty.call(data, "ringCount")) {
+    data.ringCount = typeof params.ringCount === "number"
+      ? params.ringCount
+      : hasRings
+        ? params.rings.length
+        : 0;
+  }
+
+  return data;
+}
+
+function buildShareMetadata() {
+  const metadata = {
+    shareVersion: SHARE_VERSION,
+    seed: params.seed,
+    planetType: params.planetType
+  };
+
+  if (params.preset) metadata.preset = params.preset;
+  const moonCount = Array.isArray(moonSettings) ? moonSettings.length : undefined;
+  if (typeof moonCount === "number") metadata.moonCount = moonCount;
+  if (typeof params.ringCount === "number") metadata.ringCount = params.ringCount;
+
+  return metadata;
+}
+
+function buildSharePayload() {
+    const data = collectShareData();
+    return { version: SHARE_VERSION, preset: params.preset ?? null, data, metadata: buildShareMetadata() };
 }
 
 function encodeShare(payload) { return encodeShareExt(payload); }
@@ -2142,10 +2250,14 @@ async function copyShareCode() {
   try {
     const payload = buildSharePayload();
     const shareCode = encodeShare(payload);
+    const apiMetadata = {
+      ...payload.metadata,
+      savedAt: new Date().toISOString()
+    };
     
     // Try to save to API first
     try {
-      const result = await saveConfigurationToAPIExt(payload.data, payload.metadata || {});
+      const result = await saveConfigurationToAPIExt(payload.data, apiMetadata);
       if (result && result.id) {
         // Update URL with API ID in hash format
         currentShareId = result.id;
