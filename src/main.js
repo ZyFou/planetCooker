@@ -722,7 +722,7 @@ const {
 guiControllers.normalizeMoonSettings = normalizeMoonSettings;
 guiControllers.rebuildMoonControls = rebuildMoonControls;
 
-const { rebuildRingControls } = setupRingControls({
+const { rebuildRingControls, normalizeRingSettings } = setupRingControls({
   gui,
   params,
   guiControllers,
@@ -734,6 +734,88 @@ const { rebuildRingControls } = setupRingControls({
   getIsApplyingPreset: () => isApplyingPreset,
   getRingsFolder: () => guiControllers?.folders?.ringsFolder
 });
+
+// Add ring settings to guiControllers
+guiControllers.rebuildRingControls = rebuildRingControls;
+guiControllers.normalizeRingSettings = normalizeRingSettings;
+
+// Create Rings folder and controls
+const ringsFolder = registerFolder(gui.addFolder("Rings"), { close: false });
+guiControllers.folders = guiControllers.folders || {};
+guiControllers.folders.ringsFolder = ringsFolder;
+
+guiControllers.ringEnabled = ringsFolder.add(params, "ringEnabled")
+  .name("Enable Rings")
+  .onChange(() => {
+    if (planet) {
+      planet.updateRings();
+      planet.updateTilt();
+    }
+    rebuildRingControls();
+    shareDirty = true;
+    debounceShare();
+  });
+
+guiControllers.ringCount = ringsFolder.add(params, "ringCount", 0, 10, 1)
+  .name("Number of Rings")
+  .onChange(() => {
+    if (isApplyingPreset) return;
+    
+    // Get current planet size for proper ring scaling
+    const planetSize = params.planetType === 'gas' 
+      ? (params.gasPlanetSize || 2.0) 
+      : (params.planetSize || 1.0);
+    
+    // Ensure rings array matches count
+    while (params.rings.length < params.ringCount) {
+      const index = params.rings.length;
+      const minRingRadius = planetSize * 1.15;
+      const baseStart = minRingRadius + (index * 0.25 * planetSize);
+      const thickness = (0.15 + (Math.random() * 0.2)) * planetSize;
+      
+      params.rings.push({
+        style: index % 2 === 0 ? "Texture" : "Noise",
+        color: new THREE.Color().setHSL(
+          (0.05 + index * 0.15) % 1,
+          0.25 + Math.random() * 0.3,
+          0.6 + Math.random() * 0.3
+        ).getStyle(),
+        start: baseStart,
+        end: baseStart + thickness,
+        opacity: 0.5 + Math.random() * 0.3,
+        noiseScale: 2.5 + Math.random() * 2.0,
+        noiseStrength: 0.4 + Math.random() * 0.4,
+        spinSpeed: (0.02 + Math.random() * 0.08) * (index % 2 === 0 ? 1 : -1),
+        brightness: 0.8 + Math.random() * 0.4
+      });
+    }
+    while (params.rings.length > params.ringCount) {
+      params.rings.pop();
+    }
+    rebuildRingControls();
+    if (planet) {
+      planet.updateRings();
+    }
+    shareDirty = true;
+    debounceShare();
+  });
+
+guiControllers.ringAngle = ringsFolder.add(params, "ringAngle", -90, 90, 0.1)
+  .name("Ring Tilt (degrees)")
+  .onChange(() => {
+    if (planet) {
+      planet.updateTilt();
+    }
+    shareDirty = true;
+    debounceShare();
+  });
+
+guiControllers.ringSpinSpeed = ringsFolder.add(params, "ringSpinSpeed", -1, 1, 0.01)
+  .name("Global Ring Spin")
+  .onChange(() => {
+    shareDirty = true;
+    debounceShare();
+  });
 
 setupPlanetControls({
     gui,
@@ -909,10 +991,20 @@ function applyPreset(presetName, options = {}) {
       guiControllers.refreshPlanetTypeVisibility(params.planetType);
     }
     
+    // Rebuild ring controls if ring count changed
+    if (guiControllers.rebuildRingControls) {
+      guiControllers.rebuildRingControls();
+    }
+    
     // Update all planet components
-    // Removed: updatePalette, updateClouds (not in new shader-based Planet)
-    // Removed: updateCore, updateRings, updateTilt (not in new shader-based Planet)
-    // sun.update() is called in render loop
+    if (planet) {
+      planet.applyParams(params);
+      planet.updateRings();
+      planet.updateTilt();
+      planet.updateMoons();
+    }
+    
+    // Update sun (done in render loop but apply params here)
     updateSeedDisplay();
     
     // Update share if not skipping
@@ -3150,10 +3242,73 @@ function surpriseMe() {
         guiControllers.randomizeRockyPlanet();
     }
     
+    // Randomize rings (gas planets have higher chance)
+    const ringChance = isGasPlanet ? 0.7 : 0.15;
+    params.ringEnabled = Math.random() < ringChance;
+    
+    if (params.ringEnabled) {
+        // Get planet size for proper ring scaling
+        const planetSize = isGasPlanet ? (params.gasPlanetSize || 2.0) : (params.planetSize || 1.0);
+        
+        // More rings for gas giants
+        const minRings = isGasPlanet ? 2 : 1;
+        const maxRings = isGasPlanet ? 6 : 3;
+        params.ringCount = Math.floor(Math.random() * (maxRings - minRings + 1)) + minRings;
+        
+        // Random ring angle
+        params.ringAngle = THREE.MathUtils.lerp(-45, 45, Math.random());
+        params.ringSpinSpeed = THREE.MathUtils.lerp(-0.05, 0.05, Math.random());
+        
+        // Generate rings with proper sizing
+        params.rings = [];
+        let lastRadius = planetSize * 1.15; // Start just outside planet
+        
+        for (let i = 0; i < params.ringCount; i++) {
+            const gap = THREE.MathUtils.lerp(0.05, 0.15, Math.random()) * planetSize;
+            const start = lastRadius + gap;
+            const thickness = THREE.MathUtils.lerp(0.1, 0.4, Math.random()) * planetSize;
+            const end = start + thickness;
+            
+            const hue = (0.05 + i * 0.12 + Math.random() * 0.1) % 1;
+            const saturation = 0.2 + Math.random() * 0.3;
+            const lightness = 0.5 + Math.random() * 0.4;
+            
+            params.rings.push({
+                style: Math.random() > 0.5 ? "Texture" : "Noise",
+                color: new THREE.Color().setHSL(hue, saturation, lightness).getStyle(),
+                start: start,
+                end: end,
+                opacity: THREE.MathUtils.lerp(0.4, 0.9, Math.random()),
+                noiseScale: THREE.MathUtils.lerp(2.0, 5.0, Math.random()),
+                noiseStrength: THREE.MathUtils.lerp(0.3, 0.7, Math.random()),
+                spinSpeed: THREE.MathUtils.lerp(-0.08, 0.08, Math.random()),
+                brightness: THREE.MathUtils.lerp(0.7, 1.3, Math.random())
+            });
+            
+            lastRadius = end;
+        }
+    } else {
+        params.ringCount = 0;
+        params.rings = [];
+    }
+    
+    // Update GUI controllers for rings
+    if (guiControllers.ringEnabled) guiControllers.ringEnabled.updateDisplay();
+    if (guiControllers.ringCount) guiControllers.ringCount.updateDisplay();
+    if (guiControllers.ringAngle) guiControllers.ringAngle.updateDisplay();
+    if (guiControllers.ringSpinSpeed) guiControllers.ringSpinSpeed.updateDisplay();
+    
+    // Rebuild ring controls
+    if (guiControllers.rebuildRingControls) {
+        guiControllers.rebuildRingControls();
+    }
+    
     // Update planet
     if (planet) {
         planet.setPlanetType(params.planetType);
         planet.applyParams(params);
+        planet.updateRings();
+        planet.updateTilt();
     }
     
     // Update seed display
