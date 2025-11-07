@@ -1,5 +1,61 @@
 import * as THREE from "three";
 
+const starVertexShader = /* glsl */`
+attribute vec3 color;
+attribute float aSize;
+attribute float aPhase;
+
+uniform float uTime;
+uniform float uPixelRatio;
+uniform float uScale;
+uniform float uTwinkleSpeed;
+uniform float uBrightness;
+
+varying vec3 vColor;
+varying float vBrightness;
+
+void main() {
+  vColor = color;
+
+  float twinkle = 0.7 + 0.3 * sin(uTime * uTwinkleSpeed + aPhase);
+  vBrightness = uBrightness * twinkle;
+
+  vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+  float size = aSize * (1.0 + 0.4 * twinkle);
+  
+  // Calculate point size with proper perspective scaling
+  // Stars are far away (90-280 units), so we need a larger base size
+  float distance = max(-mvPosition.z, 1.0);
+  float pointSize = size * uScale / distance;
+  
+  // Ensure minimum visible size (at least 2 pixels)
+  gl_PointSize = max(pointSize, 2.0);
+
+  gl_Position = projectionMatrix * mvPosition;
+}
+`;
+
+const starFragmentShader = /* glsl */`
+uniform sampler2D uTexture;
+
+varying vec3 vColor;
+varying float vBrightness;
+
+void main() {
+  vec4 texColor = texture2D(uTexture, gl_PointCoord);
+  float brightness = clamp(vBrightness, 0.0, 2.0);
+  float alpha = texColor.a * brightness;
+  
+  // Lower threshold to ensure dim stars are still visible
+  if (alpha <= 0.001) {
+    discard;
+  }
+
+  vec3 color = vColor * texColor.rgb * brightness;
+  gl_FragColor = vec4(color, alpha);
+}
+`;
+
 export function createSunTexture({ inner = 0.1, outer = 1, innerAlpha = 1, outerAlpha = 0, resolution = 1.0 } = {}) {
   const scale = Math.max(0.25, Math.min(2.0, resolution || 1.0));
   const size = Math.max(32, Math.round(256 * scale));
@@ -61,18 +117,35 @@ export function createStarfield({ seed, count, resolution = 1.0 }) {
   geometry.setAttribute("aPhase", new THREE.BufferAttribute(phases, 1));
 
   const pointTexture = createSunTexture({ inner: 0.0, outer: 0.5, innerAlpha: 1, outerAlpha: 0, resolution });
-  const material = new THREE.PointsMaterial({
-    size: 1.6,
-    map: pointTexture,
-    vertexColors: true,
+  const pixelRatio = typeof window !== "undefined" && window.devicePixelRatio ? window.devicePixelRatio : 1;
+  const viewportHeight = typeof window !== "undefined" && window.innerHeight ? window.innerHeight : 1080;
+  // Scale factor for point size - larger value makes stars more visible at distance
+  // Stars are positioned at 90-280 units away, so we need a significant scale
+  const uniforms = {
+    uTime: { value: 0 },
+    uBrightness: { value: 1 },
+    uTwinkleSpeed: { value: 0.6 },
+    uPixelRatio: { value: Math.min(pixelRatio, 2) },
+    uScale: { value: Math.min(pixelRatio, 2) * viewportHeight * 1.2 },
+    uTexture: { value: pointTexture }
+  };
+
+  const material = new THREE.ShaderMaterial({
+    uniforms,
+    vertexShader: starVertexShader,
+    fragmentShader: starFragmentShader,
     transparent: true,
     depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    sizeAttenuation: true
+    depthTest: true,
+    blending: THREE.AdditiveBlending
   });
 
+  material.uniformsNeedUpdate = true;
+
   const points = new THREE.Points(geometry, material);
+  points.name = "Starfield";
   points.frustumCulled = false;
+  points.renderOrder = -1000; // Render stars first/behind everything
   return points;
 }
 

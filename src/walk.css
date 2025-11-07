@@ -1,0 +1,112 @@
+body {
+  margin: 0;
+  overflow: hidden;
+  background: #04060f;
+  color: #d9e6ff;
+  font-family: "Segoe UI", Roboto, sans-serif;
+}
+
+#loading-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at top, rgba(35, 58, 112, 0.6), rgba(5, 7, 15, 0.95));
+  font-size: 1.2rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  z-index: 10;
+}
+
+#hud {
+  position: fixed;
+  top: 18px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: rgba(13, 19, 36, 0.58);
+  border: 1px solid rgba(80, 120, 200, 0.32);
+  border-radius: 12px;
+  padding: 10px 16px;
+  backdrop-filter: blur(6px);
+  z-index: 8;
+}
+
+#hud-fps {
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+#hud-exit {
+  appearance: none;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: linear-gradient(135deg, #2a66ff, #7a9dff);
+  color: #fff;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+#hud-exit:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 16px rgba(42, 102, 255, 0.35);
+}
+
+#crosshair {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 24px;
+  height: 24px;
+  z-index: 6;
+  pointer-events: none;
+}
+
+#crosshair span {
+  position: absolute;
+  background: rgba(230, 237, 255, 0.55);
+}
+
+#crosshair span:first-child {
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  transform: translateY(-50%);
+}
+
+#crosshair span:last-child {
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-50%);
+}
+
+#pointer-instructions {
+  position: fixed;
+  left: 50%;
+  bottom: 12%;
+  transform: translateX(-50%);
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: rgba(20, 30, 58, 0.68);
+  border: 1px solid rgba(98, 129, 210, 0.4);
+  text-align: center;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  letter-spacing: 0.03em;
+  z-index: 7;
+}
+
+canvas {
+  display: block;
+}
+

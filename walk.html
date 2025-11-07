@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Planet Landing</title>
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="stylesheet" href="/src/walk.css" />
+  </head>
+  <body>
+    <div id="loading-screen" aria-live="polite">Preparing landing zone…</div>
+    <div id="hud" hidden>
+      <div id="hud-fps">FPS: --</div>
+      <button id="hud-exit" type="button">Return</button>
+    </div>
+    <div id="crosshair" hidden>
+      <span></span>
+      <span></span>
+    </div>
+    <div id="pointer-instructions" hidden>
+      <p>Click to engage controls</p>
+      <p>Press Esc to release</p>
+    </div>
+    <script type="module" src="/src/walk.js"></script>
+  </body>
+</html>
+

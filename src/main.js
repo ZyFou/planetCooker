@@ -1582,6 +1582,9 @@ function onWindowResize() {
     if (starField?.material?.uniforms?.uPixelRatio) {
       starField.material.uniforms.uPixelRatio.value = pixelRatio;
     }
+    if (starField?.material?.uniforms?.uScale) {
+      starField.material.uniforms.uScale.value = pixelRatio * height * 1.2;
+    }
     if (window.innerWidth > 960) {
       closeMobilePanel(true);
     }
@@ -1710,79 +1713,29 @@ function enterShipMode() {
 function enterWalkMode(hit, rayDirection) {
   if (!planet || !hit?.point) return;
 
-  if (isFpsMode && fpsModeType === 'ship') {
-    exitFpsMode({ skipOrbitReset: true, skipPointerLock: true });
-  }
-
   const planetCenter = getPlanetCenter(tempVec1);
-  const baseRadius = getEffectivePlanetRadius();
-  const planetRotation = planet.spinGroup ? planet.spinGroup.rotation.y : 0;
-  
-  // Get surface normal from hit point
   const hitDir = tempVec2.copy(hit.point).sub(planetCenter);
-  if (hitDir.lengthSq() === 0) {
-    hitDir.copy(WORLD_UP);
-  }
+  if (hitDir.lengthSq() === 0) return;
   hitDir.normalize();
-  
-  // Sample terrain height
-  const rotationQuat = tempQuat1.setFromAxisAngle(WORLD_UP, -planetRotation);
-  const localUp = tempVec3.copy(hitDir).applyQuaternion(rotationQuat);
-  const terrainHeight = getTerrainHeightAtPosition([localUp.x, localUp.y, localUp.z]);
-  const surfaceRadius = baseRadius + terrainHeight;
-  const spawnRadius = surfaceRadius + walkController.eyeHeight;
-  
-  // Set position
-  walkController.position.copy(planetCenter).addScaledVector(hitDir, spawnRadius);
-  walkController.velocity.set(0, 0, 0);
-  walkController.onGround = true;
-  
-  // Initialize camera orientation from current view or ray
-  let viewDir = tempVec4;
-  if (rayDirection) {
-    viewDir.copy(rayDirection).negate();
-  } else {
-    camera.getWorldDirection(viewDir);
-  }
-  viewDir.normalize();
-  
-  // Decompose view direction into yaw and pitch relative to surface
-  const tangentView = tempVec5.copy(viewDir).projectOnPlane(hitDir);
-  if (tangentView.lengthSq() < 1e-6) {
-    tangentView.set(0, 0, -1).projectOnPlane(hitDir);
-    if (tangentView.lengthSq() < 1e-6) {
-      tangentView.set(1, 0, 0);
-    }
-  }
-  tangentView.normalize();
-  
-  // Calculate yaw from world X/Z
-  walkController.yaw = Math.atan2(tangentView.x, tangentView.z);
-  
-  // Calculate pitch from normal
-  walkController.pitch = Math.asin(-viewDir.dot(hitDir));
-  walkController.pitch = THREE.MathUtils.clamp(
-    walkController.pitch,
-    -walkController.maxPitch,
-    walkController.maxPitch
-  );
-  
-  // Set camera
-  const euler = new THREE.Euler(walkController.pitch, walkController.yaw, 0, 'YXZ');
-  camera.position.copy(walkController.position);
-  camera.rotation.copy(euler);
-  
-  fpsModeType = 'walk';
-  isFpsMode = true;
-  controls.enabled = false;
-  activeFocus = null;
-  previousPlanetRotation = planetRotation;
 
-  const canvas = renderer.domElement;
-  canvas.addEventListener('click', requestPointerLockOnClick, { once: true });
-  if (!fpsController.isPointerLocked) {
-    requestPointerLock();
+  const latitude = Math.asin(THREE.MathUtils.clamp(hitDir.y, -1, 1));
+  const longitude = Math.atan2(hitDir.z, hitDir.x);
+
+  let shareCode = null;
+  try {
+    const payload = buildSharePayload();
+    shareCode = encodeShare(payload);
+  } catch (error) {
+    console.warn('Failed to build landing payload', error);
+    return;
   }
+
+  const destination = new URL('walk.html', window.location.href);
+  destination.searchParams.set('share', shareCode);
+  destination.searchParams.set('lat', latitude.toFixed(6));
+  destination.searchParams.set('lon', longitude.toFixed(6));
+
+  window.location.href = destination.toString();
 }
 
 function exitFpsMode(options = {}) {
@@ -3198,9 +3151,14 @@ function regenerateStarfield() {
 function updateStarfieldUniforms() {
     if (!starField || !starField.material || !starField.material.uniforms) return;
     const uniforms = starField.material.uniforms;
+    const pixelRatio = Math.min(window.devicePixelRatio * visualSettings.resolutionScale, 2);
+    const height = sceneContainer?.clientHeight || window.innerHeight || 1080;
     uniforms.uBrightness.value = params.starBrightness;
     uniforms.uTwinkleSpeed.value = params.starTwinkleSpeed;
-    uniforms.uPixelRatio.value = Math.min(window.devicePixelRatio, 2);
+    uniforms.uPixelRatio.value = pixelRatio;
+    if (uniforms.uScale) {
+      uniforms.uScale.value = pixelRatio * height * 1.2;
+    }
 }
   
 function getStarfieldCount(count) {
