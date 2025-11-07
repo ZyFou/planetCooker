@@ -142,26 +142,19 @@ let fpsController = {
 const walkController = {
   position: new THREE.Vector3(),
   velocity: new THREE.Vector3(),
-  up: new THREE.Vector3(0, 1, 0),
   yaw: 0,
   pitch: 0,
   mouseSensitivity: 0.0012,
-  speed: fpsController.baseSpeed / 5,
-  sprintMultiplier: 1.75,
+  speed: 0.015,
+  sprintMultiplier: 2.0,
   maxPitch: THREE.MathUtils.degToRad(85),
-  eyeHeight: 0.02,
-  gravity: 0.016, // 5x smaller than ship mode (0.08 / 5)
-  groundAcceleration: 12,
-  airAcceleration: 2,
-  groundFriction: 8,
+  eyeHeight: 0.015,
+  gravity: 0.2,
+  groundAcceleration: 15,
+  airAcceleration: 4,
+  groundFriction: 10,
   jumpStrength: 0.04,
-  onGround: false,
-  northReference: new THREE.Vector3(0, 0, 1)
-};
-
-const walkOrientation = {
-  forward: new THREE.Vector3(0, 0, -1),
-  right: new THREE.Vector3(1, 0, 0)
+  onGround: false
 };
 const tempVec1 = new THREE.Vector3();
 const tempVec2 = new THREE.Vector3();
@@ -169,8 +162,10 @@ const tempVec3 = new THREE.Vector3();
 const tempVec4 = new THREE.Vector3();
 const tempVec5 = new THREE.Vector3();
 const tempVec6 = new THREE.Vector3();
+const tempVec7 = new THREE.Vector3();
 const tempQuat1 = new THREE.Quaternion();
 const tempQuat2 = new THREE.Quaternion();
+const tempMat4 = new THREE.Matrix4();
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const WORLD_RIGHT = new THREE.Vector3(1, 0, 0);
 
@@ -248,30 +243,7 @@ function getPlanetCenter(target = planetCenterCache) {
   return target;
 }
 
-function updateWalkOrientation(up) {
-  tempVec5.copy(walkController.northReference);
-  if (Math.abs(tempVec5.dot(up)) > 0.95) {
-    tempVec5.copy(WORLD_RIGHT);
-  }
-  tempVec5.projectOnPlane(up);
-  if (tempVec5.lengthSq() < 1e-6) {
-    tempVec5.copy(WORLD_UP).cross(up);
-    if (tempVec5.lengthSq() < 1e-6) {
-      tempVec5.copy(WORLD_RIGHT).projectOnPlane(up);
-    }
-  }
-  tempVec5.normalize();
-
-  tempVec6.copy(up).cross(tempVec5).normalize();
-
-  tempQuat1.setFromAxisAngle(up, walkController.yaw);
-  walkOrientation.forward.copy(tempVec5).applyQuaternion(tempQuat1);
-  walkOrientation.right.copy(tempVec6).applyQuaternion(tempQuat1);
-
-  tempQuat2.setFromAxisAngle(walkOrientation.right, walkController.pitch);
-  walkOrientation.forward.applyQuaternion(tempQuat2).normalize();
-  walkOrientation.right.crossVectors(walkOrientation.forward, up).normalize();
-}
+// Removed - now handled inline in updateWalkMovement
 
 function relayoutForMode() {
   requestAnimationFrame(() => {
@@ -1648,74 +1620,69 @@ function enterWalkMode(hit, rayDirection) {
     exitFpsMode({ skipOrbitReset: true, skipPointerLock: true });
   }
 
-  const planetCenter = getPlanetCenter(tempVec2);
-  tempVec3.copy(hit.point).sub(planetCenter);
-  if (tempVec3.lengthSq() === 0) {
-    tempVec3.copy(WORLD_UP);
-  }
-  tempVec3.normalize();
-
-  // Get terrain height at the hit point
+  const planetCenter = getPlanetCenter(tempVec1);
   const baseRadius = getEffectivePlanetRadius();
   const planetRotation = planet.spinGroup ? planet.spinGroup.rotation.y : 0;
-  const rotationQuat = tempQuat1.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -planetRotation);
-  const localUpForTerrain = tempVec4.copy(tempVec3).applyQuaternion(rotationQuat);
-  const terrainDisplacement = getTerrainHeightAtPosition([localUpForTerrain.x, localUpForTerrain.y, localUpForTerrain.z]);
-  const surfaceRadius = baseRadius + terrainDisplacement;
-  const desiredRadius = surfaceRadius + walkController.eyeHeight;
   
-  walkController.position.copy(planetCenter).addScaledVector(tempVec3, desiredRadius);
+  // Get surface normal from hit point
+  const hitDir = tempVec2.copy(hit.point).sub(planetCenter);
+  if (hitDir.lengthSq() === 0) {
+    hitDir.copy(WORLD_UP);
+  }
+  hitDir.normalize();
+  
+  // Sample terrain height
+  const rotationQuat = tempQuat1.setFromAxisAngle(WORLD_UP, -planetRotation);
+  const localUp = tempVec3.copy(hitDir).applyQuaternion(rotationQuat);
+  const terrainHeight = getTerrainHeightAtPosition([localUp.x, localUp.y, localUp.z]);
+  const surfaceRadius = baseRadius + terrainHeight;
+  const spawnRadius = surfaceRadius + walkController.eyeHeight;
+  
+  // Set position
+  walkController.position.copy(planetCenter).addScaledVector(hitDir, spawnRadius);
   walkController.velocity.set(0, 0, 0);
-  walkController.up.copy(tempVec3);
   walkController.onGround = true;
-
+  
+  // Initialize camera orientation from current view or ray
+  let viewDir = tempVec4;
   if (rayDirection) {
-    tempVec4.copy(rayDirection).negate().normalize();
+    viewDir.copy(rayDirection).negate();
   } else {
-    camera.getWorldDirection(tempVec4).normalize();
+    camera.getWorldDirection(viewDir);
   }
-
-  tempVec5.copy(walkController.northReference);
-  if (Math.abs(tempVec5.dot(tempVec3)) > 0.95) {
-    tempVec5.copy(WORLD_RIGHT);
-  }
-  tempVec5.projectOnPlane(tempVec3);
-  if (tempVec5.lengthSq() < 1e-6) {
-    tempVec5.copy(WORLD_UP).cross(tempVec3);
-    if (tempVec5.lengthSq() < 1e-6) {
-      tempVec5.copy(WORLD_RIGHT).projectOnPlane(tempVec3);
+  viewDir.normalize();
+  
+  // Decompose view direction into yaw and pitch relative to surface
+  const tangentView = tempVec5.copy(viewDir).projectOnPlane(hitDir);
+  if (tangentView.lengthSq() < 1e-6) {
+    tangentView.set(0, 0, -1).projectOnPlane(hitDir);
+    if (tangentView.lengthSq() < 1e-6) {
+      tangentView.set(1, 0, 0);
     }
   }
-  tempVec5.normalize();
-  tempVec6.copy(tempVec3).cross(tempVec5).normalize();
-
-  tempVec1.copy(tempVec4).projectOnPlane(tempVec3);
-  if (tempVec1.lengthSq() < 1e-6) {
-    tempVec1.copy(tempVec5);
-  } else {
-    tempVec1.normalize();
-  }
-
-  walkController.yaw = Math.atan2(tempVec1.dot(tempVec6), tempVec1.dot(tempVec5));
+  tangentView.normalize();
+  
+  // Calculate yaw from world X/Z
+  walkController.yaw = Math.atan2(tangentView.x, tangentView.z);
+  
+  // Calculate pitch from normal
+  walkController.pitch = Math.asin(-viewDir.dot(hitDir));
   walkController.pitch = THREE.MathUtils.clamp(
-    Math.asin(-tempVec4.dot(tempVec3)),
+    walkController.pitch,
     -walkController.maxPitch,
     walkController.maxPitch
   );
-
+  
+  // Set camera
+  const euler = new THREE.Euler(walkController.pitch, walkController.yaw, 0, 'YXZ');
+  camera.position.copy(walkController.position);
+  camera.rotation.copy(euler);
+  
   fpsModeType = 'walk';
   isFpsMode = true;
   controls.enabled = false;
   activeFocus = null;
-  
-  // Initialize previous planet rotation
-  previousPlanetRotation = planet.spinGroup ? planet.spinGroup.rotation.y : 0;
-
-  updateWalkOrientation(tempVec3);
-  camera.position.copy(walkController.position);
-  camera.up.copy(tempVec3);
-  tempVec2.copy(walkController.position).add(walkOrientation.forward);
-  camera.lookAt(tempVec2);
+  previousPlanetRotation = planetRotation;
 
   const canvas = renderer.domElement;
   canvas.addEventListener('click', requestPointerLockOnClick, { once: true });
@@ -2072,149 +2039,153 @@ function updateWalkMovement(delta) {
   if (!isFpsMode || fpsModeType !== 'walk' || !planet) return;
 
   const planetCenter = getPlanetCenter(tempVec1);
-  
-  // Get planet rotation to account for it in calculations
+  const baseRadius = getEffectivePlanetRadius();
   const planetRotation = planet.spinGroup ? planet.spinGroup.rotation.y : 0;
+  
+  // Rotate player with planet
   const rotationDelta = planetRotation - previousPlanetRotation;
+  if (Math.abs(rotationDelta) > 1e-8) {
+    const rotQuat = tempQuat1.setFromAxisAngle(WORLD_UP, rotationDelta);
+    walkController.position.sub(planetCenter).applyQuaternion(rotQuat).add(planetCenter);
+    walkController.velocity.applyQuaternion(rotQuat);
+    walkController.yaw += rotationDelta;
+  }
   previousPlanetRotation = planetRotation;
   
-  // Rotate player position with planet to keep them on the same surface point
-  if (Math.abs(rotationDelta) > 1e-6) {
-    tempVec1.copy(walkController.position).sub(planetCenter);
-    const rotationQuatDelta = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotationDelta);
-    tempVec1.applyQuaternion(rotationQuatDelta);
-    walkController.position.copy(planetCenter).add(tempVec1);
-    
-    // Also rotate the up vector
-    walkController.up.applyQuaternion(rotationQuatDelta);
+  // Get surface normal (radial direction from planet center)
+  const toCenter = tempVec2.copy(walkController.position).sub(planetCenter);
+  const currentDist = toCenter.length();
+  if (currentDist < 1e-6) {
+    toCenter.set(0, 1, 0);
+  }
+  const surfaceNormal = toCenter.normalize();
+  
+  // Sample terrain height
+  const rotQuat = tempQuat1.setFromAxisAngle(WORLD_UP, -planetRotation);
+  const localUp = tempVec3.copy(surfaceNormal).applyQuaternion(rotQuat);
+  const terrainHeight = getTerrainHeightAtPosition([localUp.x, localUp.y, localUp.z]);
+  const targetRadius = baseRadius + terrainHeight + walkController.eyeHeight;
+  
+  // Build tangent space basis (surface-aligned coordinate system)
+  // North reference projected onto tangent plane
+  const tangentNorth = tempVec4.set(0, 0, 1).projectOnPlane(surfaceNormal);
+  if (tangentNorth.lengthSq() < 1e-6) {
+    tangentNorth.set(1, 0, 0).projectOnPlane(surfaceNormal);
+  }
+  tangentNorth.normalize();
+  
+  const tangentEast = tempVec5.copy(surfaceNormal).cross(tangentNorth).normalize();
+  
+  // Apply yaw rotation in tangent space
+  const yawQuat = tempQuat1.setFromAxisAngle(surfaceNormal, walkController.yaw);
+  const tangentForward = tempVec6.copy(tangentNorth).applyQuaternion(yawQuat).normalize();
+  const tangentRight = tempVec7.copy(tangentEast).applyQuaternion(yawQuat).normalize();
+  
+  // Movement input in tangent space
+  const moveDirection = new THREE.Vector3();
+  if (keys['z'] || keys['w']) moveDirection.add(tangentForward);
+  if (keys['s']) moveDirection.sub(tangentForward);
+  if (keys['q'] || keys['a']) moveDirection.sub(tangentRight);
+  if (keys['d']) moveDirection.add(tangentRight);
+  
+  if (moveDirection.length() > 0) {
+    moveDirection.normalize();
   }
   
-  const rotationQuat = tempQuat1.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -planetRotation);
-  const invRotationQuat = tempQuat2.setFromAxisAngle(new THREE.Vector3(0, 1, 0), planetRotation);
-
-  // Transform world position to planet-local space (undo rotation)
-  tempVec1.copy(walkController.position).sub(planetCenter);
-  const localPos = tempVec2.copy(tempVec1).applyQuaternion(rotationQuat);
-  
-  // Get direction from center (normalized local position)
-  let distance = localPos.length();
-  if (distance < 1e-6) {
-    // Fallback: use current up vector transformed to local space
-    const localUpFallback = tempVec3.copy(walkController.up).applyQuaternion(rotationQuat);
-    localPos.copy(localUpFallback);
-    distance = 1;
+  let speedMultiplier = 1.0;
+  if (keys['shift']) {
+    speedMultiplier = walkController.sprintMultiplier;
+  } else if (keys['control'] || keys['ctrl']) {
+    speedMultiplier = 0.5;
   }
-  const localUp = tempVec3.copy(localPos).divideScalar(distance);
   
-  // Sample terrain height at this position
-  const baseRadius = getEffectivePlanetRadius();
-  const terrainDisplacement = getTerrainHeightAtPosition([localUp.x, localUp.y, localUp.z]);
-  const surfaceRadius = baseRadius + terrainDisplacement;
-  const desiredRadius = surfaceRadius + walkController.eyeHeight;
-
-  // Transform back to world space for up vector
-  const worldUp = tempVec4.copy(localUp).applyQuaternion(invRotationQuat);
-  walkController.up.copy(worldUp);
-
-  updateWalkOrientation(worldUp);
-
-  // Movement input - calculate in world space
-  const moveInput = tempVec5.set(0, 0, 0);
-  if (keys['z'] || keys['w']) moveInput.add(walkOrientation.forward);
-  if (keys['s']) moveInput.sub(walkOrientation.forward);
-  if (keys['q'] || keys['a']) moveInput.sub(walkOrientation.right);
-  if (keys['d']) moveInput.add(walkOrientation.right);
+  // Split velocity into tangent and radial
+  const radialVel = walkController.velocity.dot(surfaceNormal);
+  const tangentVel = new THREE.Vector3().copy(walkController.velocity).addScaledVector(surfaceNormal, -radialVel);
   
-  const speedMultiplier = keys['shift']
-    ? walkController.sprintMultiplier
-    : (keys['control'] || keys['ctrl'] ? 0.5 : 1.0);
+  // Apply movement
   const targetSpeed = walkController.speed * speedMultiplier;
-
-  // Separate velocity into radial (up) and tangential (horizontal) components
-  const radialVelocity = tempVec6.copy(walkController.up).multiplyScalar(walkController.velocity.dot(walkController.up));
-  const horizontalVelocity = new THREE.Vector3().copy(walkController.velocity).sub(radialVelocity);
-
   const accel = walkController.onGround ? walkController.groundAcceleration : walkController.airAcceleration;
   const lerpFactor = THREE.MathUtils.clamp(accel * delta, 0, 1);
-
-  if (moveInput.lengthSq() > 0) {
-    moveInput.normalize();
-    moveInput.multiplyScalar(targetSpeed);
-    horizontalVelocity.lerp(moveInput, lerpFactor);
+  
+  if (moveDirection.lengthSq() > 0) {
+    const targetVel = moveDirection.multiplyScalar(targetSpeed);
+    tangentVel.lerp(targetVel, lerpFactor);
   } else if (walkController.onGround) {
     const friction = Math.max(0, 1 - walkController.groundFriction * delta);
-    horizontalVelocity.multiplyScalar(friction);
-    if (horizontalVelocity.lengthSq() < 1e-6) horizontalVelocity.set(0, 0, 0);
+    tangentVel.multiplyScalar(friction);
   }
-
-  // Combine velocities and apply gravity
-  walkController.velocity.copy(horizontalVelocity).add(radialVelocity);
-  walkController.velocity.addScaledVector(worldUp, -walkController.gravity * delta);
-
-  // Update position in world space
-  walkController.position.addScaledVector(walkController.velocity, delta);
-
-  // Collision detection with terrain - transform to local space
-  tempVec1.copy(walkController.position).sub(planetCenter);
-  const currentLocalPos = tempVec2.copy(tempVec1).applyQuaternion(rotationQuat);
-  let correctedDistance = currentLocalPos.length();
-  if (correctedDistance < 1e-6) {
-    currentLocalPos.copy(localUp);
-    correctedDistance = 1;
-  }
-  const correctedLocalUp = tempVec3.copy(currentLocalPos).divideScalar(correctedDistance);
   
-  // Sample terrain at corrected position
-  const correctedTerrainDisplacement = getTerrainHeightAtPosition([correctedLocalUp.x, correctedLocalUp.y, correctedLocalUp.z]);
-  const correctedSurfaceRadius = baseRadius + correctedTerrainDisplacement;
-  const correctedDesiredRadius = correctedSurfaceRadius + walkController.eyeHeight;
-  
-  // Add a safety margin to prevent glitching (larger margin for stability)
-  const safetyMargin = 0.002;
-  const minRadius = correctedDesiredRadius + safetyMargin;
-
-  // Always ensure player is at least at the minimum radius (prevents glitching)
-  if (correctedDistance < minRadius) {
-    // Push up to terrain surface (with safety margin)
-    currentLocalPos.setLength(minRadius);
-    // Transform back to world space
-    const worldPos = tempVec4.copy(currentLocalPos).applyQuaternion(invRotationQuat);
-    walkController.position.copy(planetCenter).add(worldPos);
-    walkController.onGround = true;
+  // Apply gravity
+  let newRadialVel = radialVel;
+  if (walkController.onGround && currentDist <= targetRadius * 1.01) {
+    // On ground - cancel radial velocity and stick to surface
+    newRadialVel = 0;
+    walkController.velocity.copy(tangentVel);
     
-    // Cancel downward velocity when hitting ground
-    const correctedWorldUp = tempVec5.copy(correctedLocalUp).applyQuaternion(invRotationQuat);
-    const normalVelocity = walkController.velocity.dot(correctedWorldUp);
-    if (normalVelocity < 0) {
-      walkController.velocity.addScaledVector(correctedWorldUp, -normalVelocity);
-    }
-    walkController.up.copy(correctedWorldUp);
-  } else if (correctedDistance < correctedDesiredRadius + safetyMargin * 0.5) {
-    // Close to ground but not quite - still consider on ground
-    walkController.onGround = true;
-    const currentWorldUp = tempVec5.copy(correctedLocalUp).applyQuaternion(invRotationQuat);
-    walkController.up.copy(currentWorldUp);
+    // Apply movement
+    walkController.position.addScaledVector(walkController.velocity, delta);
+    
+    // Snap to surface
+    const correctedPos = tempVec2.copy(walkController.position).sub(planetCenter);
+    correctedPos.setLength(targetRadius);
+    walkController.position.copy(planetCenter).add(correctedPos);
+    
   } else {
-    walkController.onGround = false;
-    // Update up vector based on current position
-    const currentWorldUp = tempVec5.copy(correctedLocalUp).applyQuaternion(invRotationQuat);
-    walkController.up.copy(currentWorldUp);
+    // In air - apply gravity
+    newRadialVel -= walkController.gravity * delta;
+    walkController.velocity.copy(tangentVel).addScaledVector(surfaceNormal, newRadialVel);
+    
+    // Apply movement
+    walkController.position.addScaledVector(walkController.velocity, delta);
+    
+    // Collision with surface
+    const newToCenter = tempVec2.copy(walkController.position).sub(planetCenter);
+    const newDist = newToCenter.length();
+    
+    if (newDist < targetRadius) {
+      // Hit ground
+      newToCenter.setLength(targetRadius);
+      walkController.position.copy(planetCenter).add(newToCenter);
+      walkController.onGround = true;
+      
+      // Cancel downward velocity
+      const newNormal = newToCenter.normalize();
+      const velDown = walkController.velocity.dot(newNormal);
+      if (velDown < 0) {
+        walkController.velocity.addScaledVector(newNormal, -velDown);
+      }
+    } else if (newDist < targetRadius * 1.05) {
+      walkController.onGround = true;
+    } else {
+      walkController.onGround = false;
+    }
   }
-
-  updateWalkOrientation(walkController.up);
-
-  // Update camera - ensure it follows planet rotation and stays level to gravity
+  
+  // Build camera orientation: surface-aligned with pitch applied
+  const finalSurfaceNormal = tempVec2.copy(walkController.position).sub(planetCenter).normalize();
+  const finalTangentNorth = tempVec3.set(0, 0, 1).projectOnPlane(finalSurfaceNormal);
+  if (finalTangentNorth.lengthSq() < 1e-6) {
+    finalTangentNorth.set(1, 0, 0).projectOnPlane(finalSurfaceNormal);
+  }
+  finalTangentNorth.normalize();
+  
+  const finalYawQuat = tempQuat1.setFromAxisAngle(finalSurfaceNormal, walkController.yaw);
+  const cameraForward = tempVec4.copy(finalTangentNorth).applyQuaternion(finalYawQuat);
+  
+  // Apply pitch around right axis
+  const cameraRight = tempVec5.copy(finalSurfaceNormal).cross(cameraForward).normalize();
+  const pitchQuat = tempQuat2.setFromAxisAngle(cameraRight, walkController.pitch);
+  cameraForward.applyQuaternion(pitchQuat).normalize();
+  
+  // Rebuild right to stay orthogonal
+  cameraRight.copy(cameraForward).cross(finalSurfaceNormal).normalize();
+  
+  // Set camera
   camera.position.copy(walkController.position);
-  camera.up.copy(walkController.up);
+  camera.up.copy(finalSurfaceNormal);
   
-  // Calculate look direction based on yaw and pitch, maintaining ground alignment
-  const forwardDir = tempVec6.copy(walkOrientation.forward);
-  // Apply pitch rotation around the right vector
-  const rightVec = new THREE.Vector3().copy(walkOrientation.right);
-  const pitchQuat = tempQuat1.setFromAxisAngle(rightVec, walkController.pitch);
-  forwardDir.applyQuaternion(pitchQuat);
-  
-  const lookTarget = new THREE.Vector3().copy(walkController.position).add(forwardDir);
+  const lookTarget = new THREE.Vector3().copy(walkController.position).add(cameraForward);
   camera.lookAt(lookTarget);
 }
 
