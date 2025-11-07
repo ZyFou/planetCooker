@@ -9,6 +9,26 @@ import {
 } from "./shaders/planetShaders.js";
 import { generateRingTexture, generateAnnulusTexture } from "./textures.js";
 
+const ROCKY_NOISE_TYPES = {
+    classic: 0,
+    ridged: 1,
+    billowy: 2,
+    warped: 3
+};
+
+function resolveRockyNoiseType(value) {
+    if (typeof value === 'number') {
+        return THREE.MathUtils.clamp(value, 0, 3);
+    }
+    if (typeof value === 'string') {
+        const key = value.toLowerCase();
+        if (ROCKY_NOISE_TYPES.hasOwnProperty(key)) {
+            return ROCKY_NOISE_TYPES[key];
+        }
+    }
+    return ROCKY_NOISE_TYPES.classic;
+}
+
 export class Planet {
     constructor(scene, params, guiControllers) {
         this.scene = scene;
@@ -41,6 +61,9 @@ export class Planet {
         // Create geometry (high detail icosahedron)
         this.geometry = new THREE.IcosahedronGeometry(1, 128);
 
+        if (this.params.noiseType === undefined) this.params.noiseType = 'classic';
+        if (this.params.noiseVariant === undefined) this.params.noiseVariant = 0.5;
+
         // Create uniforms for rocky planet
         this.rockyUniforms = {
             uTime: { value: 0 },
@@ -51,6 +74,8 @@ export class Planet {
             uRoughness: { value: params.roughness ?? 0.55 },
             uDetail: { value: params.detail ?? 6.0 },
             uIceCapThreshold: { value: params.iceCapThreshold ?? 0.9 },
+            uNoiseType: { value: resolveRockyNoiseType(params.noiseType) },
+            uNoiseVariant: { value: THREE.MathUtils.clamp(params.noiseVariant ?? 0.5, 0, 1) },
             uColorDeepWater: { value: new THREE.Color(params.colorDeepWater ?? "#002b4d") },
             uColorShallowWater: { value: new THREE.Color(params.colorShallowWater ?? "#006994") },
             uColorBeach: { value: new THREE.Color(params.colorBeach ?? "#d4c6a3") },
@@ -253,6 +278,10 @@ export class Planet {
         // Update params
         Object.assign(this.params, newParams);
 
+        if (this.params.noiseVariant !== undefined) {
+            this.params.noiseVariant = THREE.MathUtils.clamp(this.params.noiseVariant, 0, 1);
+        }
+
         // Update rocky uniforms
         if (this.rockyUniforms) {
             if (newParams.seaLevel !== undefined) this.rockyUniforms.uSeaLevel.value = newParams.seaLevel;
@@ -261,6 +290,8 @@ export class Planet {
             if (newParams.roughness !== undefined) this.rockyUniforms.uRoughness.value = newParams.roughness;
             if (newParams.detail !== undefined) this.rockyUniforms.uDetail.value = newParams.detail;
             if (newParams.iceCapThreshold !== undefined) this.rockyUniforms.uIceCapThreshold.value = newParams.iceCapThreshold;
+            if (newParams.noiseType !== undefined) this.rockyUniforms.uNoiseType.value = resolveRockyNoiseType(newParams.noiseType);
+            if (newParams.noiseVariant !== undefined) this.rockyUniforms.uNoiseVariant.value = THREE.MathUtils.clamp(newParams.noiseVariant, 0, 1);
             if (newParams.colorDeepWater) this.rockyUniforms.uColorDeepWater.value.set(newParams.colorDeepWater);
             if (newParams.colorShallowWater) this.rockyUniforms.uColorShallowWater.value.set(newParams.colorShallowWater);
             if (newParams.colorBeach) this.rockyUniforms.uColorBeach.value.set(newParams.colorBeach);

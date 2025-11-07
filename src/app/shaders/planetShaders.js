@@ -90,6 +90,61 @@ export const glslNoise = `
         }
         return total / normalization;
     }
+
+    float fbmBillow(vec3 p, int octaves, float persistence, float lacunarity) {
+        float amplitude = 1.0;
+        float frequency = 1.0;
+        float total = 0.0;
+        float normalization = 0.0;
+
+        for (int i = 0; i < octaves; ++i) {
+            float n = snoise(p * frequency);
+            n = abs(n);
+            total += n * amplitude;
+            normalization += amplitude;
+            amplitude *= persistence;
+            frequency *= lacunarity;
+        }
+
+        return total / max(normalization, 0.0001);
+    }
+
+    float fbmRidged(vec3 p, int octaves, float persistence, float lacunarity) {
+        float amplitude = 0.5;
+        float frequency = 1.0;
+        float total = 0.0;
+        float weight = 1.0;
+
+        for (int i = 0; i < 8; ++i) {
+            if (i >= octaves) break;
+            float n = snoise(p * frequency);
+            n = 1.0 - abs(n);
+            n *= n;
+            n *= weight;
+            total += n * amplitude;
+            weight = clamp(n * 4.0, 0.0, 1.0);
+            amplitude *= persistence;
+            frequency *= lacunarity;
+        }
+
+        return total * 2.0;
+    }
+
+    vec3 domainWarp(vec3 p, float warpStrength, float warpFrequency, float variant) {
+        vec3 q = vec3(
+            snoise(p * warpFrequency + vec3(0.0, 0.0, 0.0)),
+            snoise(p * warpFrequency + vec3(43.0, 17.0, 29.0)),
+            snoise(p * warpFrequency + vec3(23.0, 71.0, 11.0))
+        );
+
+        vec3 r = vec3(
+            snoise(p * warpFrequency * 2.0 + q * (0.5 + variant) + vec3(19.0, 39.0, 57.0)),
+            snoise(p * warpFrequency * 2.0 + q * (0.5 + variant) + vec3(59.0, 11.0, 83.0)),
+            snoise(p * warpFrequency * 2.0 + q * (0.5 + variant) + vec3(17.0, 93.0, 41.0))
+        );
+
+        return (q + r) * warpStrength;
+    }
 `;
 
 export const terrainVertexShader = `
@@ -101,6 +156,8 @@ export const terrainVertexShader = `
     uniform float uRoughness;
     uniform float uDetail;
     uniform float uSeaLevel;
+    uniform float uNoiseType;
+    uniform float uNoiseVariant;
 
     varying vec3 vNormal;
     varying vec3 vPosition;
@@ -113,16 +170,39 @@ export const terrainVertexShader = `
         // but local 'position' works best for a planet that rotates as an object.
         vec3 pos = position; 
 
+        float variant = clamp(uNoiseVariant, 0.0, 1.0);
+
         // Base continent shape (low frequency)
-        float h = fbm(pos * uContinentSize, 8, uRoughness, uDetail);
-        
-        // Ridged mountain noise (adds detail to landmasses)
-        float hm = fbm(pos * uContinentSize * 4.0, 4, uRoughness, uDetail * 1.5);
-        hm = 1.0 - abs(hm); // ridges
+        vec3 continentCoord = pos * uContinentSize;
+        float h = fbm(continentCoord, 8, uRoughness, uDetail);
+
+        // Base ridged detail
+        float hm = fbm(continentCoord * (3.0 + variant), 4, uRoughness, uDetail * (1.4 + variant * 0.3));
+        hm = 1.0 - abs(hm);
         hm = pow(hm, 3.0);
-        
+
+        // Alternate noise flavors
+        float ridged = fbmRidged(continentCoord * (2.0 + variant), 6, mix(0.35, uRoughness, 0.6), uDetail + 0.5);
+        float billow = fbmBillow(continentCoord * (1.2 + variant * 0.6), 6, mix(0.5, uRoughness, 0.5), uDetail * (0.9 + variant * 0.4));
+        float warpStrength = mix(0.18, 0.55, variant);
+        vec3 warpedCoord = continentCoord + domainWarp(continentCoord, warpStrength, 1.3 + variant * 2.2, variant);
+        float warped = fbm(warpedCoord, 6, uRoughness, uDetail * (1.1 + variant * 0.3));
+
         // Combine and normalize roughly to [0, 1]
-        float finalHeight = (h * 0.6 + hm * 0.4) + 0.5;
+        float noiseType = clamp(uNoiseType, 0.0, 3.0);
+        float finalHeight;
+        if (noiseType < 0.5) {
+            finalHeight = (h * 0.55 + hm * 0.45) + 0.5;
+        } else if (noiseType < 1.5) {
+            finalHeight = mix(h + 0.5, h * 0.35 + ridged * 0.65 + 0.5, 0.75);
+        } else if (noiseType < 2.5) {
+            finalHeight = mix(h + 0.5, billow * 0.75 + 0.25, 0.7);
+        } else {
+            float blend = mix(0.6, 0.85, variant);
+            finalHeight = mix(h + 0.5, warped * blend + 0.5 * (1.0 - blend), blend);
+        }
+
+        finalHeight = clamp(finalHeight, 0.0, 1.4);
 
         vHeight = finalHeight;
         vLatitude = abs(normalize(pos).y); 

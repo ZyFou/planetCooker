@@ -501,6 +501,8 @@ const params = {
   roughness: 0.55,
   detail: 6.0,
   iceCapThreshold: 0.9,
+  noiseType: "classic",
+  noiseVariant: 0.5,
   colorDeepWater: "#002b4d",
   colorShallowWater: "#006994",
   colorBeach: "#d4c6a3",
