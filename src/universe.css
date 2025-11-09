@@ -1,0 +1,110 @@
+body {
+  margin: 0;
+  overflow: hidden;
+  background: #03040d;
+  color: #f3f5ff;
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+canvas {
+  display: block;
+}
+
+.hud {
+  position: fixed;
+  top: 1.5rem;
+  left: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: rgba(7, 10, 22, 0.65);
+  backdrop-filter: blur(8px);
+  border-radius: 0.75rem;
+  padding: 0.9rem 1.2rem;
+  box-shadow: 0 0.8rem 2.4rem rgba(4, 6, 15, 0.45);
+  pointer-events: none;
+  min-width: 14rem;
+}
+
+.hud__heading {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.16rem;
+  opacity: 0.6;
+}
+
+.hud__status {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #9ad0ff;
+}
+
+.hud__detail {
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+.prompt {
+  position: fixed;
+  bottom: 2.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.8rem 1.4rem;
+  background: rgba(10, 14, 28, 0.7);
+  border: 1px solid rgba(76, 164, 255, 0.25);
+  border-radius: 999px;
+  color: #e6f1ff;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  box-shadow: 0 0.6rem 1.8rem rgba(6, 11, 24, 0.4);
+  pointer-events: none;
+  opacity: 0;
+  transform-origin: center;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.prompt--visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(-0.25rem);
+}
+
+.prompt__key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.1rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.5rem;
+  background: rgba(76, 164, 255, 0.2);
+  border: 1px solid rgba(76, 164, 255, 0.35);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #bfe1ff;
+}
+
+.pointer-hint {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 1.2rem 1.8rem;
+  border-radius: 1rem;
+  background: rgba(4, 6, 15, 0.85);
+  border: 1px solid rgba(103, 132, 216, 0.25);
+  color: #d4e4ff;
+  text-align: center;
+  letter-spacing: 0.01em;
+  max-width: 22rem;
+  box-shadow: 0 1rem 3rem rgba(3, 5, 12, 0.6);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+.pointer-hint--visible {
+  opacity: 1;
+}
+

@@ -12,7 +12,8 @@ export default defineConfig({
         main: resolve(process.cwd(), "index.html"),
         studio: resolve(process.cwd(), "studio.html"),
         explore: resolve(process.cwd(), "explore.html"),
-        walk: resolve(process.cwd(), "walk.html")
+        walk: resolve(process.cwd(), "walk.html"),
+        universe: resolve(process.cwd(), "universe.html")
       }
     }
   }
