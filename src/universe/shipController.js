@@ -56,7 +56,7 @@ export class ShipController {
       accelerationMultiplier: options.accelerationMultiplier ?? 3.0,
       slowMultiplier: options.slowMultiplier ?? 0.3,
       mouseSensitivity: options.mouseSensitivity ?? 0.0022,
-      cameraOffset: options.cameraOffset ?? new THREE.Vector3(0, 1.1, 2.4)
+      cameraOffset: options.cameraOffset ?? new THREE.Vector3(0, 0, 0)
     };
 
     this.dash = {
@@ -73,6 +73,8 @@ export class ShipController {
     this.ship = meshData.group;
     this._shipMeshes = meshData;
     this.ship.position.copy(this.position);
+    const showShipMesh = options.showShipMesh ?? false;
+    this.ship.visible = showShipMesh;
 
     if (this.scene) {
       this.scene.add(this.ship);

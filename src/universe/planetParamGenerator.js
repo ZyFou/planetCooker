@@ -86,13 +86,13 @@ export function generatePlanetParams(rng, context = {}) {
       seed,
       planetType: "gas",
       gasPlanetSize: size,
-      gasStripeSpeed: rng.nextFloat(0.01, 0.05),
+      gasStripeSpeed: rng.nextFloat(0.008, 0.022),
       gasStripeFrequency: stripeFrequency,
       gasStripeSharpness: rng.nextFloat(1.5, 3.8),
       gasTurbulence: turbulence,
       atmosphereColor: colorHexFromHsl(baseHue, 0.25, 0.65),
       atmosphereDensity: clamp(0.2 + rng.nextFloat(-0.05, 0.2), 0, 1),
-      rotationSpeed: rng.nextFloat(0.12, 0.45),
+      rotationSpeed: rng.nextFloat(0.02, 0.12),
       axisTilt: rng.nextFloat(-35, 35),
       cloudsOpacity: 0.0,
       ...colors
@@ -121,7 +121,7 @@ export function generatePlanetParams(rng, context = {}) {
     atmosphereColor: colorHexFromHsl(baseHue + 0.5, 0.4, 0.6),
     atmosphereDensity: clamp(rng.nextFloat(0.2, 0.6), 0, 1),
     cloudsOpacity: clamp(temperature > 1.2 ? rng.nextFloat(0.05, 0.3) : rng.nextFloat(0.25, 0.65), 0, 1),
-    rotationSpeed: rng.nextFloat(0.05, 0.35),
+    rotationSpeed: rng.nextFloat(0.01, 0.08),
     axisTilt: rng.nextFloat(-40, 40),
     ...colors
   };

@@ -21,6 +21,7 @@ export class UniverseManager {
     this.loadRadius = options.loadRadius ?? 1;
     this.maxSystems = options.maxSystems ?? 64;
     this.systemOptions = options.systemOptions ?? {};
+    this.visibility = options.visibility ?? {};
     this.systems = new Map();
 
     this.root = new THREE.Group();
@@ -48,7 +49,7 @@ export class UniverseManager {
     this._pruneFarSectors(sector);
 
     for (const system of this.systems.values()) {
-      system.instance.update?.(delta);
+      system.instance.update?.(delta, position);
     }
   }
 
@@ -59,7 +60,7 @@ export class UniverseManager {
     for (const { instance } of this.systems.values()) {
       const systemPos = instance.group.position;
       for (const planetEntry of instance.planets) {
-        const worldPos = new THREE.Vector3().copy(systemPos).add(planetEntry.planet.planetRoot.position);
+        const worldPos = planetEntry.worldPosition.clone();
         const distanceSq = worldPos.distanceToSquared(position);
         if (distanceSq < minDistanceSq) {
           minDistanceSq = distanceSq;
@@ -130,7 +131,8 @@ export class UniverseManager {
     const rng = new SeededRNG(seed);
     const system = createSolarSystem(this.root, rng, {
       name: `System ${key}`,
-      ...this.systemOptions
+      ...this.systemOptions,
+      visibility: this.visibility
     });
     system.group.position.copy(worldPositionForSector(sector, this.sectorSize));
     this.systems.set(key, {

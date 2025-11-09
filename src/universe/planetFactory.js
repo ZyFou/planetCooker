@@ -23,12 +23,7 @@ export function createPlanet(parentGroup, params, options = {}) {
   return planet;
 }
 
-export function getEffectivePlanetRadius(planet) {
-  if (!planet) return 1.0;
-  if (planet.planetMesh?.scale) {
-    return planet.planetMesh.scale.x;
-  }
-  const params = planet.params ?? {};
+export function getPlanetRadiusFromParams(params = {}) {
   if (typeof params.gasPlanetSize === "number" && !Number.isNaN(params.gasPlanetSize)) {
     return params.gasPlanetSize;
   }
@@ -39,5 +34,13 @@ export function getEffectivePlanetRadius(planet) {
     return params.radius;
   }
   return 1.0;
+}
+
+export function getEffectivePlanetRadius(planet) {
+  if (!planet) return 1.0;
+  if (planet.planetMesh?.scale) {
+    return planet.planetMesh.scale.x;
+  }
+  return getPlanetRadiusFromParams(planet.params);
 }
 

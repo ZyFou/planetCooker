@@ -2,8 +2,7 @@ import "./universe.css";
 import * as THREE from "three";
 import { ShipController } from "./universe/shipController.js";
 import { UniverseManager } from "./universe/universeManager.js";
-import { getEffectivePlanetRadius } from "./universe/planetFactory.js";
-import { encodeShare } from "./app/shareCore.js";
+import { getEffectivePlanetRadius, getPlanetRadiusFromParams } from "./universe/planetFactory.js";
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -29,7 +28,15 @@ scene.add(ambient);
 
 const universe = new UniverseManager(scene, {
   sectorSize: 8000,
-  loadRadius: 1
+  loadRadius: 1,
+  visibility: {
+    systemCullDistance: 35000,
+    planetCullDistance: 25000,
+    orbitUpdateDistance: 18000,
+    fullDetailDistance: 1500,
+    unloadDetailDistance: 2800,
+    placeholderSegments: 16
+  }
 });
 
 const ship = new ShipController(camera, {
@@ -38,26 +45,27 @@ const ship = new ShipController(camera, {
   baseSpeed: 140,
   maxSpeed: 600,
   minSpeed: 35,
-  cameraOffset: new THREE.Vector3(0, 1.6, 4.2)
+  cameraOffset: new THREE.Vector3(0, 0, 0.05),
+  showShipMesh: false
 });
 
 const hudSpeed = document.getElementById("hud-speed");
 const hudTarget = document.getElementById("hud-target");
-const landingPrompt = document.getElementById("landing-prompt");
 const pointerHint = document.getElementById("pointer-hint");
 
 universe.update(0, ship.position);
 const initialTarget = universe.getNearestPlanet(ship.position);
 if (initialTarget) {
   const radius = getEffectivePlanetRadius(initialTarget.planet.planet);
-  const offset = new THREE.Vector3(0, radius * 6, radius * 10);
+  const offset = new THREE.Vector3(0, radius * 1.6, radius * 3.2);
   const newPosition = initialTarget.worldPosition.clone().add(offset);
   ship.setPosition(newPosition);
   camera.lookAt(initialTarget.worldPosition);
 }
 
-let activeLandingTarget = null;
 let lastFrameTime = performance.now();
+const targetFPS = 60;
+const minFrameTime = 1000 / targetFPS; // ~16.67ms per frame
 
 function onResize() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -73,23 +81,6 @@ function formatDistance(km) {
   if (km < 100) return `${km.toFixed(1)} km`;
   return `${km.toFixed(0)} km`;
 }
-
-function beginLanding(target) {
-  if (!target) return;
-  document.exitPointerLock?.();
-  const shareCode = encodeShare(target.planet.params);
-  const url = new URL("walk.html", window.location.href);
-  url.searchParams.set("share", shareCode);
-  url.searchParams.set("lat", "0");
-  url.searchParams.set("lon", "0");
-  window.location.href = url.toString();
-}
-
-document.addEventListener("keydown", (event) => {
-  if (event.code === "KeyL" && activeLandingTarget) {
-    beginLanding(activeLandingTarget);
-  }
-});
 
 function updateHud(speed, targetInfo) {
   if (hudSpeed) {
@@ -107,26 +98,25 @@ function updateHud(speed, targetInfo) {
   }
 }
 
-function updateLandingPrompt(visible) {
-  if (!landingPrompt) return;
-  if (visible) {
-    landingPrompt.hidden = false;
-    landingPrompt.classList.add("prompt--visible");
-  } else {
-    landingPrompt.classList.remove("prompt--visible");
-    landingPrompt.hidden = true;
-  }
-}
-
 function animate(now) {
-  const delta = Math.min(0.12, (now - lastFrameTime) / 1000);
+  const elapsed = now - lastFrameTime;
+  
+  // Limit to 60 FPS - only process frame if enough time has passed
+  if (elapsed < minFrameTime) {
+    requestAnimationFrame(animate);
+    return;
+  }
+  
+  const delta = Math.min(0.12, elapsed / 1000);
   lastFrameTime = now;
 
   const nearest = universe.getNearestPlanet(ship.position);
   let focusDistance = null;
 
   if (nearest) {
-    const radius = getEffectivePlanetRadius(nearest.planet.planet);
+    const radius = nearest.planet.planet
+      ? getEffectivePlanetRadius(nearest.planet.planet)
+      : getPlanetRadiusFromParams(nearest.planet.params);
     focusDistance = Math.max(0, nearest.distance - radius * 1.1);
   }
 
@@ -134,15 +124,7 @@ function animate(now) {
   universe.update(delta, ship.position);
 
   const speed = ship.velocity.length();
-  const landingRange = 180;
 
-  activeLandingTarget = null;
-  if (nearest) {
-    if (focusDistance != null && focusDistance < landingRange) {
-      activeLandingTarget = nearest;
-    }
-  }
-  updateLandingPrompt(Boolean(activeLandingTarget));
   updateHud(speed, nearest);
 
   renderer.render(scene, camera);
