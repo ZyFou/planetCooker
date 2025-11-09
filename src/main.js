@@ -78,15 +78,6 @@ const previewMode = new URLSearchParams(window.location.search).get("preview") =
 if (previewMode) {
   document.body.classList.add("preview-mode");
 }
-const loadShareParam = new URLSearchParams(window.location.search).get("load");
-if (loadShareParam) {
-  try {
-    const cleaned = loadShareParam.trim();
-    if (cleaned.length) {
-      window.location.hash = `#${cleaned}`;
-    }
-  } catch {}
-}
 if (!sceneContainer) {
   throw new Error("Missing scene container element");
 }
@@ -127,6 +118,7 @@ let isPhotoMode = false;
 
 // FPS mode state
 let isFpsMode = false;
+let fpsModeType = "ship";
 let ship = null;
 let fpsController = {
   position: new THREE.Vector3(),
@@ -146,6 +138,36 @@ let fpsController = {
   yaw: 0,
   isPointerLocked: false
 };
+
+const walkController = {
+  position: new THREE.Vector3(),
+  velocity: new THREE.Vector3(),
+  yaw: 0,
+  pitch: 0,
+  mouseSensitivity: 0.0012,
+  speed: 0.015,
+  sprintMultiplier: 2.0,
+  maxPitch: THREE.MathUtils.degToRad(85),
+  eyeHeight: 0.015,
+  gravity: 0.2,
+  groundAcceleration: 15,
+  airAcceleration: 4,
+  groundFriction: 10,
+  jumpStrength: 0.04,
+  onGround: false
+};
+const tempVec1 = new THREE.Vector3();
+const tempVec2 = new THREE.Vector3();
+const tempVec3 = new THREE.Vector3();
+const tempVec4 = new THREE.Vector3();
+const tempVec5 = new THREE.Vector3();
+const tempVec6 = new THREE.Vector3();
+const tempVec7 = new THREE.Vector3();
+const tempQuat1 = new THREE.Quaternion();
+const tempQuat2 = new THREE.Quaternion();
+const tempMat4 = new THREE.Matrix4();
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+const WORLD_RIGHT = new THREE.Vector3(1, 0, 0);
 
 // Keyboard input state
 const keys = {};
@@ -186,7 +208,7 @@ function createShip() {
   
   // Position ship at safe distance from planet
   if (planet && planet.planetRoot) {
-    const planetRadius = params.radius || 1.32;
+    const planetRadius = getEffectivePlanetRadius();
     const initialDistance = planetRadius * 2.5;
     ship.position.set(0, initialDistance * 0.5, initialDistance);
     fpsController.position.copy(ship.position);
@@ -198,6 +220,30 @@ function createShip() {
   scene.add(ship);
   return ship;
 }
+
+function getEffectivePlanetRadius() {
+  if (planet?.planetMesh?.scale) {
+    return planet.planetMesh.scale.x;
+  }
+  if (typeof params.radius === "number" && !Number.isNaN(params.radius)) {
+    return params.radius;
+  }
+  if (typeof params.planetSize === "number" && !Number.isNaN(params.planetSize)) {
+    return params.planetSize;
+  }
+  return 1.0;
+}
+
+const planetCenterCache = new THREE.Vector3();
+function getPlanetCenter(target = planetCenterCache) {
+  target.set(0, 0, 0);
+  if (planet?.planetRoot) {
+    planet.planetRoot.getWorldPosition(target);
+  }
+  return target;
+}
+
+// Removed - now handled inline in updateWalkMovement
 
 function relayoutForMode() {
   requestAnimationFrame(() => {
@@ -455,6 +501,8 @@ const params = {
   roughness: 0.55,
   detail: 6.0,
   iceCapThreshold: 0.9,
+  noiseType: "classic",
+  noiseVariant: 0.5,
   colorDeepWater: "#002b4d",
   colorShallowWater: "#006994",
   colorBeach: "#d4c6a3",
@@ -497,7 +545,8 @@ const params = {
   impactStrengthMul: 2.5,
   impactSpeedMul: 1.2,
   impactMassMul: 2.0,
-  impactElongationMul: 1.6
+  impactElongationMul: 1.6,
+  gravity: 9.81
 };
 
 const presets = {
@@ -523,7 +572,6 @@ const starPresets = {
   "Neutron Star": { sunColor: "#9ecaff", sunIntensity: 3.2, sunDistance: 65, sunSize: 0.6, sunHaloSize: 5.2, sunGlowStrength: 2.6, sunPulseSpeed: 1.8, sunNoiseScale: 3.0, sunParticleCount: 260, sunParticleSpeed: 1.4, sunParticleSize: 0.09, sunParticleColor: "#96caff", sunParticleLifetime: 1.8 }
 };
 
-const shareKeys = [ "seed", "planetType", "planetSize", "seaLevel", "continentSize", "mountainHeight", "roughness", "detail", "iceCapThreshold", "colorDeepWater", "colorShallowWater", "colorBeach", "colorGrass", "colorForest", "colorMountain", "colorMountainHigh", "colorSnow", "atmosphereDensity", "atmosphereColor", "rotationSpeed", "gasPlanetSize", "gasStripeSpeed", "gasStripeFrequency", "gasStripeSharpness", "gasTurbulence", "gasColor1", "gasColor2", "gasColor3", "gasColor4", "gasColor5", "starCount", "starBrightness", "starTwinkleSpeed" ];
 //#endregion
 
 //#region State tracking
@@ -668,6 +716,7 @@ const {
   unregisterFolder,
   applyControlSearch,
   scheduleShareUpdate: () => { shareDirty = true; debounceShare(); },
+  markMoonsDirty: () => { planetDirty = true; }, // Moons are part of the planet
   getIsApplyingPreset: () => isApplyingPreset
 });
 
@@ -675,7 +724,7 @@ const {
 guiControllers.normalizeMoonSettings = normalizeMoonSettings;
 guiControllers.rebuildMoonControls = rebuildMoonControls;
 
-const { rebuildRingControls } = setupRingControls({
+const { rebuildRingControls, normalizeRingSettings } = setupRingControls({
   gui,
   params,
   guiControllers,
@@ -687,6 +736,88 @@ const { rebuildRingControls } = setupRingControls({
   getIsApplyingPreset: () => isApplyingPreset,
   getRingsFolder: () => guiControllers?.folders?.ringsFolder
 });
+
+// Add ring settings to guiControllers
+guiControllers.rebuildRingControls = rebuildRingControls;
+guiControllers.normalizeRingSettings = normalizeRingSettings;
+
+// Create Rings folder and controls
+const ringsFolder = registerFolder(gui.addFolder("Rings"), { close: false });
+guiControllers.folders = guiControllers.folders || {};
+guiControllers.folders.ringsFolder = ringsFolder;
+
+guiControllers.ringEnabled = ringsFolder.add(params, "ringEnabled")
+  .name("Enable Rings")
+  .onChange(() => {
+    if (planet) {
+      planet.updateRings();
+      planet.updateTilt();
+    }
+    rebuildRingControls();
+    shareDirty = true;
+    debounceShare();
+  });
+
+guiControllers.ringCount = ringsFolder.add(params, "ringCount", 0, 10, 1)
+  .name("Number of Rings")
+  .onChange(() => {
+    if (isApplyingPreset) return;
+    
+    // Get current planet size for proper ring scaling
+    const planetSize = params.planetType === 'gas' 
+      ? (params.gasPlanetSize || 2.0) 
+      : (params.planetSize || 1.0);
+    
+    // Ensure rings array matches count
+    while (params.rings.length < params.ringCount) {
+      const index = params.rings.length;
+      const minRingRadius = planetSize * 1.15;
+      const baseStart = minRingRadius + (index * 0.25 * planetSize);
+      const thickness = (0.15 + (Math.random() * 0.2)) * planetSize;
+      
+      params.rings.push({
+        style: index % 2 === 0 ? "Texture" : "Noise",
+        color: new THREE.Color().setHSL(
+          (0.05 + index * 0.15) % 1,
+          0.25 + Math.random() * 0.3,
+          0.6 + Math.random() * 0.3
+        ).getStyle(),
+        start: baseStart,
+        end: baseStart + thickness,
+        opacity: 0.5 + Math.random() * 0.3,
+        noiseScale: 2.5 + Math.random() * 2.0,
+        noiseStrength: 0.4 + Math.random() * 0.4,
+        spinSpeed: (0.02 + Math.random() * 0.08) * (index % 2 === 0 ? 1 : -1),
+        brightness: 0.8 + Math.random() * 0.4
+      });
+    }
+    while (params.rings.length > params.ringCount) {
+      params.rings.pop();
+    }
+    rebuildRingControls();
+    if (planet) {
+      planet.updateRings();
+    }
+    shareDirty = true;
+    debounceShare();
+  });
+
+guiControllers.ringAngle = ringsFolder.add(params, "ringAngle", -90, 90, 0.1)
+  .name("Ring Tilt (degrees)")
+  .onChange(() => {
+    if (planet) {
+      planet.updateTilt();
+    }
+    shareDirty = true;
+    debounceShare();
+  });
+
+guiControllers.ringSpinSpeed = ringsFolder.add(params, "ringSpinSpeed", -1, 1, 0.01)
+  .name("Global Ring Spin")
+  .onChange(() => {
+    shareDirty = true;
+    debounceShare();
+  });
 
 setupPlanetControls({
     gui,
@@ -782,6 +913,10 @@ randomizeSeedButton?.addEventListener("click", () => {
   }
   
   handleSeedChanged();
+  // Clear saved ID and update URL with new share code
+  currentShareId = null;
+  currentHashIsApiId = false;
+  scheduleShareUpdate();
 });
 
 resetAllButton?.addEventListener("click", () => {
@@ -858,10 +993,20 @@ function applyPreset(presetName, options = {}) {
       guiControllers.refreshPlanetTypeVisibility(params.planetType);
     }
     
+    // Rebuild ring controls if ring count changed
+    if (guiControllers.rebuildRingControls) {
+      guiControllers.rebuildRingControls();
+    }
+    
     // Update all planet components
-    // Removed: updatePalette, updateClouds (not in new shader-based Planet)
-    // Removed: updateCore, updateRings, updateTilt (not in new shader-based Planet)
-    // sun.update() is called in render loop
+    if (planet) {
+      planet.applyParams(params);
+      planet.updateRings();
+      planet.updateTilt();
+      planet.updateMoons();
+    }
+    
+    // Update sun (done in render loop but apply params here)
     updateSeedDisplay();
     
     // Update share if not skipping
@@ -992,24 +1137,31 @@ function applyVisualSettings() {
 
 //#region Initialization
 async function initFromHash() {
+  // Check both hash and query parameter for load ID
   const hash = window.location.hash.slice(1); // Remove the # symbol
-  if (!hash) return false;
+  const loadParam = new URLSearchParams(window.location.search).get("load");
+  const loadId = hash || loadParam;
   
-  try {
-    // Only try API if hash looks like a short saved ID (nanoid-like)
-    const isLikelyApiId = /^[A-Za-z0-9_-]{6,12}$/.test(hash);
-    currentHashIsApiId = isLikelyApiId;
-    if (isLikelyApiId) {
-      // Preserve hash URL and remember id, even if API fails
-      currentShareId = hash;
-      // Don't change URL format - keep hash for better reload handling
-      const configData = await loadConfigurationFromAPIExt(hash);
+  if (!loadId) return false;
+  
+  // Only try API if loadId looks like a short saved ID (nanoid-like)
+  const isLikelyApiId = /^[A-Za-z0-9_-]{6,12}$/.test(loadId);
+  currentHashIsApiId = isLikelyApiId;
+  
+  if (isLikelyApiId) {
+    // Preserve hash URL and remember id, even if API fails
+    currentShareId = loadId;
+    // Don't change URL format - keep hash for better reload handling
+    try {
+      const configData = await loadConfigurationFromAPIExt(loadId);
       if (configData && configData.data) {
-        currentShareId = configData.id || hash;
+        currentShareId = configData.id || loadId;
         // Apply the loaded configuration
         const prevType = params.planetType;
+        const prevSeed = params.seed;
         const data = configData.data || {};
         Object.keys(data).forEach(k => { params[k] = data[k]; });
+        
         // Guard against GUI onChange side-effects while syncing controls
         isApplyingPreset = true;
         try {
@@ -1020,7 +1172,14 @@ async function initFromHash() {
           }
           if (sun) sun.updateSun();
           updateSeedDisplay();
+          updateGravityDisplay();
+          syncMoonSettings();
           if (prevType !== params.planetType) {
+            markPlanetDirty();
+          }
+          // If seed changed, regenerate starfield and mark planet dirty
+          if (prevSeed !== params.seed) {
+            regenerateStarfield();
             markPlanetDirty();
           }
           
@@ -1039,20 +1198,40 @@ async function initFromHash() {
         } catch {}
         return true;
       }
+    } catch (apiError) {
+      // Only log API errors if they're not "not found" errors
+      if (!apiError.message || !apiError.message.includes('Configuration not found')) {
+        console.warn('Failed to load configuration from API:', apiError);
+      }
+      // Fall through to try decoding as share code
     }
-  } catch (error) {
-    // Only log API errors if they're not "not found" errors
-    if (!error.message.includes('Configuration not found')) {
-      console.warn('Failed to load configuration from API:', error);
-    }
-    
-    // Fallback: try to decode as direct share code
-    try {
-      const decoded = decodeShareExt(hash);
+  }
+  
+  // Fallback: try to decode as direct share code (for both API failures and non-API hashes)
+  try {
+    const decoded = decodeShareExt(loadId);
       if (decoded) {
         const loadedData = decoded?.data ?? decoded;
         const prevType = params.planetType;
-        // Moons removed - no longer supported
+        const prevSeed = params.seed;
+        
+        // Handle moons if present
+        let moonsFromShare = null;
+        if (Array.isArray(decoded?.moons)) {
+          moonsFromShare = decoded.moons.map((m) => ({ ...m }));
+        }
+        if (!moonsFromShare && Array.isArray(loadedData?.moons)) {
+          moonsFromShare = loadedData.moons.map((m) => ({ ...m }));
+          delete loadedData.moons;
+        }
+        if (moonsFromShare) {
+          moonSettings.splice(0, moonSettings.length, ...moonsFromShare.map((m) => ({ ...m })));
+          params.moonCount = moonsFromShare.length;
+          if (loadedData && typeof loadedData === "object") {
+            loadedData.moonCount = moonsFromShare.length;
+          }
+        }
+        
         Object.keys(loadedData || {}).forEach(k => { params[k] = loadedData[k]; });
         
         isApplyingPreset = true;
@@ -1064,7 +1243,14 @@ async function initFromHash() {
           }
           if (sun) sun.updateSun();
           updateSeedDisplay();
+          updateGravityDisplay();
+          syncMoonSettings();
           if (prevType !== params.planetType) {
+            markPlanetDirty();
+          }
+          // If seed changed, regenerate starfield and mark planet dirty
+          if (prevSeed !== params.seed) {
+            regenerateStarfield();
             markPlanetDirty();
           }
           
@@ -1082,19 +1268,19 @@ async function initFromHash() {
           if (currentHashIsApiId && currentShareId) {
             history.replaceState(null, "", `#${currentShareId}`);
           } else {
-            const encoded = encodeShare({ version: 1, preset: params.preset, data: loadedData });
+            const encoded = encodeShare({ version: SHARE_VERSION || 1, preset: params.preset, data: loadedData });
             history.replaceState(null, "", `#${encoded}`);
           }
         } catch {}
         return true;
       }
-    } catch (decodeError) {
-      console.warn('Failed to decode share code:', decodeError);
-    }
-    // If we got here and hash looked like an API id, keep short URL and skip default preset
-    if (currentHashIsApiId) {
-      return true;
-    }
+  } catch (decodeError) {
+    console.warn('Failed to decode share code:', decodeError);
+  }
+  
+  // If we got here and hash looked like an API id, keep short URL and skip default preset
+  if (currentHashIsApiId) {
+    return true;
   }
   
   return false;
@@ -1196,6 +1382,8 @@ initializeApp().then(() => {
   // All initialization is now handled in initializeApp() with progressive loading
   // Start animation loop
   renderer.domElement.addEventListener('dblclick', (event) => {
+    if (!planet) return;
+    
     const mouse = new THREE.Vector2();
     const rect = renderer.domElement.getBoundingClientRect();
     mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -1204,12 +1392,20 @@ initializeApp().then(() => {
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(mouse, camera);
 
-    const moonMeshes = planet.moonsGroup.children.map(p => p.userData.mesh).filter(m => m);
-    const focusableObjects = [planet.planetMesh, sun.sunVisual, ...moonMeshes];
+    const moonMeshes = planet.moonsGroup?.children?.map(p => p.userData.mesh).filter(m => m) || [];
+    const focusableObjects = [planet.planetMesh];
+    if (sun?.sunVisual) focusableObjects.push(sun.sunVisual);
+    focusableObjects.push(...moonMeshes);
+    
     const intersects = raycaster.intersectObjects(focusableObjects, true);
 
     if (intersects.length > 0) {
-        focusOnObject(intersects[0].object);
+      const planetHit = intersects.find(hit => hit.object === planet.planetMesh);
+      if (planetHit) {
+        enterWalkMode(planetHit, raycaster.ray.direction);
+        return;
+      }
+      focusOnObject(intersects[0].object);
     }
   }, false);
 
@@ -1283,9 +1479,10 @@ function animate(timestamp) {
   // Only update OrbitControls when not in FPS mode
   if (!isFpsMode) {
     controls.update();
-  } else {
-    // Update ship movement in FPS mode
+  } else if (fpsModeType === 'ship') {
     updateShipMovement(delta);
+  } else if (fpsModeType === 'walk') {
+    updateWalkMovement(delta);
   }
 
   if (planetDirty) {
@@ -1346,7 +1543,12 @@ function updateSeedDisplay() {
 }
   
 function updateGravityDisplay() {
-    if (gravityDisplay) gravityDisplay.textContent = `${params.gravity.toFixed(2)} m/s^2`;
+    if (gravityDisplay) {
+      const gravity = typeof params.gravity === 'number' && !Number.isNaN(params.gravity) 
+        ? params.gravity 
+        : 9.81; // Default to Earth gravity
+      gravityDisplay.textContent = `${gravity.toFixed(2)} m/s^2`;
+    }
 }
 
 function updateStabilityDisplay(boundCount, totalCount) {
@@ -1391,18 +1593,23 @@ function handleKeyDown(event) {
   const key = event.key.toLowerCase();
   keys[key] = true;
   keys[event.code] = true;
-  
-  // Handle Space for dash (prevent default scrolling)
+
   if (event.code === 'Space' && isFpsMode) {
     event.preventDefault();
-    if (fpsController.dashCooldown <= 0) {
-      fpsController.dashBoost = 3.0;
-      fpsController.dashDuration = 0.3; // 0.3 seconds dash
-      fpsController.dashCooldown = 2.0; // 2 seconds cooldown
+    if (fpsModeType === 'ship') {
+      if (fpsController.dashCooldown <= 0) {
+        fpsController.dashBoost = 3.0;
+        fpsController.dashDuration = 0.3; // 0.3 seconds dash
+        fpsController.dashCooldown = 2.0; // 2 seconds cooldown
+      }
+    } else if (fpsModeType === 'walk') {
+      if (walkController.onGround) {
+        walkController.velocity.addScaledVector(walkController.up, walkController.jumpStrength);
+        walkController.onGround = false;
+      }
     }
   }
-  
-  // Toggle FPS mode with V
+
   if (key === 'v' && !event.repeat) {
     toggleFpsMode();
   }
@@ -1422,15 +1629,23 @@ let previousMouseY = 0;
 
 function handleMouseMove(event) {
   if (!isFpsMode || !fpsController.isPointerLocked) return;
-  
+
   const movementX = event.movementX || event.mozMovementX || event.webkitMovementX || 0;
   const movementY = event.movementY || event.mozMovementY || event.webkitMovementY || 0;
-  
-  fpsController.yaw -= movementX * fpsController.mouseSensitivity;
-  fpsController.pitch -= movementY * fpsController.mouseSensitivity;
-  
-  // Limit pitch to avoid gimbal lock
-  fpsController.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, fpsController.pitch));
+
+  if (fpsModeType === 'ship') {
+    fpsController.yaw -= movementX * fpsController.mouseSensitivity;
+    fpsController.pitch -= movementY * fpsController.mouseSensitivity;
+    fpsController.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, fpsController.pitch));
+  } else if (fpsModeType === 'walk') {
+    walkController.yaw -= movementX * walkController.mouseSensitivity;
+    walkController.pitch -= movementY * walkController.mouseSensitivity;
+    walkController.pitch = THREE.MathUtils.clamp(
+      walkController.pitch,
+      -walkController.maxPitch,
+      walkController.maxPitch
+    );
+  }
 }
 
 function requestPointerLock() {
@@ -1449,10 +1664,9 @@ function onPointerLockChange() {
   fpsController.isPointerLocked = document.pointerLockElement === renderer.domElement ||
                                   document.mozPointerLockElement === renderer.domElement ||
                                   document.webkitPointerLockElement === renderer.domElement;
-  
-  // If pointer lock was lost while in FPS mode, exit FPS mode
+
   if (wasLocked && !fpsController.isPointerLocked && isFpsMode) {
-    toggleFpsMode();
+    exitFpsMode({ skipPointerLock: true });
   }
 }
 
@@ -1463,51 +1677,125 @@ document.addEventListener('pointerlockchange', onPointerLockChange);
 document.addEventListener('mozpointerlockchange', onPointerLockChange);
 document.addEventListener('webkitpointerlockchange', onPointerLockChange);
 
-// FPS mode toggle
-function toggleFpsMode() {
-  isFpsMode = !isFpsMode;
+function enterShipMode() {
+  fpsModeType = 'ship';
+  isFpsMode = true;
+  controls.enabled = false;
+  activeFocus = null;
+
+  if (!ship) {
+    createShip();
+  }
+
+  if (ship) {
+    fpsController.position.copy(ship.position);
+    ship.visible = false;
+
+    camera.getWorldDirection(tempVec1);
+    fpsController.yaw = Math.atan2(tempVec1.x, tempVec1.z);
+    fpsController.pitch = Math.asin(-tempVec1.y);
+
+    const euler = new THREE.Euler(fpsController.pitch, fpsController.yaw, 0, 'YXZ');
+    camera.rotation.copy(euler);
+
+    tempQuat1.setFromEuler(euler);
+    tempVec2.set(0, 0.0005, 0.001).applyQuaternion(tempQuat1);
+    camera.position.copy(fpsController.position).add(tempVec2);
+  }
+
+  const canvas = renderer.domElement;
+  canvas.addEventListener('click', requestPointerLockOnClick, { once: true });
+}
+
+function enterWalkMode(hit, rayDirection) {
+  if (!planet || !hit?.point) return;
+
+  if (isFpsMode && fpsModeType === 'ship') {
+    exitFpsMode({ skipOrbitReset: true, skipPointerLock: true });
+  }
+
+  const planetCenter = getPlanetCenter(tempVec1);
+  const baseRadius = getEffectivePlanetRadius();
+  const planetRotation = planet.spinGroup ? planet.spinGroup.rotation.y : 0;
   
-  if (isFpsMode) {
-    // Enter FPS mode
-    controls.enabled = false;
-    
-    // Initialize ship if not created
-    if (!ship) {
-      createShip();
-    }
-    
-    // Set camera to ship position with proper orientation
-    if (ship) {
-      fpsController.position.copy(ship.position);
-      
-      // Hide ship from camera view
-      ship.visible = false;
-      
-      // Calculate initial rotation from current camera direction
-      const direction = new THREE.Vector3();
-      camera.getWorldDirection(direction);
-      fpsController.yaw = Math.atan2(direction.x, direction.z);
-      fpsController.pitch = Math.asin(-direction.y);
-      
-      // Set camera position and rotation
-      const euler = new THREE.Euler(fpsController.pitch, fpsController.yaw, 0, 'YXZ');
-      camera.rotation.copy(euler);
-      
-      const quaternion = new THREE.Quaternion().setFromEuler(euler);
-      const cameraOffset = new THREE.Vector3(0, 0.0005, 0.001); // Very small for scale (divided by 10)
-      cameraOffset.applyQuaternion(quaternion);
-      camera.position.copy(fpsController.position).add(cameraOffset);
-    }
-    
-    // Request pointer lock (will be requested on click)
-    // Add click handler to canvas for pointer lock
-    const canvas = renderer.domElement;
-    canvas.addEventListener('click', requestPointerLockOnClick, { once: true });
+  // Get surface normal from hit point
+  const hitDir = tempVec2.copy(hit.point).sub(planetCenter);
+  if (hitDir.lengthSq() === 0) {
+    hitDir.copy(WORLD_UP);
+  }
+  hitDir.normalize();
+  
+  // Sample terrain height
+  const rotationQuat = tempQuat1.setFromAxisAngle(WORLD_UP, -planetRotation);
+  const localUp = tempVec3.copy(hitDir).applyQuaternion(rotationQuat);
+  const terrainHeight = getTerrainHeightAtPosition([localUp.x, localUp.y, localUp.z]);
+  const surfaceRadius = baseRadius + terrainHeight;
+  const spawnRadius = surfaceRadius + walkController.eyeHeight;
+  
+  // Set position
+  walkController.position.copy(planetCenter).addScaledVector(hitDir, spawnRadius);
+  walkController.velocity.set(0, 0, 0);
+  walkController.onGround = true;
+  
+  // Initialize camera orientation from current view or ray
+  let viewDir = tempVec4;
+  if (rayDirection) {
+    viewDir.copy(rayDirection).negate();
   } else {
-    // Exit FPS mode
-    controls.enabled = true;
-    
-    // Exit pointer lock
+    camera.getWorldDirection(viewDir);
+  }
+  viewDir.normalize();
+  
+  // Decompose view direction into yaw and pitch relative to surface
+  const tangentView = tempVec5.copy(viewDir).projectOnPlane(hitDir);
+  if (tangentView.lengthSq() < 1e-6) {
+    tangentView.set(0, 0, -1).projectOnPlane(hitDir);
+    if (tangentView.lengthSq() < 1e-6) {
+      tangentView.set(1, 0, 0);
+    }
+  }
+  tangentView.normalize();
+  
+  // Calculate yaw from world X/Z
+  walkController.yaw = Math.atan2(tangentView.x, tangentView.z);
+  
+  // Calculate pitch from normal
+  walkController.pitch = Math.asin(-viewDir.dot(hitDir));
+  walkController.pitch = THREE.MathUtils.clamp(
+    walkController.pitch,
+    -walkController.maxPitch,
+    walkController.maxPitch
+  );
+  
+  // Set camera
+  const euler = new THREE.Euler(walkController.pitch, walkController.yaw, 0, 'YXZ');
+  camera.position.copy(walkController.position);
+  camera.rotation.copy(euler);
+  
+  fpsModeType = 'walk';
+  isFpsMode = true;
+  controls.enabled = false;
+  activeFocus = null;
+  previousPlanetRotation = planetRotation;
+
+  const canvas = renderer.domElement;
+  canvas.addEventListener('click', requestPointerLockOnClick, { once: true });
+  if (!fpsController.isPointerLocked) {
+    requestPointerLock();
+  }
+}
+
+function exitFpsMode(options = {}) {
+  if (!isFpsMode) return;
+
+  const { skipPointerLock = false, skipOrbitReset = false } = options;
+  const previousMode = fpsModeType;
+
+  isFpsMode = false;
+  fpsModeType = 'ship';
+  controls.enabled = true;
+
+  if (!skipPointerLock) {
     if (document.exitPointerLock) {
       document.exitPointerLock();
     } else if (document.mozExitPointerLock) {
@@ -1515,20 +1803,31 @@ function toggleFpsMode() {
     } else if (document.webkitExitPointerLock) {
       document.webkitExitPointerLock();
     }
-    
-    // Make ship visible again when exiting FPS mode
-    if (ship) {
-      ship.visible = true;
-    }
-    
-    // Reset camera to orbit view
-    if (planet && planet.planetRoot) {
-      const planetRadius = params.radius || 1.32;
-      const targetPosition = new THREE.Vector3(0, planetRadius * 2.5, planetRadius * 2.5);
-      camera.position.copy(targetPosition);
-      controls.target.set(0, 0, 0);
-      controls.update();
-    }
+  }
+
+  if (previousMode === 'ship' && ship) {
+    ship.visible = true;
+  }
+
+  if (previousMode === 'walk') {
+    walkController.velocity.set(0, 0, 0);
+    walkController.onGround = false;
+  }
+
+  if (!skipOrbitReset && planet && planet.planetRoot) {
+    const planetRadius = getEffectivePlanetRadius();
+    tempVec1.set(0, planetRadius * 2.5, planetRadius * 2.5);
+    camera.position.copy(tempVec1);
+    controls.target.set(0, 0, 0);
+    controls.update();
+  }
+}
+
+function toggleFpsMode() {
+  if (isFpsMode) {
+    exitFpsMode();
+  } else {
+    enterShipMode();
   }
 }
 
@@ -1538,60 +1837,39 @@ function requestPointerLockOnClick() {
 
 // Update ship movement in FPS mode
 function updateShipMovement(delta) {
-  if (!ship || !isFpsMode || !planet) return;
-  
-  // Get planet center for distance calculation
-  const planetCenter = new THREE.Vector3(0, 0, 0);
-  if (planet.planetRoot) {
-    planet.planetRoot.getWorldPosition(planetCenter);
-  }
-  
-  // Calculate distance from ship to planet center
+  if (!ship || !isFpsMode || !planet || fpsModeType !== 'ship') return;
+
+  const planetCenter = getPlanetCenter(tempVec1);
   const distanceToPlanet = fpsController.position.distanceTo(planetCenter);
-  const planetRadius = params.radius || 1.32;
-  
-  // Scale speed based on distance to planet - closer = slower (simulates scale)
-  // When very close (within 2x radius), slow down significantly
-  // When far (beyond 10x radius), use max speed
+  const planetRadius = getEffectivePlanetRadius();
+
   let distanceSpeedMultiplier = 1.0;
-  const closeDistance = planetRadius * 2.0; // Start slowing at 2x radius
-  const farDistance = planetRadius * 10.0; // Full speed beyond 10x radius
-  
+  const closeDistance = planetRadius * 2.0;
+  const farDistance = planetRadius * 10.0;
+
   if (distanceToPlanet < closeDistance) {
-    // Very close - slow down dramatically (scale factor: 0.1 to 0.5)
-    const closeFactor = distanceToPlanet / closeDistance; // 0 to 1 as we approach
+    const closeFactor = distanceToPlanet / closeDistance;
     distanceSpeedMultiplier = THREE.MathUtils.lerp(0.1, 0.5, closeFactor);
   } else if (distanceToPlanet < farDistance) {
-    // Medium distance - interpolate between slow and fast
     const t = (distanceToPlanet - closeDistance) / (farDistance - closeDistance);
     distanceSpeedMultiplier = THREE.MathUtils.lerp(0.5, 1.0, t);
   } else {
-    // Far away - full speed
     distanceSpeedMultiplier = 1.0;
   }
-  
-  // Apply distance-based speed scaling to base speed
+
   fpsController.speed = THREE.MathUtils.lerp(
     fpsController.minSpeed,
     fpsController.maxSpeed,
     distanceSpeedMultiplier
   );
-  
-  // Calculate movement direction based on ship orientation
-  const moveDirection = new THREE.Vector3();
-  
-  // Create rotation euler and quaternion
+
   const euler = new THREE.Euler(fpsController.pitch, fpsController.yaw, 0, 'YXZ');
   const quaternion = new THREE.Quaternion().setFromEuler(euler);
-  
-  // Calculate forward and right vectors from rotation
-  const forward = new THREE.Vector3(0, 0, -1);
-  forward.applyQuaternion(quaternion);
-  
-  const right = new THREE.Vector3(1, 0, 0);
-  right.applyQuaternion(quaternion);
-  
-  // ZQSD controls (Z=forward, Q=left, S=back, D=right)
+
+  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion);
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(quaternion);
+
+  const moveDirection = new THREE.Vector3();
   if (keys['z'] || keys['w']) {
     moveDirection.add(forward);
   }
@@ -1604,21 +1882,18 @@ function updateShipMovement(delta) {
   if (keys['d']) {
     moveDirection.add(right);
   }
-  
-  // Normalize direction
+
   if (moveDirection.length() > 0) {
     moveDirection.normalize();
   }
-  
-  // Calculate speed multiplier
+
   let speedMultiplier = 1.0;
   if (keys['shift']) {
     speedMultiplier = fpsController.accelerationMultiplier;
   } else if (keys['control'] || keys['ctrl']) {
     speedMultiplier = fpsController.slowMultiplier;
   }
-  
-  // Apply dash boost
+
   if (fpsController.dashDuration > 0) {
     speedMultiplier *= fpsController.dashBoost;
     fpsController.dashDuration -= delta;
@@ -1626,33 +1901,386 @@ function updateShipMovement(delta) {
       fpsController.dashBoost = 1.0;
     }
   }
-  
-  // Update dash cooldown
+
   if (fpsController.dashCooldown > 0) {
     fpsController.dashCooldown -= delta;
   }
-  
-  // Calculate velocity (speed already scaled by distance)
+
   const targetVelocity = moveDirection.multiplyScalar(fpsController.speed * speedMultiplier);
-  fpsController.velocity.lerp(targetVelocity, delta * 10); // Smooth acceleration
-  
-  // Update position
+  fpsController.velocity.lerp(targetVelocity, delta * 10);
+
   fpsController.position.add(fpsController.velocity.clone().multiplyScalar(delta));
-  
-  // Update ship position
+
   ship.position.copy(fpsController.position);
-  
-  // Update camera position (behind and slightly above ship) - very small for scale
-  const cameraOffset = new THREE.Vector3(0, 0.005, 0.01);
-  cameraOffset.applyQuaternion(quaternion);
+
+  const cameraOffset = new THREE.Vector3(0, 0.005, 0.01).applyQuaternion(quaternion);
   camera.position.copy(fpsController.position).add(cameraOffset);
-  
-  // Set camera rotation to match ship orientation
+
   camera.rotation.copy(euler);
-  
-  // Update ship rotation to match camera (with offset for visual)
+
   ship.rotation.y = fpsController.yaw;
-  ship.rotation.x = fpsController.pitch + Math.PI / 2; // Adjust for ship model orientation
+  ship.rotation.x = fpsController.pitch + Math.PI / 2;
+}
+
+// Terrain height sampling functions (ported from GLSL shader)
+// Simplified noise implementation for terrain height sampling
+function permuteVec4(x, y, z, w) {
+  return [
+    ((x * 34.0 + 1.0) * x) % 289.0,
+    ((y * 34.0 + 1.0) * y) % 289.0,
+    ((z * 34.0 + 1.0) * z) % 289.0,
+    ((w * 34.0 + 1.0) * w) % 289.0
+  ];
+}
+
+function taylorInvSqrt(r) {
+  return 1.79284291400159 - 0.85373472095314 * r;
+}
+
+function dot3(a, b) {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+function snoise(v) {
+  const C = [1.0 / 6.0, 1.0 / 3.0];
+  const D = [0.0, 0.5, 1.0, 2.0];
+
+  // First corner
+  const dotSum = v[0] + v[1] + v[2];
+  const i = [
+    Math.floor(v[0] + dotSum * C[1]),
+    Math.floor(v[1] + dotSum * C[1]),
+    Math.floor(v[2] + dotSum * C[1])
+  ];
+  const iSum = i[0] + i[1] + i[2];
+  const x0 = [
+    v[0] - i[0] + iSum * C[0],
+    v[1] - i[1] + iSum * C[0],
+    v[2] - i[2] + iSum * C[0]
+  ];
+
+  // Other corners
+  const g = [
+    x0[1] >= x0[0] ? 1 : 0,
+    x0[2] >= x0[1] ? 1 : 0,
+    x0[0] >= x0[2] ? 1 : 0
+  ];
+  const l = [1 - g[0], 1 - g[1], 1 - g[2]];
+  const i1 = [
+    Math.min(g[0], l[2]),
+    Math.min(g[1], l[0]),
+    Math.min(g[2], l[1])
+  ];
+  const i2 = [
+    Math.max(g[0], l[2]),
+    Math.max(g[1], l[0]),
+    Math.max(g[2], l[1])
+  ];
+
+  const x1 = [x0[0] - i1[0] + C[0], x0[1] - i1[1] + C[0], x0[2] - i1[2] + C[0]];
+  const x2 = [x0[0] - i2[0] + 2.0 * C[0], x0[1] - i2[1] + 2.0 * C[0], x0[2] - i2[2] + 2.0 * C[0]];
+  const x3 = [x0[0] - 1.0 + 3.0 * C[0], x0[1] - 1.0 + 3.0 * C[0], x0[2] - 1.0 + 3.0 * C[0]];
+
+  // Permutations
+  const iMod = [
+    i[0] % 289.0,
+    i[1] % 289.0,
+    i[2] % 289.0
+  ];
+
+  const perm1 = permuteVec4(iMod[2], iMod[2] + i1[2], iMod[2] + i2[2], iMod[2] + 1.0);
+  const perm2 = permuteVec4(
+    perm1[0] + iMod[1], perm1[1] + iMod[1] + i1[1], perm1[2] + iMod[1] + i2[1], perm1[3] + iMod[1] + 1.0
+  );
+  const p = permuteVec4(
+    perm2[0] + iMod[0], perm2[1] + iMod[0] + i1[0], perm2[2] + iMod[0] + i2[0], perm2[3] + iMod[0] + 1.0
+  );
+
+  // Gradients
+  const n_ = 1.0 / 7.0;
+  const ns = [
+    n_ * D[3] - D[0],
+    n_ * D[2] - D[1],
+    n_ * D[1] - D[3]
+  ];
+
+  const j = p.map(val => val - 49.0 * Math.floor(val * ns[2] * ns[2]));
+  const x_ = j.map(val => Math.floor(val * ns[2]));
+  const y_ = j.map((val, idx) => Math.floor(val - 7.0 * x_[idx]));
+
+  const x = x_.map((val, idx) => val * ns[0] + ns[1]);
+  const y = y_.map((val, idx) => val * ns[0] + ns[1]);
+  const h = [1.0 - Math.abs(x[0]) - Math.abs(y[0]), 1.0 - Math.abs(x[1]) - Math.abs(y[1]), 1.0 - Math.abs(x[2]) - Math.abs(y[2]), 1.0 - Math.abs(x[3]) - Math.abs(y[3])];
+
+  const b0 = [x[0], x[1], y[0], y[1]];
+  const b1 = [x[2], x[3], y[2], y[3]];
+
+  const s0 = b0.map(val => Math.floor(val) * 2.0 + 1.0);
+  const s1 = b1.map(val => Math.floor(val) * 2.0 + 1.0);
+  const sh = h.map(val => val < 0 ? -1 : 0);
+
+  const a0 = [
+    b0[0] + s0[0] * sh[0],
+    b0[2] + s0[2] * sh[0],
+    b0[1] + s0[1] * sh[1],
+    b0[3] + s0[3] * sh[1]
+  ];
+  const a1 = [
+    b1[0] + s1[0] * sh[2],
+    b1[2] + s1[2] * sh[2],
+    b1[1] + s1[1] * sh[3],
+    b1[3] + s1[3] * sh[3]
+  ];
+
+  const grad0 = [a0[0], a0[1], h[0]];
+  const grad1 = [a0[2], a0[3], h[1]];
+  const grad2 = [a1[0], a1[1], h[2]];
+  const grad3 = [a1[2], a1[3], h[3]];
+
+  // Normalize gradients
+  const dot0 = dot3(grad0, grad0);
+  const dot1 = dot3(grad1, grad1);
+  const dot2 = dot3(grad2, grad2);
+  const dot3_val = dot3(grad3, grad3);
+  const norm = [
+    taylorInvSqrt(dot0),
+    taylorInvSqrt(dot1),
+    taylorInvSqrt(dot2),
+    taylorInvSqrt(dot3_val)
+  ];
+
+  grad0[0] *= norm[0]; grad0[1] *= norm[0]; grad0[2] *= norm[0];
+  grad1[0] *= norm[1]; grad1[1] *= norm[1]; grad1[2] *= norm[1];
+  grad2[0] *= norm[2]; grad2[1] *= norm[2]; grad2[2] *= norm[2];
+  grad3[0] *= norm[3]; grad3[1] *= norm[3]; grad3[2] *= norm[3];
+
+  // Mix final noise value
+  const dotX0 = dot3(x0, x0);
+  const dotX1 = dot3(x1, x1);
+  const dotX2 = dot3(x2, x2);
+  const dotX3 = dot3(x3, x3);
+
+  const m = [
+    Math.max(0.6 - dotX0, 0.0),
+    Math.max(0.6 - dotX1, 0.0),
+    Math.max(0.6 - dotX2, 0.0),
+    Math.max(0.6 - dotX3, 0.0)
+  ];
+  const m2 = m.map(val => val * val);
+  const m4 = m2.map(val => val * val);
+
+  const dotP0 = dot3(grad0, x0);
+  const dotP1 = dot3(grad1, x1);
+  const dotP2 = dot3(grad2, x2);
+  const dotP3 = dot3(grad3, x3);
+
+  return 42.0 * (m4[0] * dotP0 + m4[1] * dotP1 + m4[2] * dotP2 + m4[3] * dotP3);
+}
+
+function fbm(p, octaves, persistence, lacunarity) {
+  let amplitude = 1.0;
+  let frequency = 1.0;
+  let total = 0.0;
+  let normalization = 0.0;
+
+  for (let i = 0; i < octaves; i++) {
+    const scaledP = [p[0] * frequency, p[1] * frequency, p[2] * frequency];
+    total += amplitude * snoise(scaledP);
+    normalization += amplitude;
+    amplitude *= persistence;
+    frequency *= lacunarity;
+  }
+
+  return total / normalization;
+}
+
+// Get terrain height displacement at a given position
+// Position should be in planet-local space (before rotation)
+function getTerrainHeightAtPosition(localPos) {
+  if (!planet || !params) return 0.0;
+
+  const continentSize = params.continentSize ?? 1.5;
+  const mountainHeight = params.mountainHeight ?? 0.4;
+  const roughness = params.roughness ?? 0.55;
+  const detail = params.detail ?? 6.0;
+  const seaLevel = params.seaLevel ?? 0.52;
+
+  // Base continent shape (low frequency)
+  const h = fbm([localPos[0] * continentSize, localPos[1] * continentSize, localPos[2] * continentSize], 8, roughness, detail);
+
+  // Ridged mountain noise (adds detail to landmasses)
+  let hm = fbm([localPos[0] * continentSize * 4.0, localPos[1] * continentSize * 4.0, localPos[2] * continentSize * 4.0], 4, roughness, detail * 1.5);
+  hm = 1.0 - Math.abs(hm); // ridges
+  hm = Math.pow(hm, 3.0);
+
+  // Combine and normalize roughly to [0, 1]
+  const finalHeight = (h * 0.6 + hm * 0.4) + 0.5;
+
+  // Displacement
+  // Only displace if above sea level to keep ocean flat-ish
+  let displacement = 0.0;
+  if (finalHeight > seaLevel) {
+    displacement = (finalHeight - seaLevel) * mountainHeight * 0.3;
+  }
+
+  return displacement;
+}
+
+// Store previous planet rotation to calculate delta
+let previousPlanetRotation = 0;
+
+function updateWalkMovement(delta) {
+  if (!isFpsMode || fpsModeType !== 'walk' || !planet) return;
+
+  const planetCenter = getPlanetCenter(tempVec1);
+  const baseRadius = getEffectivePlanetRadius();
+  const planetRotation = planet.spinGroup ? planet.spinGroup.rotation.y : 0;
+  
+  // Rotate player with planet
+  const rotationDelta = planetRotation - previousPlanetRotation;
+  if (Math.abs(rotationDelta) > 1e-8) {
+    const rotQuat = tempQuat1.setFromAxisAngle(WORLD_UP, rotationDelta);
+    walkController.position.sub(planetCenter).applyQuaternion(rotQuat).add(planetCenter);
+    walkController.velocity.applyQuaternion(rotQuat);
+    walkController.yaw += rotationDelta;
+  }
+  previousPlanetRotation = planetRotation;
+  
+  // Get surface normal (radial direction from planet center)
+  const toCenter = tempVec2.copy(walkController.position).sub(planetCenter);
+  const currentDist = toCenter.length();
+  if (currentDist < 1e-6) {
+    toCenter.set(0, 1, 0);
+  }
+  const surfaceNormal = toCenter.normalize();
+  
+  // Sample terrain height
+  const rotQuat = tempQuat1.setFromAxisAngle(WORLD_UP, -planetRotation);
+  const localUp = tempVec3.copy(surfaceNormal).applyQuaternion(rotQuat);
+  const terrainHeight = getTerrainHeightAtPosition([localUp.x, localUp.y, localUp.z]);
+  const targetRadius = baseRadius + terrainHeight + walkController.eyeHeight;
+  
+  // Build tangent space basis (surface-aligned coordinate system)
+  // North reference projected onto tangent plane
+  const tangentNorth = tempVec4.set(0, 0, 1).projectOnPlane(surfaceNormal);
+  if (tangentNorth.lengthSq() < 1e-6) {
+    tangentNorth.set(1, 0, 0).projectOnPlane(surfaceNormal);
+  }
+  tangentNorth.normalize();
+  
+  const tangentEast = tempVec5.copy(surfaceNormal).cross(tangentNorth).normalize();
+  
+  // Apply yaw rotation in tangent space
+  const yawQuat = tempQuat1.setFromAxisAngle(surfaceNormal, walkController.yaw);
+  const tangentForward = tempVec6.copy(tangentNorth).applyQuaternion(yawQuat).normalize();
+  const tangentRight = tempVec7.copy(tangentEast).applyQuaternion(yawQuat).normalize();
+  
+  // Movement input in tangent space
+  const moveDirection = new THREE.Vector3();
+  if (keys['z'] || keys['w']) moveDirection.add(tangentForward);
+  if (keys['s']) moveDirection.sub(tangentForward);
+  if (keys['q'] || keys['a']) moveDirection.sub(tangentRight);
+  if (keys['d']) moveDirection.add(tangentRight);
+  
+  if (moveDirection.length() > 0) {
+    moveDirection.normalize();
+  }
+  
+  let speedMultiplier = 1.0;
+  if (keys['shift']) {
+    speedMultiplier = walkController.sprintMultiplier;
+  } else if (keys['control'] || keys['ctrl']) {
+    speedMultiplier = 0.5;
+  }
+  
+  // Split velocity into tangent and radial
+  const radialVel = walkController.velocity.dot(surfaceNormal);
+  const tangentVel = new THREE.Vector3().copy(walkController.velocity).addScaledVector(surfaceNormal, -radialVel);
+  
+  // Apply movement
+  const targetSpeed = walkController.speed * speedMultiplier;
+  const accel = walkController.onGround ? walkController.groundAcceleration : walkController.airAcceleration;
+  const lerpFactor = THREE.MathUtils.clamp(accel * delta, 0, 1);
+  
+  if (moveDirection.lengthSq() > 0) {
+    const targetVel = moveDirection.multiplyScalar(targetSpeed);
+    tangentVel.lerp(targetVel, lerpFactor);
+  } else if (walkController.onGround) {
+    const friction = Math.max(0, 1 - walkController.groundFriction * delta);
+    tangentVel.multiplyScalar(friction);
+  }
+  
+  // Apply gravity
+  let newRadialVel = radialVel;
+  if (walkController.onGround && currentDist <= targetRadius * 1.01) {
+    // On ground - cancel radial velocity and stick to surface
+    newRadialVel = 0;
+    walkController.velocity.copy(tangentVel);
+    
+    // Apply movement
+    walkController.position.addScaledVector(walkController.velocity, delta);
+    
+    // Snap to surface
+    const correctedPos = tempVec2.copy(walkController.position).sub(planetCenter);
+    correctedPos.setLength(targetRadius);
+    walkController.position.copy(planetCenter).add(correctedPos);
+    
+  } else {
+    // In air - apply gravity
+    newRadialVel -= walkController.gravity * delta;
+    walkController.velocity.copy(tangentVel).addScaledVector(surfaceNormal, newRadialVel);
+    
+    // Apply movement
+    walkController.position.addScaledVector(walkController.velocity, delta);
+    
+    // Collision with surface
+    const newToCenter = tempVec2.copy(walkController.position).sub(planetCenter);
+    const newDist = newToCenter.length();
+    
+    if (newDist < targetRadius) {
+      // Hit ground
+      newToCenter.setLength(targetRadius);
+      walkController.position.copy(planetCenter).add(newToCenter);
+      walkController.onGround = true;
+      
+      // Cancel downward velocity
+      const newNormal = newToCenter.normalize();
+      const velDown = walkController.velocity.dot(newNormal);
+      if (velDown < 0) {
+        walkController.velocity.addScaledVector(newNormal, -velDown);
+      }
+    } else if (newDist < targetRadius * 1.05) {
+      walkController.onGround = true;
+    } else {
+      walkController.onGround = false;
+    }
+  }
+  
+  // Build camera orientation: surface-aligned with pitch applied
+  const finalSurfaceNormal = tempVec2.copy(walkController.position).sub(planetCenter).normalize();
+  const finalTangentNorth = tempVec3.set(0, 0, 1).projectOnPlane(finalSurfaceNormal);
+  if (finalTangentNorth.lengthSq() < 1e-6) {
+    finalTangentNorth.set(1, 0, 0).projectOnPlane(finalSurfaceNormal);
+  }
+  finalTangentNorth.normalize();
+  
+  const finalYawQuat = tempQuat1.setFromAxisAngle(finalSurfaceNormal, walkController.yaw);
+  const cameraForward = tempVec4.copy(finalTangentNorth).applyQuaternion(finalYawQuat);
+  
+  // Apply pitch around right axis
+  const cameraRight = tempVec5.copy(finalSurfaceNormal).cross(cameraForward).normalize();
+  const pitchQuat = tempQuat2.setFromAxisAngle(cameraRight, walkController.pitch);
+  cameraForward.applyQuaternion(pitchQuat).normalize();
+  
+  // Rebuild right to stay orthogonal
+  cameraRight.copy(cameraForward).cross(finalSurfaceNormal).normalize();
+  
+  // Set camera
+  camera.position.copy(walkController.position);
+  camera.up.copy(finalSurfaceNormal);
+  
+  const lookTarget = new THREE.Vector3().copy(walkController.position).add(cameraForward);
+  camera.lookAt(lookTarget);
 }
 
 // ... (rest of the file is mostly UI handlers, which can remain)
@@ -1817,6 +2445,10 @@ function setupMobilePanelToggle() {
       }
       
       handleSeedChanged();
+      // Clear saved ID and update URL with new share code
+      currentShareId = null;
+      currentHashIsApiId = false;
+      scheduleShareUpdate();
     });
 
     mobileCopy?.addEventListener("click", () => {
@@ -1984,10 +2616,24 @@ function setupMobilePanelToggle() {
             if (!loadedData) {
               throw new Error('Invalid share code format');
             }
+            let moonsFromShare = null;
             if (Array.isArray(decoded?.moons)) {
-              moonSettings.splice(0, moonSettings.length, ...decoded.moons.map(m => ({ ...m })));
-              params.moonCount = decoded.moons.length;
+              moonsFromShare = decoded.moons.map((m) => ({ ...m }));
             }
+
+            if (!moonsFromShare && Array.isArray(loadedData?.moons)) {
+              moonsFromShare = loadedData.moons.map((m) => ({ ...m }));
+              delete loadedData.moons;
+            }
+
+            if (moonsFromShare) {
+              moonSettings.splice(0, moonSettings.length, ...moonsFromShare.map((m) => ({ ...m })));
+              params.moonCount = moonsFromShare.length;
+              if (loadedData && typeof loadedData === "object") {
+                loadedData.moonCount = moonsFromShare.length;
+              }
+            }
+
             currentShareId = null;
             currentHashIsApiId = false;
           } catch (decodeError) {
@@ -2118,21 +2764,116 @@ function updateShareCode() {
     } catch {}
 }
 
-function buildSharePayload() {
-    const data = {};
-    shareKeys.forEach((key) => {
-      data[key] = params[key];
+const SHARE_VERSION = 2;
+const SHARE_EXCLUDED_KEYS = new Set(["rings"]);
+
+function cloneShareValue(value) {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value === "function" || typeof value === "symbol") return undefined;
+  if (typeof value === "number" && Number.isNaN(value)) return undefined;
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => cloneShareValue(item))
+      .filter((item) => item !== undefined);
+  }
+  if (typeof value === "object") {
+    const result = {};
+    Object.keys(value).forEach((key) => {
+      const cloned = cloneShareValue(value[key]);
+      if (cloned !== undefined) {
+        result[key] = cloned;
+      }
     });
-    if (Array.isArray(params.rings)) {
-      data.rings = params.rings.map((r) => ({
-        style: r.style, color: r.color, start: r.start, end: r.end,
-        opacity: r.opacity, noiseScale: r.noiseScale, noiseStrength: r.noiseStrength,
-        spinSpeed: r.spinSpeed, brightness: r.brightness
-      }));
-      data.ringCount = params.ringCount ?? params.rings.length;
+    return result;
+  }
+  return value;
+}
+
+function normalizeRingEntry(ring = {}) {
+  const start = typeof ring.start === "number" && !Number.isNaN(ring.start) ? ring.start : 1.4;
+  const end = typeof ring.end === "number" && !Number.isNaN(ring.end) ? ring.end : start + 0.2;
+  return {
+    style: typeof ring.style === "string" && ring.style ? ring.style : "Texture",
+    color: typeof ring.color === "string" && ring.color ? ring.color : "#ffffff",
+    start,
+    end,
+    opacity: typeof ring.opacity === "number" && !Number.isNaN(ring.opacity) ? ring.opacity : 0.6,
+    noiseScale: typeof ring.noiseScale === "number" && !Number.isNaN(ring.noiseScale) ? ring.noiseScale : 3.2,
+    noiseStrength: typeof ring.noiseStrength === "number" && !Number.isNaN(ring.noiseStrength) ? ring.noiseStrength : 0.55,
+    spinSpeed: typeof ring.spinSpeed === "number" && !Number.isNaN(ring.spinSpeed) ? ring.spinSpeed : 0,
+    brightness: typeof ring.brightness === "number" && !Number.isNaN(ring.brightness) ? ring.brightness : 1
+  };
+}
+
+function normalizeMoonEntry(moon = {}) {
+  return {
+    size: typeof moon.size === "number" && !Number.isNaN(moon.size) ? moon.size : 0.18,
+    distance: typeof moon.distance === "number" && !Number.isNaN(moon.distance) ? moon.distance : 3.5,
+    orbitSpeed: typeof moon.orbitSpeed === "number" && !Number.isNaN(moon.orbitSpeed) ? moon.orbitSpeed : 0.4,
+    inclination: typeof moon.inclination === "number" && !Number.isNaN(moon.inclination) ? moon.inclination : 0,
+    color: typeof moon.color === "string" && moon.color ? moon.color : "#cfcfcf",
+    phase: typeof moon.phase === "number" && !Number.isNaN(moon.phase) ? moon.phase : 0,
+    eccentricity: typeof moon.eccentricity === "number" && !Number.isNaN(moon.eccentricity) ? moon.eccentricity : 0
+  };
+}
+
+function collectShareData() {
+  const data = {};
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (SHARE_EXCLUDED_KEYS.has(key)) return;
+    const cloned = cloneShareValue(value);
+    if (cloned !== undefined) {
+      data[key] = cloned;
     }
-    // Moons removed - no longer supported
-    return { version: 1, preset: params.preset, data };
+  });
+
+  const hasRings = Array.isArray(params.rings);
+  if (hasRings) {
+    data.rings = params.rings.map((ring) => normalizeRingEntry(ring));
+  }
+
+  const normalizedMoons = Array.isArray(moonSettings)
+    ? moonSettings.map((moon) => normalizeMoonEntry(moon))
+    : [];
+
+  if (Array.isArray(moonSettings)) {
+    data.moons = normalizedMoons;
+  }
+
+  const moonCount = normalizedMoons.length;
+  data.moonCount = typeof params.moonCount === "number" ? params.moonCount : moonCount;
+
+  if (!Object.prototype.hasOwnProperty.call(data, "ringCount")) {
+    data.ringCount = typeof params.ringCount === "number"
+      ? params.ringCount
+      : hasRings
+        ? params.rings.length
+        : 0;
+  }
+
+  return data;
+}
+
+function buildShareMetadata() {
+  const metadata = {
+    shareVersion: SHARE_VERSION,
+    seed: params.seed,
+    planetType: params.planetType
+  };
+
+  if (params.preset) metadata.preset = params.preset;
+  const moonCount = Array.isArray(moonSettings) ? moonSettings.length : undefined;
+  if (typeof moonCount === "number") metadata.moonCount = moonCount;
+  if (typeof params.ringCount === "number") metadata.ringCount = params.ringCount;
+
+  return metadata;
+}
+
+function buildSharePayload() {
+    const data = collectShareData();
+    return { version: SHARE_VERSION, preset: params.preset ?? null, data, metadata: buildShareMetadata() };
 }
 
 function encodeShare(payload) { return encodeShareExt(payload); }
@@ -2142,10 +2883,14 @@ async function copyShareCode() {
   try {
     const payload = buildSharePayload();
     const shareCode = encodeShare(payload);
+    const apiMetadata = {
+      ...payload.metadata,
+      savedAt: new Date().toISOString()
+    };
     
     // Try to save to API first
     try {
-      const result = await saveConfigurationToAPIExt(payload.data, payload.metadata || {});
+      const result = await saveConfigurationToAPIExt(payload.data, apiMetadata);
       if (result && result.id) {
         // Update URL with API ID in hash format
         currentShareId = result.id;
@@ -2499,14 +3244,83 @@ function surpriseMe() {
         guiControllers.randomizeRockyPlanet();
     }
     
+    // Randomize rings (gas planets have higher chance)
+    const ringChance = isGasPlanet ? 0.7 : 0.15;
+    params.ringEnabled = Math.random() < ringChance;
+    
+    if (params.ringEnabled) {
+        // Get planet size for proper ring scaling
+        const planetSize = isGasPlanet ? (params.gasPlanetSize || 2.0) : (params.planetSize || 1.0);
+        
+        // More rings for gas giants
+        const minRings = isGasPlanet ? 2 : 1;
+        const maxRings = isGasPlanet ? 6 : 3;
+        params.ringCount = Math.floor(Math.random() * (maxRings - minRings + 1)) + minRings;
+        
+        // Random ring angle
+        params.ringAngle = THREE.MathUtils.lerp(-45, 45, Math.random());
+        params.ringSpinSpeed = THREE.MathUtils.lerp(-0.05, 0.05, Math.random());
+        
+        // Generate rings with proper sizing
+        params.rings = [];
+        let lastRadius = planetSize * 1.15; // Start just outside planet
+        
+        for (let i = 0; i < params.ringCount; i++) {
+            const gap = THREE.MathUtils.lerp(0.05, 0.15, Math.random()) * planetSize;
+            const start = lastRadius + gap;
+            const thickness = THREE.MathUtils.lerp(0.1, 0.4, Math.random()) * planetSize;
+            const end = start + thickness;
+            
+            const hue = (0.05 + i * 0.12 + Math.random() * 0.1) % 1;
+            const saturation = 0.2 + Math.random() * 0.3;
+            const lightness = 0.5 + Math.random() * 0.4;
+            
+            params.rings.push({
+                style: Math.random() > 0.5 ? "Texture" : "Noise",
+                color: new THREE.Color().setHSL(hue, saturation, lightness).getStyle(),
+                start: start,
+                end: end,
+                opacity: THREE.MathUtils.lerp(0.4, 0.9, Math.random()),
+                noiseScale: THREE.MathUtils.lerp(2.0, 5.0, Math.random()),
+                noiseStrength: THREE.MathUtils.lerp(0.3, 0.7, Math.random()),
+                spinSpeed: THREE.MathUtils.lerp(-0.08, 0.08, Math.random()),
+                brightness: THREE.MathUtils.lerp(0.7, 1.3, Math.random())
+            });
+            
+            lastRadius = end;
+        }
+    } else {
+        params.ringCount = 0;
+        params.rings = [];
+    }
+    
+    // Update GUI controllers for rings
+    if (guiControllers.ringEnabled) guiControllers.ringEnabled.updateDisplay();
+    if (guiControllers.ringCount) guiControllers.ringCount.updateDisplay();
+    if (guiControllers.ringAngle) guiControllers.ringAngle.updateDisplay();
+    if (guiControllers.ringSpinSpeed) guiControllers.ringSpinSpeed.updateDisplay();
+    
+    // Rebuild ring controls
+    if (guiControllers.rebuildRingControls) {
+        guiControllers.rebuildRingControls();
+    }
+    
     // Update planet
     if (planet) {
         planet.setPlanetType(params.planetType);
         planet.applyParams(params);
+        planet.updateRings();
+        planet.updateTilt();
     }
     
     // Update seed display
     updateSeedDisplay();
+    
+    // Clear saved ID and update URL with new share code
+    currentShareId = null;
+    currentHashIsApiId = false;
+    handleSeedChanged();
+    scheduleShareUpdate();
     
     return;
     

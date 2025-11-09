@@ -215,6 +215,8 @@ export function setupPlanetControls({
             roughness: false,
             detail: false,
             iceCapThreshold: false,
+            noiseType: false,
+            noiseVariant: false,
             colorDeepWater: false,
             colorShallowWater: false,
             colorBeach: false,
@@ -236,10 +238,17 @@ export function setupPlanetControls({
             gasColor4: false,
             gasColor5: false
         };
+    } else {
+        params.locks.noiseType ??= false;
+        params.locks.noiseVariant ??= false;
     }
 
     // Store references to percentage wrappers
     const percentWrappers = {};
+    const lockIconStyles = {
+        locked: 'rgba(255, 100, 100, 0.9)',
+        unlocked: 'rgba(169, 195, 237, 0.75)'
+    };
 
     // Helper function to add slider with percentage display and lock
     function addSliderWithPercentAndLock(folder, paramName, label, min, max, onChange) {
@@ -283,7 +292,7 @@ export function setupPlanetControls({
         const updateLockIcon = (btn, isLocked) => {
             btn.textContent = isLocked ? '🔒' : '🔓';
             btn.title = isLocked ? 'Unlock' : 'Lock';
-            btn.style.color = isLocked ? 'rgba(255, 100, 100, 0.9)' : 'rgba(169, 195, 237, 0.75)';
+            btn.style.color = isLocked ? lockIconStyles.locked : lockIconStyles.unlocked;
             btn.style.opacity = isLocked ? '1' : '0.7';
         };
         
@@ -301,7 +310,7 @@ export function setupPlanetControls({
             width: auto;
             height: auto;
             line-height: 1;
-            color: rgba(169, 195, 237, 0.75);
+            color: ${lockIconStyles.unlocked};
             transition: color 0.2s, transform 0.1s;
             outline: none;
             flex-shrink: 0;
@@ -387,7 +396,7 @@ export function setupPlanetControls({
         const updateLockIcon = (btn, isLocked) => {
             btn.textContent = isLocked ? '🔒' : '🔓';
             btn.title = isLocked ? 'Unlock' : 'Lock';
-            btn.style.color = isLocked ? 'rgba(255, 100, 100, 0.9)' : 'rgba(169, 195, 237, 0.75)';
+            btn.style.color = isLocked ? lockIconStyles.locked : lockIconStyles.unlocked;
             btn.style.opacity = isLocked ? '1' : '0.7';
         };
         
@@ -405,7 +414,7 @@ export function setupPlanetControls({
             width: auto;
             height: auto;
             line-height: 1;
-            color: rgba(169, 195, 237, 0.75);
+            color: ${lockIconStyles.unlocked};
             transition: color 0.2s, transform 0.1s;
             outline: none;
             flex-shrink: 0;
@@ -453,6 +462,103 @@ export function setupPlanetControls({
         return { color: colorCtrl, lock: lockCtrl };
     }
 
+    function addSelectWithLock(folder, paramName, label, options, onChange) {
+        const optionValues = Array.isArray(options) ? options : Object.values(options);
+        if (params[paramName] === undefined || !optionValues.includes(params[paramName])) {
+            params[paramName] = optionValues[0];
+        }
+
+        const proxy = {
+            get value() {
+                return params[paramName];
+            },
+            set value(v) {
+                params[paramName] = v;
+                if (onChange) onChange(v);
+                if (guiControllers.planet) guiControllers.planet.applyParams({ [paramName]: params[paramName] });
+                if (scheduleShareUpdate) scheduleShareUpdate();
+            }
+        };
+
+        const selectCtrl = folder.add(proxy, 'value', options).name(label);
+        selectCtrl.onChange(v => {
+            if (onChange) onChange(v);
+        });
+
+        const lockObj = { locked: params.locks[paramName] };
+        const lockCtrl = folder.add(lockObj, 'locked').name('🔒').onChange(v => {
+            params.locks[paramName] = v;
+        });
+        lockCtrl.name(params.locks[paramName] ? '🔒' : '🔓');
+
+        const lockElement = lockCtrl.domElement;
+        lockElement.style.display = 'none';
+
+        const selectElement = selectCtrl.domElement;
+        const lockButton = document.createElement('button');
+        lockButton.type = 'button';
+        lockButton.className = 'lock-toggle';
+        lockButton.style.cssText = `
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 0.9em;
+            padding: 0;
+            margin: 0;
+            width: auto;
+            height: auto;
+            line-height: 1;
+            color: ${params.locks[paramName] ? lockIconStyles.locked : lockIconStyles.unlocked};
+            transition: color 0.2s, transform 0.1s;
+            outline: none;
+            flex-shrink: 0;
+            display: inline-block;
+        `;
+
+        const updateLockIcon = (btn, isLocked) => {
+            btn.textContent = isLocked ? '🔒' : '🔓';
+            btn.title = isLocked ? 'Unlock' : 'Lock';
+            btn.style.color = isLocked ? lockIconStyles.locked : lockIconStyles.unlocked;
+            btn.style.opacity = isLocked ? '1' : '0.7';
+        };
+
+        updateLockIcon(lockButton, params.locks[paramName]);
+
+        lockButton.addEventListener('click', () => {
+            lockObj.locked = !lockObj.locked;
+            params.locks[paramName] = lockObj.locked;
+            updateLockIcon(lockButton, lockObj.locked);
+            if (lockCtrl.object) {
+                lockCtrl.object.locked = lockObj.locked;
+            }
+            lockCtrl.name(lockObj.locked ? '🔒' : '🔓');
+        });
+
+        const widget = selectElement.querySelector('.widget');
+        if (widget) {
+            if (!widget.style.display) {
+                widget.style.display = 'flex';
+                widget.style.alignItems = 'center';
+                widget.style.gap = '4px';
+            }
+            widget.appendChild(lockButton);
+        } else {
+            selectElement.style.display = 'flex';
+            selectElement.style.alignItems = 'center';
+            selectElement.style.gap = '4px';
+            selectElement.appendChild(lockButton);
+        }
+
+        return {
+            controller: selectCtrl,
+            lock: lockCtrl,
+            update() {
+                updateLockIcon(lockButton, params.locks[paramName]);
+                selectCtrl.updateDisplay();
+            }
+        };
+    }
+
     // Planet Type Selector
     const planetTypeController = gui.add(params, 'planetType', { 'Earth-like': 'earth', 'Gas Planet': 'gas' }).name('Planet Type');
     planetTypeController.onChange(v => {
@@ -484,6 +590,9 @@ export function setupPlanetControls({
     addSliderWithPercentAndLock(folderTerrain, 'continentSize', 'Continent Freq', 0.1, 5.0, () => {});
     addSliderWithPercentAndLock(folderTerrain, 'mountainHeight', 'Mtn Height', 0.0, 1.0, () => {});
     addSliderWithPercentAndLock(folderTerrain, 'roughness', 'Roughness', 0.1, 0.9, () => {});
+    const noiseTypeOptions = { Classic: 'classic', Ridged: 'ridged', Billowy: 'billowy', Warped: 'warped' };
+    const noiseTypeController = addSelectWithLock(folderTerrain, 'noiseType', 'Noise Type', noiseTypeOptions, () => {});
+    const noiseVariantSlider = addSliderWithPercentAndLock(folderTerrain, 'noiseVariant', 'Noise Variant', 0.0, 1.0, () => {});
     
     const detailSliderCtrl = addSliderWithPercentAndLock(folderTerrain, 'detail', 'Detail', 3.0, 8.0, () => {});
     
@@ -596,6 +705,11 @@ export function setupPlanetControls({
                 if (controller.updateDisplay) controller.updateDisplay();
             }
         });
+
+        if (noiseTypeController) noiseTypeController.update();
+        if (noiseVariantSlider?.slider && noiseVariantSlider.slider.updateDisplay) {
+            noiseVariantSlider.slider.updateDisplay();
+        }
         
         if (scheduleShareUpdate) scheduleShareUpdate();
     }
@@ -607,6 +721,11 @@ export function setupPlanetControls({
         if (!params.locks.continentSize) params.continentSize = Math.random() * 3.0 + 0.5;
         if (!params.locks.mountainHeight) params.mountainHeight = Math.random();
         if (!params.locks.roughness) params.roughness = Math.random() * 0.6 + 0.2;
+        if (!params.locks.noiseType) {
+            const noiseChoices = Object.values(noiseTypeOptions);
+            params.noiseType = noiseChoices[Math.floor(Math.random() * noiseChoices.length)];
+        }
+        if (!params.locks.noiseVariant) params.noiseVariant = Math.random();
         if (!params.locks.detail) {
             params.detail = 3.0 + ((params.planetSize - 0.5) / 1.5) * 5.0;
         }
@@ -709,6 +828,11 @@ export function setupPlanetControls({
         });
         
         if (guiControllers.planet) guiControllers.planet.applyParams(params);
+
+        if (noiseTypeController) noiseTypeController.update();
+        if (noiseVariantSlider?.slider && noiseVariantSlider.slider.updateDisplay) {
+            noiseVariantSlider.slider.updateDisplay();
+        }
         
         // Update GUI controllers
         folderTerrain.controllers.forEach(controller => {

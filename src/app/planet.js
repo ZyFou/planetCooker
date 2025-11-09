@@ -9,6 +9,26 @@ import {
 } from "./shaders/planetShaders.js";
 import { generateRingTexture, generateAnnulusTexture } from "./textures.js";
 
+const ROCKY_NOISE_TYPES = {
+    classic: 0,
+    ridged: 1,
+    billowy: 2,
+    warped: 3
+};
+
+function resolveRockyNoiseType(value) {
+    if (typeof value === 'number') {
+        return THREE.MathUtils.clamp(value, 0, 3);
+    }
+    if (typeof value === 'string') {
+        const key = value.toLowerCase();
+        if (ROCKY_NOISE_TYPES.hasOwnProperty(key)) {
+            return ROCKY_NOISE_TYPES[key];
+        }
+    }
+    return ROCKY_NOISE_TYPES.classic;
+}
+
 export class Planet {
     constructor(scene, params, guiControllers) {
         this.scene = scene;
@@ -29,12 +49,20 @@ export class Planet {
         this.ringMeshes = [];
         this.ringTextures = [];
         
+        // Create groups for moons
+        this.moonsGroup = new THREE.Group();
+        this.planetRoot.add(this.moonsGroup);
+        this.orbitLinesGroup = new THREE.Group();
+        this.scene.add(this.orbitLinesGroup);
 
         // Initialize default sun direction (will be updated from spotlight)
         this.sunDirection = new THREE.Vector3(1.0, 0.5, 1.0).normalize();
 
         // Create geometry (high detail icosahedron)
         this.geometry = new THREE.IcosahedronGeometry(1, 128);
+
+        if (this.params.noiseType === undefined) this.params.noiseType = 'classic';
+        if (this.params.noiseVariant === undefined) this.params.noiseVariant = 0.5;
 
         // Create uniforms for rocky planet
         this.rockyUniforms = {
@@ -46,6 +74,8 @@ export class Planet {
             uRoughness: { value: params.roughness ?? 0.55 },
             uDetail: { value: params.detail ?? 6.0 },
             uIceCapThreshold: { value: params.iceCapThreshold ?? 0.9 },
+            uNoiseType: { value: resolveRockyNoiseType(params.noiseType) },
+            uNoiseVariant: { value: THREE.MathUtils.clamp(params.noiseVariant ?? 0.5, 0, 1) },
             uColorDeepWater: { value: new THREE.Color(params.colorDeepWater ?? "#002b4d") },
             uColorShallowWater: { value: new THREE.Color(params.colorShallowWater ?? "#006994") },
             uColorBeach: { value: new THREE.Color(params.colorBeach ?? "#d4c6a3") },
@@ -248,6 +278,10 @@ export class Planet {
         // Update params
         Object.assign(this.params, newParams);
 
+        if (this.params.noiseVariant !== undefined) {
+            this.params.noiseVariant = THREE.MathUtils.clamp(this.params.noiseVariant, 0, 1);
+        }
+
         // Update rocky uniforms
         if (this.rockyUniforms) {
             if (newParams.seaLevel !== undefined) this.rockyUniforms.uSeaLevel.value = newParams.seaLevel;
@@ -256,6 +290,8 @@ export class Planet {
             if (newParams.roughness !== undefined) this.rockyUniforms.uRoughness.value = newParams.roughness;
             if (newParams.detail !== undefined) this.rockyUniforms.uDetail.value = newParams.detail;
             if (newParams.iceCapThreshold !== undefined) this.rockyUniforms.uIceCapThreshold.value = newParams.iceCapThreshold;
+            if (newParams.noiseType !== undefined) this.rockyUniforms.uNoiseType.value = resolveRockyNoiseType(newParams.noiseType);
+            if (newParams.noiseVariant !== undefined) this.rockyUniforms.uNoiseVariant.value = THREE.MathUtils.clamp(newParams.noiseVariant, 0, 1);
             if (newParams.colorDeepWater) this.rockyUniforms.uColorDeepWater.value.set(newParams.colorDeepWater);
             if (newParams.colorShallowWater) this.rockyUniforms.uColorShallowWater.value.set(newParams.colorShallowWater);
             if (newParams.colorBeach) this.rockyUniforms.uColorBeach.value.set(newParams.colorBeach);
@@ -339,11 +375,18 @@ export class Planet {
         this.cloudMesh.rotation.y += rotationDelta * 1.2;
         this.atmosphereMesh.rotation.y += rotationDelta * 0.1;
 
-
-        // Rotate rings
+        // Rotate entire ring group (global spin)
         if (this.params.ringSpinSpeed !== undefined) {
             this.ringGroup.rotation.y += this.params.ringSpinSpeed * delta;
         }
+        
+        // Rotate individual rings (each ring can have its own spin speed)
+        this.ringMeshes.forEach((ringMesh, index) => {
+            const ringData = this.params.rings?.[index];
+            if (ringData && ringData.spinSpeed !== undefined) {
+                ringMesh.rotation.z += ringData.spinSpeed * delta;
+            }
+        });
     }
 
     // Moon and ring methods
@@ -438,7 +481,7 @@ export class Planet {
 
             const innerRadius = ring.start || 1.2;
             const outerRadius = ring.end || 1.5;
-            const segments = 64;
+            const segments = 128; // Increased for smoother rings
 
             const ringGeometry = new THREE.RingGeometry(innerRadius, outerRadius, segments);
             
@@ -448,9 +491,9 @@ export class Planet {
                 if (ring.style === "Texture") {
                     texture = generateRingTexture(innerRatio, {
                         ringColor: ring.color || 0x888888,
-                        ringOpacity: ring.opacity || 0.5,
-                        ringNoiseScale: ring.noiseScale || 2.4,
-                        ringNoiseStrength: ring.noiseStrength || 0.15,
+                        ringOpacity: ring.opacity || 0.6,
+                        ringNoiseScale: ring.noiseScale || 3.2,
+                        ringNoiseStrength: ring.noiseStrength || 0.55,
                         seed: this.params.seed || "ring",
                         noiseResolution: 1.0
                     });
@@ -458,15 +501,16 @@ export class Planet {
                     texture = generateAnnulusTexture({
                         innerRatio: innerRatio,
                         color: ring.color || "#888888",
-                        opacity: ring.opacity || 0.5,
-                        noiseScale: ring.noiseScale || 2.0,
-                        noiseStrength: ring.noiseStrength || 0.2,
+                        opacity: ring.opacity || 0.6,
+                        noiseScale: ring.noiseScale || 3.2,
+                        noiseStrength: ring.noiseStrength || 0.55,
                         seedKey: "ring",
                         seed: this.params.seed || "ring",
                         noiseResolution: 1.0
                     });
                 }
             } catch (e) {
+                console.warn('Ring texture generation failed:', e);
                 // Fallback to simple texture if generation fails
                 const canvas = document.createElement('canvas');
                 canvas.width = 512;
@@ -478,19 +522,37 @@ export class Planet {
             }
             this.ringTextures.push(texture);
 
+            // Apply brightness to material
+            const brightness = ring.brightness || 1.0;
             const ringMaterial = new THREE.MeshBasicMaterial({
                 map: texture,
                 side: THREE.DoubleSide,
                 transparent: true,
-                opacity: ring.opacity || 0.5
+                opacity: ring.opacity || 0.6,
+                color: new THREE.Color(brightness, brightness, brightness),
+                blending: THREE.NormalBlending,
+                depthWrite: false
             });
 
             const ringMesh = new THREE.Mesh(ringGeometry, ringMaterial);
             ringMesh.rotation.x = Math.PI / 2;
             ringMesh.userData.ringIndex = index;
+            ringMesh.userData.spinSpeed = ring.spinSpeed || 0;
             this.ringGroup.add(ringMesh);
             this.ringMeshes.push(ringMesh);
         });
+    }
+
+    updateTilt() {
+        // Apply axis tilt to the planet root
+        if (this.params.axisTilt !== undefined) {
+            this.planetRoot.rotation.z = (this.params.axisTilt * Math.PI) / 180;
+        }
+        
+        // Apply ring angle (independent of axis tilt)
+        if (this.params.ringAngle !== undefined && this.ringGroup) {
+            this.ringGroup.rotation.z = (this.params.ringAngle * Math.PI) / 180;
+        }
     }
 
 }
