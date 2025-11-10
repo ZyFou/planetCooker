@@ -68,12 +68,17 @@ export function generatePlanetParams(rng, context = {}) {
   let planetType;
   if (typeBias === "gas" || typeBias === "rocky") {
     planetType = typeBias === "gas" ? "gas" : "earth";
-  } else if (temperature < 0.15 && orbitalDistance > 25) {
-    planetType = rng.next() < 0.6 ? "gas" : "earth";
-  } else if (temperature > 1.8 && orbitalDistance < 8) {
-    planetType = "earth";
   } else {
-    planetType = rng.next() < 0.35 ? "gas" : "earth";
+    const coldBoost = THREE.MathUtils.clamp((0.4 - temperature) * 0.15, 0, 0.04);
+    const distanceBoost = THREE.MathUtils.clamp((orbitalDistance - 22) / 120, 0, 0.05);
+    let gasProbability = 0.02 + coldBoost + distanceBoost;
+
+    if (temperature > 1.5 && orbitalDistance < 10) {
+      gasProbability = 0.01;
+    }
+
+    gasProbability = THREE.MathUtils.clamp(gasProbability, 0.01, 0.1);
+    planetType = rng.next() < gasProbability ? "gas" : "earth";
   }
 
   if (planetType === "gas") {
