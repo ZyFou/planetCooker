@@ -17,6 +17,13 @@ export function createSolarSystem(parentGroup, seedOrRng, options = {}) {
   group.name = options.name ?? "Solar System";
   parentGroup?.add(group);
 
+  const systemOrientation = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+    rng.nextFloat(-Math.PI * 0.25, Math.PI * 0.25),
+    rng.nextFloat(0, Math.PI * 2),
+    rng.nextFloat(-Math.PI * 0.25, Math.PI * 0.25)
+  ));
+  group.quaternion.copy(systemOrientation);
+
   const star = createStar(rng.fork?.() ?? rng, options.star ?? {});
   group.add(star.group);
 
@@ -24,8 +31,16 @@ export function createSolarSystem(parentGroup, seedOrRng, options = {}) {
   const planets = [];
 
   const baseOrbit = options.startingOrbit ?? star.radius * rng.nextFloat(4.5, 6.5);
+  const starOffset = new THREE.Vector3(
+    (rng.next() - 0.5) * baseOrbit * 0.25,
+    (rng.next() - 0.5) * baseOrbit * 0.12,
+    (rng.next() - 0.5) * baseOrbit * 0.25
+  );
+  star.group.position.copy(starOffset);
+
   let currentOrbit = baseOrbit;
   let systemTime = 0;
+  let systemMaxExtent = starOffset.length();
   const visibilityOptions = options.visibility ?? {};
   const systemCullDistance = visibilityOptions.systemCullDistance ?? 35000;
   const systemCullDistanceSq = systemCullDistance * systemCullDistance;
@@ -43,11 +58,19 @@ export function createSolarSystem(parentGroup, seedOrRng, options = {}) {
       currentOrbit *= rng.nextFloat(1.6, 2.4);
     }
 
+    const orbitalPlaneRotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+      THREE.MathUtils.degToRad(rng.nextFloat(-15, 15)),
+      rng.nextFloat(0, Math.PI * 2),
+      THREE.MathUtils.degToRad(rng.nextFloat(-15, 15))
+    ));
+    const verticalOffset = rng.nextFloat(-0.08, 0.08) * currentOrbit;
     const orbitalInclination = THREE.MathUtils.degToRad(rng.nextFloat(-7, 7));
     const orbitalTiltAxis = new THREE.Vector3(0, 1, 0).applyAxisAngle(
       new THREE.Vector3(1, 0, 0),
       orbitalInclination
     );
+    const eccentricity = rng.nextFloat(0, 0.25);
+    const periapsis = rng.nextFloat(0, Math.PI * 2);
 
     const params = generatePlanetParams(rng.fork?.() ?? rng, {
       seed: `${options.name ?? "SYS"}-P${i}`,
@@ -70,15 +93,22 @@ export function createSolarSystem(parentGroup, seedOrRng, options = {}) {
     });
     const placeholder = new THREE.Mesh(placeholderGeometry, placeholderMaterial);
     placeholder.name = `Planet Placeholder ${i + 1}`;
-    const initialX = Math.cos(initialAngle) * currentOrbit;
-    const initialZ = Math.sin(initialAngle) * currentOrbit;
-    const initialY = Math.sin(orbitalInclination) * currentOrbit;
-    placeholder.position.set(initialX, initialY, initialZ);
+    const initialRadius = currentOrbit * (1 - eccentricity * Math.cos(initialAngle - periapsis));
+    const baseInitial = new THREE.Vector3(
+      initialRadius * Math.cos(initialAngle),
+      verticalOffset,
+      initialRadius * Math.sin(initialAngle)
+    );
+    baseInitial.applyQuaternion(orbitalPlaneRotation);
+    placeholder.position.copy(baseInitial).add(starOffset);
     group.add(placeholder);
 
     const orbitSpeed = options.orbitSpeedFactor
       ? options.orbitSpeedFactor * rng.nextFloat(0.6, 1.4) / Math.pow(currentOrbit / baseOrbit, 1.5)
       : rng.nextFloat(0.0025, 0.0085) / Math.pow(currentOrbit / baseOrbit, 1.4);
+
+    const orbitExtent = currentOrbit * (1 + eccentricity) + Math.abs(verticalOffset);
+    systemMaxExtent = Math.max(systemMaxExtent, orbitExtent + starOffset.length());
 
     planets.push({
       fullPlanet: null,
@@ -93,6 +123,12 @@ export function createSolarSystem(parentGroup, seedOrRng, options = {}) {
       orbitalInclination,
       orbitalTiltAxis,
       worldPosition: new THREE.Vector3().copy(placeholder.position),
+      orbitCenter: starOffset.clone(),
+      planeRotation: orbitalPlaneRotation,
+      verticalOffset,
+      eccentricity,
+      periapsis,
+      tempPosition: new THREE.Vector3(),
       loadFull(parentGroup) {
         if (this.fullPlanet) return;
         this.fullPlanet = createPlanet(parentGroup, this.params, {
@@ -112,20 +148,23 @@ export function createSolarSystem(parentGroup, seedOrRng, options = {}) {
         this.planet = null;
       },
       update(delta, observerPosition, systemPosition) {
-        const radiusValue = this.orbitRadius;
-
+        const radiusValue = this.orbitRadius * (1 - this.eccentricity * Math.cos(this.orbitAngle - this.periapsis));
         if (!observerPosition || this.worldPosition.distanceToSquared(observerPosition) <= orbitUpdateDistanceSq) {
           this.orbitAngle += orbitSpeed * delta;
         } else {
           this.orbitAngle += orbitSpeed * delta * 0.2;
         }
 
-        const x = Math.cos(this.orbitAngle) * radiusValue;
-        const z = Math.sin(this.orbitAngle) * radiusValue;
-        const y = Math.sin(this.orbitalInclination) * radiusValue;
-        this.placeholder.position.set(x, y, z);
+        this.tempPosition.set(
+          radiusValue * Math.cos(this.orbitAngle),
+          this.verticalOffset,
+          radiusValue * Math.sin(this.orbitAngle)
+        );
+        this.tempPosition.applyQuaternion(this.planeRotation);
+        this.tempPosition.add(this.orbitCenter);
+        this.placeholder.position.copy(this.tempPosition);
         if (this.fullPlanet) {
-          this.fullPlanet.planetRoot.position.set(x, y, z);
+          this.fullPlanet.planetRoot.position.copy(this.tempPosition);
         }
 
         if (observerPosition) {
@@ -189,16 +228,19 @@ export function createSolarSystem(parentGroup, seedOrRng, options = {}) {
       
       if (observerPosition) {
         const systemDistanceSq = systemPosition.distanceToSquared(observerPosition);
+        const effectiveSystemCull = systemCullDistance + (this.boundingRadius ?? 0);
+        const effectivePlanetCull = planetCullDistance + (this.boundingRadius ?? 0);
+        const effectiveSystemCullSq = effectiveSystemCull * effectiveSystemCull;
+        const effectivePlanetCullSq = effectivePlanetCull * effectivePlanetCull;
         
-        // Hide entire system if too far away
-        if (systemDistanceSq > systemCullDistanceSq) {
+        if (systemDistanceSq > effectiveSystemCullSq) {
           this.group.visible = false;
           return;
         }
         
         this.group.visible = true;
         
-        const starDistanceVisible = systemDistanceSq <= planetCullDistanceSq;
+        const starDistanceVisible = systemDistanceSq <= effectivePlanetCullSq;
         this.star.group.visible = starDistanceVisible;
       } else {
         this.group.visible = true;
@@ -206,9 +248,10 @@ export function createSolarSystem(parentGroup, seedOrRng, options = {}) {
       }
 
       for (let i = 0; i < planets.length; i += 1) {
-        planets[i].update(delta, observerPosition, systemPosition);
+    planets[i].update(delta, observerPosition, systemPosition);
       }
     },
+    boundingRadius: systemMaxExtent,
     dispose() {
       star.dispose?.();
       for (let i = 0; i < planets.length; i += 1) {

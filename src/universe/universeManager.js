@@ -6,14 +6,6 @@ function sectorKey(sector) {
   return `${sector.x}:${sector.y}:${sector.z}`;
 }
 
-function worldPositionForSector(sector, size) {
-  return new THREE.Vector3(
-    (sector.x + 0.5) * size,
-    (sector.y + 0.5) * size,
-    (sector.z + 0.5) * size
-  );
-}
-
 export class UniverseManager {
   constructor(scene, options = {}) {
     this.scene = scene;
@@ -134,10 +126,23 @@ export class UniverseManager {
       ...this.systemOptions,
       visibility: this.visibility
     });
-    system.group.position.copy(worldPositionForSector(sector, this.sectorSize));
+    const jitterStrength = this.sectorSize * 0.4;
+    const jitter = new THREE.Vector3(
+      (rng.next() - 0.5) * jitterStrength,
+      (rng.next() - 0.5) * jitterStrength * 0.45,
+      (rng.next() - 0.5) * jitterStrength
+    );
+    const basePosition = new THREE.Vector3(
+      (sector.x + 0.5) * this.sectorSize,
+      (sector.y + 0.5) * this.sectorSize,
+      (sector.z + 0.5) * this.sectorSize
+    );
+    basePosition.add(jitter);
+    system.group.position.copy(basePosition);
     this.systems.set(key, {
       sector,
-      instance: system
+      instance: system,
+      jitter
     });
   }
 }
