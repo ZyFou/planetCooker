@@ -15,10 +15,41 @@ function jitter(rng, base, amplitude) {
 }
 
 function generateRockyColors(rng, baseHue) {
+  // Determine if this should be a gray/black planet (8% chance)
+  const isGrayPlanet = rng.next() < 0.08;
+  const isBlackPlanet = isGrayPlanet && rng.next() < 0.3; // 30% of gray planets are black
+  
   const waterHue = (baseHue + 0.55 + rng.nextFloat(-0.05, 0.05)) % 1;
   const landHue = (baseHue + rng.nextFloat(-0.08, 0.08)) % 1;
   const highHue = (baseHue + rng.nextFloat(-0.05, 0.05)) % 1;
 
+  if (isBlackPlanet) {
+    // Black/dark planet - very low lightness, low saturation
+    return {
+      colorDeepWater: colorHexFromHsl(waterHue, jitter(rng, 0.1, 0.05), jitter(rng, 0.05, 0.03)),
+      colorShallowWater: colorHexFromHsl(waterHue, jitter(rng, 0.15, 0.05), jitter(rng, 0.1, 0.04)),
+      colorBeach: colorHexFromHsl(landHue, jitter(rng, 0.08, 0.04), jitter(rng, 0.12, 0.05)),
+      colorGrass: colorHexFromHsl(landHue, jitter(rng, 0.1, 0.05), jitter(rng, 0.15, 0.05)),
+      colorForest: colorHexFromHsl(landHue, jitter(rng, 0.12, 0.04), jitter(rng, 0.08, 0.04)),
+      colorMountain: colorHexFromHsl(highHue, jitter(rng, 0.08, 0.04), jitter(rng, 0.2, 0.08)),
+      colorMountainHigh: colorHexFromHsl(highHue, jitter(rng, 0.1, 0.05), jitter(rng, 0.25, 0.08)),
+      colorSnow: colorHexFromHsl(highHue, jitter(rng, 0.05, 0.03), jitter(rng, 0.3, 0.1))
+    };
+  } else if (isGrayPlanet) {
+    // Gray planet - very low saturation, moderate lightness
+    return {
+      colorDeepWater: colorHexFromHsl(waterHue, jitter(rng, 0.05, 0.03), jitter(rng, 0.3, 0.1)),
+      colorShallowWater: colorHexFromHsl(waterHue, jitter(rng, 0.08, 0.04), jitter(rng, 0.4, 0.1)),
+      colorBeach: colorHexFromHsl(landHue, jitter(rng, 0.05, 0.03), jitter(rng, 0.5, 0.1)),
+      colorGrass: colorHexFromHsl(landHue, jitter(rng, 0.08, 0.04), jitter(rng, 0.45, 0.1)),
+      colorForest: colorHexFromHsl(landHue, jitter(rng, 0.1, 0.04), jitter(rng, 0.35, 0.1)),
+      colorMountain: colorHexFromHsl(highHue, jitter(rng, 0.06, 0.03), jitter(rng, 0.5, 0.1)),
+      colorMountainHigh: colorHexFromHsl(highHue, jitter(rng, 0.08, 0.04), jitter(rng, 0.55, 0.1)),
+      colorSnow: colorHexFromHsl(highHue, jitter(rng, 0.04, 0.02), jitter(rng, 0.7, 0.1))
+    };
+  }
+
+  // Normal colorful planet
   return {
     colorDeepWater: colorHexFromHsl(waterHue, jitter(rng, 0.65, 0.15), jitter(rng, 0.2, 0.08)),
     colorShallowWater: colorHexFromHsl(waterHue, jitter(rng, 0.55, 0.2), jitter(rng, 0.35, 0.1)),
@@ -32,10 +63,35 @@ function generateRockyColors(rng, baseHue) {
 }
 
 function generateGasColors(rng, baseHue) {
+  // Determine if this should be a gray/black gas planet (6% chance)
+  const isGrayPlanet = rng.next() < 0.06;
+  const isBlackPlanet = isGrayPlanet && rng.next() < 0.25; // 25% of gray planets are black
+  
   const primaryHue = (baseHue + rng.nextFloat(-0.05, 0.05)) % 1;
   const secondaryHue = (primaryHue + rng.nextFloat(0.08, 0.18)) % 1;
   const tertiaryHue = (primaryHue + rng.nextFloat(-0.12, 0.12)) % 1;
 
+  if (isBlackPlanet) {
+    // Black/dark gas planet - very low lightness, minimal saturation
+    return {
+      gasColor1: colorHexFromHsl(primaryHue, jitter(rng, 0.08, 0.04), jitter(rng, 0.1, 0.05)),
+      gasColor2: colorHexFromHsl(secondaryHue, jitter(rng, 0.1, 0.04), jitter(rng, 0.15, 0.05)),
+      gasColor3: colorHexFromHsl(tertiaryHue, jitter(rng, 0.12, 0.04), jitter(rng, 0.18, 0.05)),
+      gasColor4: colorHexFromHsl(primaryHue, jitter(rng, 0.06, 0.03), jitter(rng, 0.08, 0.04)),
+      gasColor5: colorHexFromHsl(secondaryHue, jitter(rng, 0.1, 0.04), jitter(rng, 0.2, 0.05))
+    };
+  } else if (isGrayPlanet) {
+    // Gray gas planet - very low saturation, moderate lightness
+    return {
+      gasColor1: colorHexFromHsl(primaryHue, jitter(rng, 0.05, 0.03), jitter(rng, 0.4, 0.1)),
+      gasColor2: colorHexFromHsl(secondaryHue, jitter(rng, 0.08, 0.04), jitter(rng, 0.45, 0.1)),
+      gasColor3: colorHexFromHsl(tertiaryHue, jitter(rng, 0.06, 0.03), jitter(rng, 0.5, 0.1)),
+      gasColor4: colorHexFromHsl(primaryHue, jitter(rng, 0.05, 0.03), jitter(rng, 0.35, 0.1)),
+      gasColor5: colorHexFromHsl(secondaryHue, jitter(rng, 0.08, 0.04), jitter(rng, 0.55, 0.1))
+    };
+  }
+
+  // Normal colorful gas planet
   return {
     gasColor1: colorHexFromHsl(primaryHue, jitter(rng, 0.45, 0.1), jitter(rng, 0.5, 0.1)),
     gasColor2: colorHexFromHsl(secondaryHue, jitter(rng, 0.35, 0.1), jitter(rng, 0.6, 0.1)),
