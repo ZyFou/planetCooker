@@ -384,6 +384,104 @@ export const gasPlanetVertexShader = `
     }
 `;
 
+export const flatTerrainVertexShader = `
+    ${glslNoise}
+
+    uniform float uTime;
+    uniform float uContinentSize;
+    uniform float uMountainHeight;
+    uniform float uRoughness;
+    uniform float uDetail;
+    uniform float uSeaLevel;
+    uniform float uNoiseType;
+    uniform float uNoiseVariant;
+    uniform float uBaseLatitude;
+    uniform float uBaseLongitude;
+    uniform float uRadius;
+
+    varying vec3 vNormal;
+    varying vec3 vPosition;
+    varying float vHeight;
+    varying float vLatitude;
+
+    void main() {
+        vNormal = normalize(normalMatrix * normal);
+        
+        // Get world position (plane coordinates: x, y=0, z)
+        vec3 worldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+        
+        // Convert plane coordinates to spherical coordinates
+        // This matches the TerrainSampler.sampleAtPlane logic
+        float lat = clamp(uBaseLatitude + worldPos.z / uRadius, -1.57079, 1.57079);
+        float avgLat = (uBaseLatitude + lat) * 0.5;
+        float cosLat = max(0.0001, cos(avgLat));
+        float lon = uBaseLongitude + worldPos.x / (uRadius * cosLat);
+        lon = mod(lon + 3.14159, 6.28318) - 3.14159;
+        
+        // Convert spherical to cartesian (3D direction vector)
+        float cosLat2 = cos(lat);
+        vec3 dir = vec3(
+            cosLat2 * cos(lon),
+            sin(lat),
+            cosLat2 * sin(lon)
+        );
+        
+        // Use direction vector for noise (same as sphere shader)
+        vec3 pos = dir;
+        float variant = clamp(uNoiseVariant, 0.0, 1.0);
+
+        // Base continent shape (low frequency)
+        vec3 continentCoord = pos * uContinentSize;
+        float h = fbm(continentCoord, 8, uRoughness, uDetail);
+
+        // Base ridged detail
+        float hm = fbm(continentCoord * (3.0 + variant), 4, uRoughness, uDetail * (1.4 + variant * 0.3));
+        hm = 1.0 - abs(hm);
+        hm = pow(hm, 3.0);
+
+        // Alternate noise flavors
+        float ridged = fbmRidged(continentCoord * (2.0 + variant), 6, mix(0.35, uRoughness, 0.6), uDetail + 0.5);
+        float billow = fbmBillow(continentCoord * (1.2 + variant * 0.6), 6, mix(0.5, uRoughness, 0.5), uDetail * (0.9 + variant * 0.4));
+        float warpStrength = mix(0.18, 0.55, variant);
+        vec3 warpedCoord = continentCoord + domainWarp(continentCoord, warpStrength, 1.3 + variant * 2.2, variant);
+        float warped = fbm(warpedCoord, 6, uRoughness, uDetail * (1.1 + variant * 0.3));
+
+        // Combine and normalize roughly to [0, 1]
+        float noiseType = clamp(uNoiseType, 0.0, 3.0);
+        float finalHeight;
+        if (noiseType < 0.5) {
+            finalHeight = (h * 0.55 + hm * 0.45) + 0.5;
+        } else if (noiseType < 1.5) {
+            finalHeight = mix(h + 0.5, h * 0.35 + ridged * 0.65 + 0.5, 0.75);
+        } else if (noiseType < 2.5) {
+            finalHeight = mix(h + 0.5, billow * 0.75 + 0.25, 0.7);
+        } else {
+            float blend = mix(0.6, 0.85, variant);
+            finalHeight = mix(h + 0.5, warped * blend + 0.5 * (1.0 - blend), blend);
+        }
+
+        finalHeight = clamp(finalHeight, 0.0, 1.4);
+
+        vHeight = finalHeight;
+        vLatitude = abs(dir.y);
+
+        // Displacement
+        float displacement = 0.0;
+        if (finalHeight > uSeaLevel) {
+             displacement = (finalHeight - uSeaLevel) * uMountainHeight * 0.3 * uRadius;
+        }
+        
+        // Apply displacement in Y (up) direction for flat plane
+        vec3 displacedPosition = position;
+        displacedPosition.y += displacement;
+        vPosition = (modelMatrix * vec4(displacedPosition, 1.0)).xyz;
+
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(displacedPosition, 1.0);
+    }
+`;
+
+export const flatTerrainFragmentShader = terrainFragmentShader;
+
 export const gasPlanetFragmentShader = `
     ${glslNoise}
 

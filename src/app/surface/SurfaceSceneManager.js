@@ -1,4 +1,6 @@
 import * as THREE from "three";
+import { flatTerrainVertexShader, flatTerrainFragmentShader } from "../shaders/planetShaders.js";
+import { resolveRockyNoiseType } from "../../universe/planetSampler.js";
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
@@ -131,10 +133,6 @@ class TerrainChunk {
     this.geometry = new THREE.PlaneGeometry(size, size, resolution, resolution);
     this.geometry.rotateX(-Math.PI / 2);
 
-    const vertexCount = this.geometry.attributes.position.count;
-    this.colorArray = new Float32Array(vertexCount * 3);
-    this.geometry.setAttribute("color", new THREE.BufferAttribute(this.colorArray, 3));
-
     this.material = material;
     this.mesh = new THREE.Mesh(this.geometry, this.material);
     this.mesh.receiveShadow = true;
@@ -160,21 +158,8 @@ class TerrainChunk {
   }
 
   rebuild(worldX, worldZ) {
-    const positions = this.geometry.attributes.position;
-    const vertexCount = positions.count;
-
-    for (let i = 0; i < vertexCount; i += 1) {
-      const localX = positions.getX(i);
-      const localZ = positions.getZ(i);
-      const planeX = worldX + localX;
-      const planeZ = worldZ + localZ;
-      const sample = this.sampler.sampleAtPlane(planeX, planeZ);
-      positions.setY(i, sample.displacement);
-      this.sampler.writeColor(this.colorArray, i, sample.finalHeight, sample.latitude);
-    }
-
-    positions.needsUpdate = true;
-    this.geometry.attributes.color.needsUpdate = true;
+    // Shader handles displacement and coloring, but we still need to update normals
+    // The shader will compute everything based on world position
     this.geometry.computeVertexNormals();
     this.geometry.attributes.normal.needsUpdate = true;
   }
@@ -204,12 +189,34 @@ export class SurfaceSceneManager {
     this.activeChunks = new Map();
     this.rebuildQueue = [];
 
-    this.terrainMaterial = new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      color: this.palette.average.clone().multiplyScalar(0.9),
-      roughness: 0.65,
-      metalness: 0.12,
-      envMapIntensity: 0.05
+    // Create shader material with same uniforms as planet sphere
+    const sunDirection = new THREE.Vector3(1.0, 0.5, 1.0).normalize();
+    this.terrainMaterial = new THREE.ShaderMaterial({
+      vertexShader: flatTerrainVertexShader,
+      fragmentShader: flatTerrainFragmentShader,
+      uniforms: {
+        uTime: { value: 0 },
+        uSunDirection: { value: sunDirection.clone() },
+        uSeaLevel: { value: planetParams.seaLevel ?? 0.52 },
+        uContinentSize: { value: planetParams.continentSize ?? 1.5 },
+        uMountainHeight: { value: planetParams.mountainHeight ?? 0.4 },
+        uRoughness: { value: planetParams.roughness ?? 0.55 },
+        uDetail: { value: planetParams.detail ?? 6.0 },
+        uIceCapThreshold: { value: planetParams.iceCapThreshold ?? 0.9 },
+        uNoiseType: { value: resolveRockyNoiseType(planetParams.noiseType) },
+        uNoiseVariant: { value: THREE.MathUtils.clamp(planetParams.noiseVariant ?? 0.5, 0, 1) },
+        uBaseLatitude: { value: sampler.baseLatitude },
+        uBaseLongitude: { value: sampler.baseLongitude },
+        uRadius: { value: this.radius },
+        uColorDeepWater: { value: new THREE.Color(planetParams.colorDeepWater ?? "#002b4d") },
+        uColorShallowWater: { value: new THREE.Color(planetParams.colorShallowWater ?? "#006994") },
+        uColorBeach: { value: new THREE.Color(planetParams.colorBeach ?? "#d4c6a3") },
+        uColorGrass: { value: new THREE.Color(planetParams.colorGrass ?? "#2a602a") },
+        uColorForest: { value: new THREE.Color(planetParams.colorForest ?? "#1a381a") },
+        uColorMountain: { value: new THREE.Color(planetParams.colorMountain ?? "#666666") },
+        uColorMountainHigh: { value: new THREE.Color(planetParams.colorMountainHigh ?? "#888888") },
+        uColorSnow: { value: new THREE.Color(planetParams.colorSnow ?? "#ffffff") }
+      }
     });
 
     this.ambientLight = new THREE.AmbientLight(this.palette.average.clone().lerp(new THREE.Color("#94a3b8"), 0.3), 0.35);
@@ -293,6 +300,10 @@ export class SurfaceSceneManager {
     this.sunLight.target.position.copy(cameraPosition);
     this.sunLight.target.updateMatrixWorld();
     this.ambientLight.position.copy(cameraPosition);
+    
+    // Update sun direction in shader
+    const sunDir = new THREE.Vector3().subVectors(this.sunLight.position, cameraPosition).normalize();
+    this.terrainMaterial.uniforms.uSunDirection.value.copy(sunDir);
   }
 
   setupSky() {
@@ -368,6 +379,9 @@ export class SurfaceSceneManager {
     this.processRebuildQueue();
     this.updateLighting(cameraPosition);
     this.updateSky(cameraPosition);
+    
+    // Update time uniform
+    this.terrainMaterial.uniforms.uTime.value += delta;
   }
 
   getHeightAt(x, z) {
