@@ -22,10 +22,10 @@ export class FPSController {
     // Reduced jump height by 3
     this.jumpVelocity = Math.sqrt(2 * this.gravity * 1.1 * gravityFactor) / 3.0;
 
-    this.sprintMultiplier = 1.6;
-    // Reduced flight speed by 2
-    this.flySpeedMultiplier = 3.6 / 2.0;
-    this.flySprintMultiplier = 5.6 / 2.0;
+    this.sprintMultiplier = 1.85;
+    // Slightly faster fly speeds
+    this.flySpeedMultiplier = 2.2;
+    this.flySprintMultiplier = 3.2;
     this.flyVerticalMultiplier = 0.95;
 
     this.velocity = new THREE.Vector3();

@@ -124,11 +124,11 @@ let fpsController = {
   position: new THREE.Vector3(),
   rotation: new THREE.Euler(0, 0, 0, 'YXZ'),
   velocity: new THREE.Vector3(),
-  speed: 0.04, // Base speed (divided by 10)
-  baseSpeed: 0.04, // Base speed reference (divided by 10)
-  minSpeed: 0.005, // Minimum speed when very close to planet (divided by 10)
-  maxSpeed: 0.08, // Maximum speed when far from planet (divided by 10)
-  accelerationMultiplier: 2.0,
+  speed: 0.056, // Base speed (divided by 10)
+  baseSpeed: 0.056, // Base speed reference (divided by 10)
+  minSpeed: 0.007, // Minimum speed when very close to planet (divided by 10)
+  maxSpeed: 0.112, // Maximum speed when far from planet (divided by 10)
+  accelerationMultiplier: 2.6,
   slowMultiplier: 0.3,
   dashBoost: 1.0,
   dashCooldown: 0,
@@ -182,7 +182,7 @@ function createShip() {
   }
   
   // Create a triangular ship using a cone geometry (very small - divided by 10)
-  const shipGeometry = new THREE.ConeGeometry(0.001, 0.002, 3);
+  const shipGeometry = new THREE.ConeGeometry(0.0008, 0.0016, 3);
   
   // Create glowing blue material
   const shipMaterial = new THREE.MeshStandardMaterial({
@@ -197,7 +197,7 @@ function createShip() {
   ship.rotation.x = Math.PI / 2; // Rotate to point forward
   
   // Add glow effect with additional geometry (divided by 10)
-  const glowGeometry = new THREE.ConeGeometry(0.0012, 0.0024, 3);
+  const glowGeometry = new THREE.ConeGeometry(0.00096, 0.002, 3);
   const glowMaterial = new THREE.MeshBasicMaterial({
     color: 0x00aaff,
     transparent: true,
@@ -1919,7 +1919,28 @@ function updateShipMovement(delta) {
   const targetVelocity = moveDirection.multiplyScalar(fpsController.speed * speedMultiplier);
   fpsController.velocity.lerp(targetVelocity, delta * 10);
 
-  fpsController.position.add(fpsController.velocity.clone().multiplyScalar(delta));
+  tempVec3.copy(fpsController.velocity).multiplyScalar(delta);
+  fpsController.position.add(tempVec3);
+
+  const minDistanceFromSurface = planetRadius * 1.01;
+  tempVec2.copy(fpsController.position).sub(planetCenter);
+  const currentDistance = tempVec2.length();
+
+  if (currentDistance < minDistanceFromSurface) {
+    if (currentDistance < 1e-6) {
+      tempVec2.set(0, 1, 0);
+    } else {
+      tempVec2.divideScalar(currentDistance);
+    }
+
+    tempVec4.copy(tempVec2).multiplyScalar(minDistanceFromSurface).add(planetCenter);
+    fpsController.position.copy(tempVec4);
+
+    const inwardSpeed = fpsController.velocity.dot(tempVec2);
+    if (inwardSpeed < 0) {
+      fpsController.velocity.addScaledVector(tempVec2, -inwardSpeed);
+    }
+  }
 
   ship.position.copy(fpsController.position);
 
