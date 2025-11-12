@@ -48,6 +48,7 @@ export class ShipController {
     this.velocity = new THREE.Vector3();
     this.yaw = options.initialYaw ?? 0;
     this.pitch = options.initialPitch ?? 0;
+    this.roll = options.initialRoll ?? 0;
 
     this.settings = {
       minSpeed: options.minSpeed ?? 20,
@@ -56,7 +57,10 @@ export class ShipController {
       accelerationMultiplier: options.accelerationMultiplier ?? 3.0,
       slowMultiplier: options.slowMultiplier ?? 0.3,
       mouseSensitivity: options.mouseSensitivity ?? 0.0022,
-      cameraOffset: options.cameraOffset ?? new THREE.Vector3(0, 0, 0)
+      cameraOffset: options.cameraOffset ?? new THREE.Vector3(0, 0, 0),
+      maxRoll: options.maxRoll ?? THREE.MathUtils.degToRad(65),
+      rollSpeed: options.rollSpeed ?? THREE.MathUtils.degToRad(160),
+      rollReturnSpeed: options.rollReturnSpeed ?? 6.5
     };
 
     this.dash = {
@@ -123,9 +127,13 @@ export class ShipController {
     this.ship.position.copy(position);
   }
 
-  setOrientation({ yaw, pitch }) {
+  setOrientation({ yaw, pitch, roll }) {
     if (typeof yaw === "number") this.yaw = yaw;
     if (typeof pitch === "number") this.pitch = clamp(pitch, -Math.PI / 2, Math.PI / 2);
+    if (typeof roll === "number") {
+      const maxRoll = this.settings.maxRoll ?? Math.PI / 2;
+      this.roll = clamp(roll, -maxRoll, maxRoll);
+    }
   }
 
   requestPointerLock() {
@@ -170,7 +178,19 @@ export class ShipController {
     this.position.addScaledVector(this.velocity, delta);
     this.ship.position.copy(this.position);
 
-    const euler = new THREE.Euler(this.pitch, this.yaw, 0, "YXZ");
+    const rollE = this.keys.has("KeyE") ? 1 : 0;
+    const rollA = this.keys.has("KeyA") ? 1 : 0;
+    const rollInput = rollE - rollA;
+    const { rollSpeed } = this.settings;
+    if (rollInput !== 0) {
+      this.roll += rollInput * rollSpeed * delta;
+      this.roll = ((this.roll % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+      if (this.roll > Math.PI) {
+        this.roll -= Math.PI * 2;
+      }
+    }
+
+    const euler = new THREE.Euler(this.pitch, this.yaw, this.roll, "YXZ");
     const quaternion = new THREE.Quaternion().setFromEuler(euler);
     const cameraOffset = this.settings.cameraOffset.clone().applyQuaternion(quaternion);
 
@@ -192,7 +212,7 @@ export class ShipController {
       return new THREE.Vector3();
     }
 
-    const euler = new THREE.Euler(this.pitch, this.yaw, 0, "YXZ");
+    const euler = new THREE.Euler(this.pitch, this.yaw, this.roll, "YXZ");
     const quaternion = new THREE.Quaternion().setFromEuler(euler);
 
     const forward = FORWARD.clone().applyQuaternion(quaternion);
@@ -203,8 +223,8 @@ export class ShipController {
     if (this.keys.has("KeyW") || this.keys.has("ArrowUp")) direction.add(forward);
     if (this.keys.has("KeyS") || this.keys.has("ArrowDown")) direction.sub(forward);
     if (this.keys.has("KeyD") || this.keys.has("ArrowRight")) direction.add(right);
-    if (this.keys.has("KeyA") || this.keys.has("ArrowLeft")) direction.sub(right);
-    if (this.keys.has("Space") || this.keys.has("KeyE")) direction.add(up);
+    if (this.keys.has("ArrowLeft")) direction.sub(right);
+    if (this.keys.has("Space")) direction.add(up);
     if (this.keys.has("KeyQ")) direction.sub(up);
 
     if (direction.lengthSq() > 0) {
@@ -246,6 +266,9 @@ export class ShipController {
       event.preventDefault();
       this.triggerDash();
     }
+    if (code === "KeyA" || code === "KeyE") {
+      event.preventDefault();
+    }
     if ((code === "KeyV" || code === "Escape") && this.isPointerLocked) {
       document.exitPointerLock?.();
     }
@@ -267,6 +290,7 @@ export class ShipController {
     this.isPointerLocked = document.pointerLockElement === this.pointerLockElement;
     if (!this.isPointerLocked) {
       this.velocity.multiplyScalar(0.2);
+      this.roll = 0;
     }
   }
 

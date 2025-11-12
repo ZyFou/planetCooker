@@ -233,7 +233,7 @@ initializeMap();
 // Also try on next tick in case DOM wasn't fully ready
 setTimeout(initializeMap, 0);
 
-universe.update(0, ship.position);
+universe.update(0, ship.position, camera);
 const initialTarget = universe.getNearestPlanet(ship.position);
 if (initialTarget) {
   const radius = getEffectivePlanetRadius(initialTarget.planet.planet);
@@ -301,7 +301,7 @@ function animate(now) {
   }
 
   ship.update(delta, { focusDistance });
-  universe.update(delta, ship.position);
+  universe.update(delta, ship.position, camera);
 
   updateTrackingLine();
 

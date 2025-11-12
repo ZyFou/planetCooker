@@ -11,6 +11,29 @@ function ensureRng(seedOrRng) {
   return new SeededRNG(seedOrRng ?? 0xfeedc0de);
 }
 
+const hasWindow = typeof window !== "undefined";
+
+function scheduleBackgroundTask(callback) {
+  if (hasWindow && typeof window.requestIdleCallback === "function") {
+    return window.requestIdleCallback(callback, { timeout: 32 });
+  }
+  return setTimeout(() => {
+    callback({
+      didTimeout: false,
+      timeRemaining: () => 16
+    });
+  }, 16);
+}
+
+function cancelBackgroundTask(id) {
+  if (id == null) return;
+  if (hasWindow && typeof window.cancelIdleCallback === "function") {
+    window.cancelIdleCallback(id);
+    return;
+  }
+  clearTimeout(id);
+}
+
 export function createSolarSystem(parentGroup, seedOrRng, options = {}) {
   const rng = ensureRng(seedOrRng);
   const group = new THREE.Group();
@@ -53,6 +76,10 @@ export function createSolarSystem(parentGroup, seedOrRng, options = {}) {
   const unloadDetailDistance = visibilityOptions.unloadDetailDistance ?? 2800;
   const unloadDetailDistanceSq = unloadDetailDistance * unloadDetailDistance;
   const placeholderSegments = visibilityOptions.placeholderSegments ?? 16;
+  const starBillboardDistance =
+    visibilityOptions.starBillboardDistance ??
+    Math.min(systemCullDistance * 0.9, planetCullDistance * 2.5);
+  const starBillboardDistanceSq = starBillboardDistance * starBillboardDistance;
   for (let i = 0; i < planetCount; i += 1) {
     if (i > 0) {
       currentOrbit *= rng.nextFloat(1.6, 2.4);
@@ -77,6 +104,9 @@ export function createSolarSystem(parentGroup, seedOrRng, options = {}) {
       starLuminosity: star.luminosity,
       orbitalDistance: currentOrbit
     });
+    if (params.axisTilt == null) {
+      params.axisTilt = rng.nextFloat(-28, 28);
+    }
 
     const initialAngle = rng.nextFloat(0, Math.PI * 2);
     const radius = getPlanetRadiusFromParams(params);
@@ -94,14 +124,28 @@ export function createSolarSystem(parentGroup, seedOrRng, options = {}) {
     const placeholder = new THREE.Mesh(placeholderGeometry, placeholderMaterial);
     placeholder.name = `Planet Placeholder ${i + 1}`;
     const initialRadius = currentOrbit * (1 - eccentricity * Math.cos(initialAngle - periapsis));
-    const baseInitial = new THREE.Vector3(
+    const localInitial = new THREE.Vector3(
       initialRadius * Math.cos(initialAngle),
       verticalOffset,
       initialRadius * Math.sin(initialAngle)
     );
-    baseInitial.applyQuaternion(orbitalPlaneRotation);
-    placeholder.position.copy(baseInitial).add(starOffset);
-    group.add(placeholder);
+
+    const orbitGroup = new THREE.Group();
+    orbitGroup.name = `Planet Orbit ${i + 1}`;
+    orbitGroup.position.copy(starOffset);
+    orbitGroup.quaternion.copy(orbitalPlaneRotation);
+    group.add(orbitGroup);
+
+    const lod = new THREE.LOD();
+    lod.name = `Planet LOD ${i + 1}`;
+    lod.position.copy(localInitial);
+    lod.addLevel(placeholder, fullDetailDistance);
+    placeholder.position.set(0, 0, 0);
+    placeholder.rotation.z = THREE.MathUtils.degToRad(params.axisTilt ?? 0);
+    placeholder.rotation.y = rng.nextFloat(0, Math.PI * 2);
+    orbitGroup.add(lod);
+
+    const initialWorldPosition = localInitial.clone().applyQuaternion(orbitalPlaneRotation).add(starOffset);
 
     const orbitSpeed = options.orbitSpeedFactor
       ? options.orbitSpeedFactor * rng.nextFloat(0.6, 1.4) / Math.pow(currentOrbit / baseOrbit, 1.5)
@@ -112,106 +156,156 @@ export function createSolarSystem(parentGroup, seedOrRng, options = {}) {
 
     planets.push({
       fullPlanet: null,
+      lod,
+      orbitGroup,
       placeholder,
       placeholderGeometry,
       placeholderMaterial,
       planet: null,
       params,
+      radius,
       orbitRadius: currentOrbit,
       orbitSpeed,
       orbitAngle: initialAngle,
       orbitalInclination,
       orbitalTiltAxis,
-      worldPosition: new THREE.Vector3().copy(placeholder.position),
-      orbitCenter: starOffset.clone(),
-      planeRotation: orbitalPlaneRotation,
+      worldPosition: new THREE.Vector3().copy(initialWorldPosition),
       verticalOffset,
       eccentricity,
       periapsis,
       tempPosition: new THREE.Vector3(),
-      loadFull(parentGroup) {
-        if (this.fullPlanet) return;
-        this.fullPlanet = createPlanet(parentGroup, this.params, {
-          position: this.placeholder.position.clone(),
-          name: this.placeholder.name.replace("Placeholder ", "")
+      cullSphere: new THREE.Sphere(new THREE.Vector3(), Math.max(radius * 1.5, 1)),
+      pendingLoadId: null,
+      pendingUnload: false,
+      loadFull() {
+        if (this.fullPlanet || this.pendingLoadId) {
+          this.pendingUnload = false;
+          return;
+        }
+        this.pendingUnload = false;
+        const executeLoad = () => {
+          this.pendingLoadId = null;
+          if (this.pendingUnload) {
+            this.pendingUnload = false;
+            return;
+          }
+          this.fullPlanet = createPlanet(this.lod, this.params, {
+            position: [0, 0, 0],
+            name: this.placeholder.name.replace("Placeholder ", "")
+          });
+          this.fullPlanet.planetRoot.visible = true;
+          this.fullPlanet.planetRoot.position.set(0, 0, 0);
+          this.fullPlanet.planetRoot.rotation.y = this.placeholder.rotation.y;
+          if (typeof this.fullPlanet.updateTilt === "function") {
+            this.fullPlanet.updateTilt();
+          }
+          this.lod.addLevel(this.fullPlanet.planetRoot, 0);
+          this.lod.levels.sort((a, b) => a.distance - b.distance);
+          this.lod.needsUpdate = true;
+          this.planet = this.fullPlanet;
+        };
+        this.pendingLoadId = scheduleBackgroundTask(() => {
+          executeLoad();
         });
-        this.fullPlanet.planetRoot.visible = true;
-        this.placeholder.visible = false;
-        this.planet = this.fullPlanet;
       },
-      unloadFull(parentGroup) {
-        if (!this.fullPlanet) return;
+      unloadFull() {
+        if (this.pendingLoadId != null) {
+          this.pendingUnload = true;
+          cancelBackgroundTask(this.pendingLoadId);
+          this.pendingLoadId = null;
+        }
+        if (!this.fullPlanet) {
+          return;
+        }
+        const planetRoot = this.fullPlanet.planetRoot;
         this.fullPlanet.dispose?.();
-        parentGroup?.remove(this.fullPlanet.planetRoot);
+        this.lod.remove(planetRoot);
+        this.lod.levels = this.lod.levels.filter(level => level.object !== planetRoot);
         this.fullPlanet = null;
-        this.placeholder.visible = true;
         this.planet = null;
+        this.lod.needsUpdate = true;
+        this.pendingUnload = false;
       },
-      update(delta, observerPosition, systemPosition) {
-        const radiusValue = this.orbitRadius * (1 - this.eccentricity * Math.cos(this.orbitAngle - this.periapsis));
-        if (!observerPosition || this.worldPosition.distanceToSquared(observerPosition) <= orbitUpdateDistanceSq) {
+      update(delta, observerPosition, systemPosition, visibilityContext = {}) {
+        const { frustum, camera } = visibilityContext ?? {};
+        const orbitDistanceSq = observerPosition
+          ? this.worldPosition.distanceToSquared(observerPosition)
+          : 0;
+
+        if (!observerPosition || orbitDistanceSq <= orbitUpdateDistanceSq) {
           this.orbitAngle += orbitSpeed * delta;
         } else {
           this.orbitAngle += orbitSpeed * delta * 0.2;
         }
 
+        const radiusValue = this.orbitRadius * (1 - this.eccentricity * Math.cos(this.orbitAngle - this.periapsis));
         this.tempPosition.set(
           radiusValue * Math.cos(this.orbitAngle),
           this.verticalOffset,
           radiusValue * Math.sin(this.orbitAngle)
         );
-        this.tempPosition.applyQuaternion(this.planeRotation);
-        this.tempPosition.add(this.orbitCenter);
-        this.placeholder.position.copy(this.tempPosition);
-        if (this.fullPlanet) {
-          this.fullPlanet.planetRoot.position.copy(this.tempPosition);
+        this.lod.position.copy(this.tempPosition);
+        this.orbitGroup.updateMatrixWorld(true);
+        this.lod.updateMatrixWorld(true);
+        this.lod.getWorldPosition(this.worldPosition);
+
+        let inFrustum = true;
+        if (frustum) {
+          this.cullSphere.center.copy(this.worldPosition);
+          inFrustum = frustum.intersectsSphere(this.cullSphere);
         }
 
-        if (observerPosition) {
-          this.worldPosition.copy(systemPosition).add(this.placeholder.position);
-          const distanceSq = this.worldPosition.distanceToSquared(observerPosition);
-          const withinCull = distanceSq <= planetCullDistanceSq;
-
-          if (!withinCull) {
-            this.placeholder.visible = false;
-            if (this.fullPlanet) this.fullPlanet.planetRoot.visible = false;
-            if (this.fullPlanet && distanceSq > unloadDetailDistanceSq) {
-              this.unloadFull(group);
-            }
-            return;
-          }
-
-          const shouldLoadFull = distanceSq <= fullDetailDistanceSq;
-          const shouldUnloadFull = distanceSq > unloadDetailDistanceSq;
-
-          if (shouldLoadFull && !this.fullPlanet) {
-            this.loadFull(group);
-          } else if (shouldUnloadFull && this.fullPlanet) {
-            this.unloadFull(group);
-          }
-
-          // Ensure correct visibility state
+        if (!observerPosition) {
+          this.lod.visible = inFrustum;
           if (this.fullPlanet) {
-            this.fullPlanet.planetRoot.visible = true;
-            this.placeholder.visible = false;
             this.fullPlanet.update?.(delta, systemTime);
-          } else {
-            this.placeholder.visible = true;
           }
-        } else {
-          this.worldPosition.copy(systemPosition).add(this.placeholder.position);
-          if (this.fullPlanet) {
-            this.fullPlanet.planetRoot.visible = true;
-            this.fullPlanet.update?.(delta, systemTime);
-            this.placeholder.visible = false;
-          } else {
-            this.placeholder.visible = true;
+          if (camera && this.lod.visible && this.lod.levels.length > 0) {
+            this.lod.update(camera);
           }
+          return;
+        }
+
+        const distanceSq = this.worldPosition.distanceToSquared(observerPosition);
+        const withinCull = distanceSq <= planetCullDistanceSq;
+        const shouldUnloadFull = distanceSq > unloadDetailDistanceSq;
+        const shouldLoadFull = distanceSq <= fullDetailDistanceSq;
+
+        if (!withinCull || !inFrustum) {
+          this.lod.visible = false;
+          if (this.fullPlanet && shouldUnloadFull) {
+            this.unloadFull();
+          } else if (this.pendingLoadId != null) {
+            this.unloadFull();
+          }
+          return;
+        }
+
+        this.lod.visible = true;
+
+        if (shouldLoadFull && !this.fullPlanet) {
+          this.loadFull();
+        } else if (shouldUnloadFull) {
+          this.unloadFull();
+        }
+
+        if (this.fullPlanet) {
+          this.fullPlanet.update?.(delta, systemTime);
+        }
+
+        if (camera && this.lod.levels.length > 1) {
+          this.lod.update(camera);
         }
       },
       dispose() {
-        this.unloadFull(group);
-        group.remove(this.placeholder);
+        if (this.pendingLoadId != null) {
+          cancelBackgroundTask(this.pendingLoadId);
+          this.pendingLoadId = null;
+        }
+        this.pendingUnload = false;
+        this.unloadFull();
+        this.orbitGroup?.remove(this.lod);
+        group.remove(this.orbitGroup);
         this.placeholderGeometry.dispose();
         this.placeholderMaterial.dispose();
       }
@@ -222,7 +316,13 @@ export function createSolarSystem(parentGroup, seedOrRng, options = {}) {
     group,
     star,
     planets,
-    update(delta, observerPosition) {
+    setVisible(isVisible) {
+      const visible = Boolean(isVisible);
+      this.group.visible = visible;
+      this.star.setVisible?.(visible);
+    },
+    update(delta, observerPosition, visibilityContext = {}) {
+      const { frustum, camera } = visibilityContext ?? {};
       systemTime += delta;
       const systemPosition = this.group.position;
       
@@ -235,20 +335,23 @@ export function createSolarSystem(parentGroup, seedOrRng, options = {}) {
         
         if (systemDistanceSq > effectiveSystemCullSq) {
           this.group.visible = false;
+          this.star.setVisible?.(false);
           return;
         }
         
         this.group.visible = true;
         
         const starDistanceVisible = systemDistanceSq <= effectivePlanetCullSq;
-        this.star.group.visible = starDistanceVisible;
+        this.star.updateBillboard?.(systemDistanceSq, starBillboardDistanceSq);
+        this.star.setVisible?.(true);
       } else {
         this.group.visible = true;
-        this.star.group.visible = true;
+        this.star.updateBillboard?.(Infinity, starBillboardDistanceSq);
+        this.star.setVisible?.(true);
       }
 
       for (let i = 0; i < planets.length; i += 1) {
-    planets[i].update(delta, observerPosition, systemPosition);
+        planets[i].update(delta, observerPosition, systemPosition, { frustum, camera });
       }
     },
     boundingRadius: systemMaxExtent,

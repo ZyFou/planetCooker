@@ -19,6 +19,11 @@ export class UniverseManager {
     this.root = new THREE.Group();
     this.root.name = "UniverseRoot";
 
+    this._frustum = new THREE.Frustum();
+    this._cameraViewProjection = new THREE.Matrix4();
+    this._cullSphere = new THREE.Sphere();
+    this._tempWorld = new THREE.Vector3();
+
     if (this.scene) {
       this.scene.add(this.root);
     }
@@ -34,14 +39,36 @@ export class UniverseManager {
     }
   }
 
-  update(delta, position) {
+  update(delta, position, camera) {
     if (!position) return;
+    const frustum = this._updateFrustum(camera);
     const sector = this._computeSector(position);
     this._ensureSectorsAround(sector);
     this._pruneFarSectors(sector);
 
     for (const system of this.systems.values()) {
-      system.instance.update?.(delta, position);
+      const { instance } = system;
+      let isVisible = true;
+      if (frustum && instance?.group) {
+        const boundingRadius =
+          instance.boundingRadius ??
+          this.visibility.systemCullDistance ??
+          this.sectorSize;
+        const sphere = this._cullSphere;
+        instance.group.getWorldPosition(this._tempWorld);
+        sphere.center.copy(this._tempWorld);
+        const starRadius = instance.star?.radius ?? 0;
+        sphere.radius = Math.max(1, boundingRadius + starRadius);
+        isVisible = frustum.intersectsSphere(sphere);
+      }
+
+      instance.setVisible?.(isVisible);
+
+      if (!isVisible) {
+        continue;
+      }
+
+      instance.update?.(delta, position, { frustum, camera });
     }
   }
 
@@ -161,6 +188,17 @@ export class UniverseManager {
       instance: system,
       jitter
     });
+  }
+
+  _updateFrustum(camera) {
+    if (!camera) return null;
+    camera.updateMatrixWorld();
+    this._cameraViewProjection.multiplyMatrices(
+      camera.projectionMatrix,
+      camera.matrixWorldInverse
+    );
+    this._frustum.setFromProjectionMatrix(this._cameraViewProjection);
+    return this._frustum;
   }
 }
 
