@@ -136,6 +136,8 @@ let fpsController = {
   mouseSensitivity: 0.002,
   pitch: 0,
   yaw: 0,
+  roll: 0,
+  rollSpeed: 1.6,
   isPointerLocked: false
 };
 
@@ -1672,8 +1674,18 @@ function handleMouseMove(event) {
   const movementY = event.movementY || event.mozMovementY || event.webkitMovementY || 0;
 
   if (fpsModeType === 'ship') {
-    fpsController.yaw -= movementX * fpsController.mouseSensitivity;
-    fpsController.pitch -= movementY * fpsController.mouseSensitivity;
+    // Transform mouse movement by current roll angle so it's relative to ship orientation
+    // Rotate mouse delta by -roll to compensate for ship's roll
+    const roll = fpsController.roll || 0;
+    const cosRoll = Math.cos(-roll);
+    const sinRoll = Math.sin(-roll);
+    
+    // Rotate mouse delta to be relative to ship's local orientation
+    const rotatedX = movementX * cosRoll - movementY * sinRoll;
+    const rotatedY = movementX * sinRoll + movementY * cosRoll;
+    
+    fpsController.yaw -= rotatedX * fpsController.mouseSensitivity;
+    fpsController.pitch -= rotatedY * fpsController.mouseSensitivity;
     fpsController.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, fpsController.pitch));
   } else if (fpsModeType === 'walk') {
     walkController.yaw -= movementX * walkController.mouseSensitivity;
@@ -1851,7 +1863,16 @@ function updateShipMovement(delta) {
     distanceSpeedMultiplier
   );
 
-  const euler = new THREE.Euler(fpsController.pitch, fpsController.yaw, 0, 'YXZ');
+  // Roll control with A/E (A = roll right, E = roll left)
+  let rollInput = 0;
+  if (keys['a']) rollInput += 1;  // A rolls right (positive)
+  if (keys['e']) rollInput -= 1;  // E rolls left (negative)
+  if (rollInput !== 0) {
+    const rollSpeed = fpsController.rollSpeed || 1.6;
+    fpsController.roll += rollInput * rollSpeed * delta;
+  }
+
+  const euler = new THREE.Euler(fpsController.pitch, fpsController.yaw, fpsController.roll, 'YXZ');
   const quaternion = new THREE.Quaternion().setFromEuler(euler);
 
   const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion);
@@ -1864,7 +1885,8 @@ function updateShipMovement(delta) {
   if (keys['s']) {
     moveDirection.sub(forward);
   }
-  if (keys['q'] || keys['a']) {
+  // Strafe left uses Q (AZERTY). A is reserved for roll.
+  if (keys['q']) {
     moveDirection.sub(right);
   }
   if (keys['d']) {
