@@ -248,12 +248,13 @@ export const terrainFragmentShader = `
         vec3 viewDir = normalize(cameraPosition - vPosition);
 
         // --- Lighting ---
-        // Standard Diffuse
-        float NdotL = max(dot(normal, lightDir), 0.0);
-        float lightIntensity = NdotL;
+        // Standard Diffuse with minimum illumination
+        float NdotL = dot(normal, lightDir);
+        // Ensure minimum illumination so it's always visible (like constant daylight)
+        float lightIntensity = max(NdotL, 0.4);
         
-        // Ambient
-        vec3 ambient = vec3(0.02);
+        // Ambient - increased for constant visibility
+        vec3 ambient = vec3(0.4);
 
         // Specular (only for water)
         float specularStrength = 0.0;

@@ -177,9 +177,10 @@ export class SurfaceSceneManager {
     this.renderer = renderer;
 
     this.radius = getEffectiveRadius(planetParams);
-    this.chunkSize = Math.max(this.radius * 1.05, 1.25);
-    this.chunkResolution = 48;
-    this.chunkRange = 12;
+    // Much larger chunks for realistic walking experience
+    this.chunkSize = Math.max(this.radius * 10.0, 50.0);
+    this.chunkResolution = 128; // Higher resolution for larger chunks
+    this.chunkRange = 8; // Slightly reduced range since chunks are larger
     this.chunkOffsets = buildChunkOffsets(this.chunkRange);
     this.palette = buildPlanetPalette(planetParams);
 
@@ -233,7 +234,8 @@ export class SurfaceSceneManager {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     const fogColor = this.palette.horizon.clone();
-    this.scene.fog = new THREE.Fog(fogColor, this.chunkSize * 4, this.chunkSize * 12);
+    // Adjust fog distance for larger chunks
+    this.scene.fog = new THREE.Fog(fogColor, this.chunkSize * 2, this.chunkSize * 8);
 
     this.skyDome = null;
     this.oceanMesh = null;
@@ -311,7 +313,8 @@ export class SurfaceSceneManager {
     const top = this.palette.atmosphere.clone().lerp(new THREE.Color("#38bdf8"), 0.2);
     const gradientTexture = createSkyGradientTexture(top, horizon);
 
-    const geometry = new THREE.SphereGeometry(this.chunkSize * 40, 48, 32);
+    // Larger sky dome for larger chunks
+    const geometry = new THREE.SphereGeometry(this.chunkSize * 20, 48, 32);
     const material = new THREE.MeshBasicMaterial({
       map: gradientTexture ?? undefined,
       color: gradientTexture ? new THREE.Color(0xffffff) : top,
@@ -333,7 +336,8 @@ export class SurfaceSceneManager {
       return;
     }
 
-    const radius = this.chunkSize * 32;
+    // Larger ocean for larger chunks
+    const radius = this.chunkSize * 16;
     const material = new THREE.MeshPhysicalMaterial({
       color: this.palette.ocean.clone().lerp(new THREE.Color("#ffffff"), 0.1),
       roughness: 0.4,
