@@ -69,6 +69,23 @@ export class UniverseManager {
     return nearest;
   }
 
+  getAllSystems() {
+    const systems = [];
+    for (const [key, entry] of this.systems.entries()) {
+      const { instance, sector } = entry;
+      systems.push({
+        key,
+        sector,
+        system: instance,
+        position: instance.group.position.clone(),
+        name: instance.group.name,
+        star: instance.star,
+        planetCount: instance.planets.length
+      });
+    }
+    return systems;
+  }
+
   _computeSector(position) {
     return {
       x: Math.floor(position.x / this.sectorSize),

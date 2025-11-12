@@ -17,6 +17,29 @@
       Click anywhere to take control.<br />
       Press Esc to release.
     </div>
+    <div class="map-overlay" id="map-overlay">
+      <button class="map-close-button" id="map-close-button">Close (M)</button>
+      <div class="map-info-panel" id="map-info-panel">
+        <div class="map-info-panel__heading">System Information</div>
+        <div class="map-info-panel__name" id="map-info-name">-</div>
+        <div class="map-info-panel__detail">
+          <span class="map-info-panel__detail-label">Distance:</span>
+          <span id="map-info-distance">-</span>
+        </div>
+        <div class="map-info-panel__detail">
+          <span class="map-info-panel__detail-label">Planets:</span>
+          <span id="map-info-planets">-</span>
+        </div>
+        <div class="map-info-panel__detail">
+          <span id="map-info-star">-</span>
+        </div>
+        <button class="map-track-button" id="map-track-button">Track</button>
+      </div>
+      <div class="map-hint">
+        <span class="map-hint__key">M</span>
+        Press M to close map
+      </div>
+    </div>
     <script type="module" src="/src/universe.js"></script>
   </body>
 </html>
