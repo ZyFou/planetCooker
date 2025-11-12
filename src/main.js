@@ -7,7 +7,7 @@ import { initControlSearch } from "./app/gui/controlSearch.js";
 import { setupPlanetControls } from "./app/gui/planetControls.js";
 import { setupMoonControls } from "./app/gui/moonControls.js";
 import { setupRingControls } from "./app/gui/ringControls.js";
-import { createStarfield as createStarfieldExt } from "./app/stars.js";
+import { createStarfield as createStarfieldExt, createSpaceBackground as createSpaceBackgroundExt } from "./app/stars.js";
 import { encodeShare as encodeShareExt, decodeShare as decodeShareExt, saveConfigurationToAPI as saveConfigurationToAPIExt, loadConfigurationFromAPI as loadConfigurationFromAPIExt } from "./app/shareCore.js";
 import { initOnboarding, showOnboarding } from "./app/onboarding.js";
 import { Planet } from "./app/planet.js";
@@ -432,6 +432,7 @@ const debugVec3 = new THREE.Vector3();
 const debugMatrix = new THREE.Matrix3();
 
 let starField = null;
+let spaceBackground = null;
 
 //#region UI bindings
 const seedDisplay = document.getElementById("seed-display");
@@ -1010,6 +1011,13 @@ function applyPreset(presetName, options = {}) {
       planet.updateTilt();
       planet.updateMoons();
     }
+
+    if (sun) {
+      sun.updateSun(params);
+      refreshSunLighting();
+    }
+    updateSpaceBackgroundUniforms();
+    updateStarfieldUniforms();
     
     // Update sun (done in render loop but apply params here)
     updateSeedDisplay();
@@ -1050,7 +1058,12 @@ function applyStarPreset(presetName, options = {}) {
     });
     
     // Update sun
-    sun.updateSun();
+    if (sun) {
+      sun.updateSun(params);
+      refreshSunLighting();
+    }
+    updateSpaceBackgroundUniforms();
+    updateStarfieldUniforms();
     
     // Update share if not skipping
     if (!skipShareUpdate) {
@@ -1123,9 +1136,8 @@ function applyVisualSettings() {
   
   // Apply lighting scale
   ambientLight.intensity = 0.35 * visualSettings.lightingScale;
-  if (sun && sun.light) {
-    sun.light.intensity = Math.max(0, 1.6) * visualSettings.lightingScale;
-  }
+  refreshSunLighting();
+  updateSpaceBackgroundUniforms();
   
   // Update starfield if it exists
   if (starField?.material?.uniforms?.uPixelRatio) {
@@ -1181,7 +1193,12 @@ async function initFromHash() {
             planet.setPlanetType(params.planetType || 'earth');
             planet.applyParams(params);
           }
-          if (sun) sun.updateSun();
+          if (sun) {
+            sun.updateSun(params);
+            refreshSunLighting();
+          }
+          updateSpaceBackgroundUniforms();
+          updateStarfieldUniforms();
           updateSeedDisplay();
           updateGravityDisplay();
           syncMoonSettings();
@@ -1256,7 +1273,12 @@ async function initFromHash() {
             planet.setPlanetType(params.planetType || 'earth');
             planet.applyParams(params);
           }
-          if (sun) sun.updateSun();
+          if (sun) {
+            sun.updateSun(params);
+            refreshSunLighting();
+          }
+          updateSpaceBackgroundUniforms();
+          updateStarfieldUniforms();
           updateSeedDisplay();
           updateGravityDisplay();
           syncMoonSettings();
@@ -1358,6 +1380,19 @@ async function initializeApp() {
   // Phase 3: Create and add starfield using (possibly) updated params
   updateLoadingStatus("Loading starfield...");
   {
+    if (!spaceBackground) {
+      const [nebula1, nebula2] = computeNebulaPalette();
+      spaceBackground = createSpaceBackgroundExt({
+        radius: 260,
+        nebulaIntensity: THREE.MathUtils.clamp((params.starBrightness ?? 1) * 0.85, 0.25, 1.7),
+        starDensity: THREE.MathUtils.clamp(getStarfieldCount(params.starCount ?? 2000) / 2200, 0.35, 2.0),
+        gradientIntensity: 0.38,
+        baseColor: "#05070f",
+        nebulaColor1: `#${nebula1.getHexString()}`,
+        nebulaColor2: `#${nebula2.getHexString()}`
+      });
+      scene.add(spaceBackground);
+    }
     const desiredCount = getStarfieldCount(params.starCount);
     if (desiredCount !== params.starCount) {
       params.starCount = desiredCount;
@@ -1370,6 +1405,7 @@ async function initializeApp() {
     });
     scene.add(starField);
     updateStarfieldUniforms();
+    updateSpaceBackgroundUniforms();
     renderer.render(scene, camera);
     await yieldToBrowser();
   }
@@ -1384,7 +1420,8 @@ async function initializeApp() {
 
   // Phase 5: Create sun with planet root
   updateLoadingStatus("Loading star...");
-  sun = new Sun(scene, planet.planetRoot);
+  sun = new Sun(scene, planet.planetRoot, params);
+  refreshSunLighting();
   renderer.render(scene, camera);
   await yieldToBrowser();
 
@@ -1395,6 +1432,11 @@ async function initializeApp() {
     console.log('[initializeApp] Code present: applying loaded params');
   }
   planet.applyParams(params);
+  if (sun) {
+    sun.updateSun(params);
+    refreshSunLighting();
+  }
+  updateSpaceBackgroundUniforms();
   planet.updateRings();
   updateSeedDisplay();
   renderer.render(scene, camera);
@@ -1525,13 +1567,21 @@ function animate(timestamp) {
   if (planetDirty) {
     showLoading();
     planet.applyParams(params);
+    if (sun) {
+      sun.updateSun(params);
+      refreshSunLighting();
+    }
+    updateSpaceBackgroundUniforms();
+    updateStarfieldUniforms();
     planetDirty = false;
     hideLoadingSoon();
   }
 
+  const elapsedTime = clock.getElapsedTime();
+
   // Update sun and get direction
   if (sun) {
-    sun.update();
+    sun.update(elapsedTime);
     const sunDirection = sun.getDirection();
     if (planet) {
       planet.updateSunDirection(sunDirection);
@@ -1539,9 +1589,13 @@ function animate(timestamp) {
   }
 
   // Update planet with time
-  const time = clock.getElapsedTime();
   if (planet) {
-    planet.update(delta, time);
+    planet.update(delta, elapsedTime);
+  }
+
+  if (spaceBackground && spaceBackground.material?.uniforms) {
+    spaceBackground.rotation.y += delta * 0.0006;
+    spaceBackground.material.uniforms.uTime.value = timestamp * 0.0008;
   }
 
   if (starField && starField.material && starField.material.uniforms) {
@@ -2685,7 +2739,12 @@ function setupMobilePanelToggle() {
             planet.setPlanetType(params.planetType || 'earth');
             planet.applyParams(params);
           }
-          if (sun) sun.updateSun();
+          if (sun) {
+            sun.updateSun(params);
+            refreshSunLighting();
+          }
+          updateSpaceBackgroundUniforms();
+          updateStarfieldUniforms();
           updateSeedDisplay();
           updateGravityDisplay();
           syncMoonSettings();
@@ -3103,9 +3162,7 @@ function setupVisualSettingsControls() {
     }
     // Apply lighting changes immediately for preview
     ambientLight.intensity = 0.35 * visualSettings.lightingScale;
-    if (sun && sun.light) {
-      sun.light.intensity = Math.max(0, 1.6) * visualSettings.lightingScale;
-    }
+  refreshSunLighting();
   });
   
   // Particle max
@@ -3224,6 +3281,7 @@ function regenerateStarfield() {
     starField = createStarfieldExt({ seed: params.seed, count: desiredCount, resolution: visualSettings?.noiseResolution ?? 1.0 });
     scene.add(starField);
     updateStarfieldUniforms();
+    updateSpaceBackgroundUniforms();
 }
 
 function updateStarfieldUniforms() {
@@ -3236,6 +3294,49 @@ function updateStarfieldUniforms() {
     uniforms.uPixelRatio.value = pixelRatio;
     if (uniforms.uScale) {
       uniforms.uScale.value = pixelRatio * height * 1.2;
+    }
+}
+
+function getSunBaseColorHex() {
+    return params.sunColor || "#ffd27f";
+}
+
+function computeNebulaPalette() {
+    const base = new THREE.Color(getSunBaseColorHex());
+    const hsl = { h: 0, s: 0, l: 0 };
+    base.getHSL(hsl);
+    const hueOffsetA = (hsl.h + 0.58) % 1;
+    const hueOffsetB = (hsl.h + 0.32) % 1;
+    const nebula1 = new THREE.Color().setHSL(
+        hueOffsetA,
+        THREE.MathUtils.clamp(hsl.s + 0.25, 0.2, 0.85),
+        THREE.MathUtils.clamp(0.3 + (1.0 - hsl.l) * 0.4, 0.18, 0.6)
+    );
+    const nebula2 = new THREE.Color().setHSL(
+        hueOffsetB,
+        THREE.MathUtils.clamp(hsl.s + 0.1, 0.2, 0.8),
+        THREE.MathUtils.clamp(0.45 + hsl.l * 0.4, 0.32, 0.75)
+    );
+    return [nebula1, nebula2];
+}
+
+function updateSpaceBackgroundUniforms() {
+    if (!spaceBackground?.material?.uniforms) return;
+    const uniforms = spaceBackground.material.uniforms;
+    const [nebula1, nebula2] = computeNebulaPalette();
+    const starCountFactor = getStarfieldCount(params.starCount ?? 2000) / 2200;
+    uniforms.uNebulaIntensity.value = THREE.MathUtils.clamp((params.starBrightness ?? 1) * 0.85, 0.25, 1.7);
+    uniforms.uStarDensity.value = THREE.MathUtils.clamp(starCountFactor, 0.35, 2.0);
+    uniforms.uGradientIntensity.value = 0.38;
+    uniforms.uBaseColor.value.set("#05070f");
+    uniforms.uNebulaColor1.value.copy(nebula1);
+    uniforms.uNebulaColor2.value.copy(nebula2);
+}
+
+function refreshSunLighting() {
+    if (sun?.light) {
+        const base = sun.params?.sunIntensity ?? 1.6;
+        sun.light.intensity = Math.max(0, base * visualSettings.lightingScale);
     }
 }
   
@@ -3527,10 +3628,14 @@ function surpriseMe() {
     normalizeMoonSettings();
     handleSeedChanged({ skipShareUpdate: true });
     // Removed: updatePalette, updateClouds (not in new shader-based Planet)
-    sun.updateSun();
+    if (sun) {
+      sun.updateSun(params);
+      refreshSunLighting();
+    }
     planet.updateRings();
     planet.updateTilt();
     updateStarfieldUniforms();
+    updateSpaceBackgroundUniforms();
     scheduleShareUpdate();
     
     // Force immediate URL update for surprise me to prevent loss on reload

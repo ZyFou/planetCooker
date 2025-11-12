@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { spaceBackgroundVertexShader, spaceBackgroundFragmentShader } from "./shaders/planetShaders.js";
 
 const starVertexShader = /* glsl */`
 attribute vec3 color;
@@ -147,6 +148,45 @@ export function createStarfield({ seed, count, resolution = 1.0 }) {
   points.frustumCulled = false;
   points.renderOrder = -1000; // Render stars first/behind everything
   return points;
+}
+
+export function createSpaceBackground({
+  radius = 240,
+  nebulaIntensity = 0.65,
+  starDensity = 1.0,
+  gradientIntensity = 0.4,
+  baseColor = "#04060f",
+  nebulaColor1 = "#402074",
+  nebulaColor2 = "#1b3c68"
+} = {}) {
+  const geometry = new THREE.SphereGeometry(radius, 64, 64);
+  const uniforms = {
+    uTime: { value: 0 },
+    uNebulaIntensity: { value: nebulaIntensity },
+    uStarDensity: { value: starDensity },
+    uGradientIntensity: { value: gradientIntensity },
+    uBaseColor: { value: new THREE.Color(baseColor) },
+    uNebulaColor1: { value: new THREE.Color(nebulaColor1) },
+    uNebulaColor2: { value: new THREE.Color(nebulaColor2) }
+  };
+
+  const material = new THREE.ShaderMaterial({
+    vertexShader: spaceBackgroundVertexShader,
+    fragmentShader: spaceBackgroundFragmentShader,
+    uniforms,
+    side: THREE.BackSide,
+    depthWrite: false,
+    depthTest: false,
+    transparent: false,
+    fog: false
+  });
+
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = "SpaceBackground";
+  mesh.renderOrder = -1100;
+  mesh.frustumCulled = false;
+
+  return mesh;
 }
 
 

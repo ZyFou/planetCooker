@@ -649,3 +649,142 @@ export const gasPlanetFragmentShader = `
     }
 `;
 
+export const spaceBackgroundVertexShader = `
+    varying vec3 vWorldPosition;
+
+    void main() {
+        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        vWorldPosition = worldPosition.xyz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+`;
+
+export const spaceBackgroundFragmentShader = `
+    ${glslNoise}
+
+    uniform float uTime;
+    uniform float uNebulaIntensity;
+    uniform float uStarDensity;
+    uniform float uGradientIntensity;
+    uniform vec3 uBaseColor;
+    uniform vec3 uNebulaColor1;
+    uniform vec3 uNebulaColor2;
+
+    varying vec3 vWorldPosition;
+
+    float hash3(vec3 p) {
+        p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3));
+        p += dot(p, p.yzx + 19.19);
+        return fract((p.x + p.y) * p.z);
+    }
+
+    void main() {
+        vec3 dir = normalize(vWorldPosition);
+        float time = uTime * 0.1;
+
+        float gradient = smoothstep(-0.6, 0.9, dir.y);
+        vec3 color = uBaseColor + gradient * uGradientIntensity * vec3(0.25, 0.3, 0.4);
+
+        vec3 coord = dir * 2.8 + vec3(time, time * 0.5, -time * 0.35);
+        vec3 warped = domainWarp(coord, 0.6, 1.6, 0.35);
+        float nebula = fbm(coord + warped, 5, 0.55, 2.05);
+        nebula = clamp((nebula + 1.0) * 0.5, 0.0, 1.0);
+        nebula = pow(nebula, 2.4);
+        vec3 nebulaColor = mix(
+            uNebulaColor1,
+            uNebulaColor2,
+            clamp(0.5 + 0.5 * sin(dir.x * 12.0 + dir.y * 8.0 + time * 3.0), 0.0, 1.0)
+        );
+        color = mix(color, nebulaColor, nebula * uNebulaIntensity);
+
+        vec3 starCoord = dir * 120.0;
+        float baseStar = 1.0 - abs(snoise(starCoord + vec3(time * 2.0, 0.0, 0.0)));
+        float starMask = smoothstep(0.75, 0.98, baseStar);
+        float crisp = pow(starMask, 8.0);
+        float sparkle = sin(uTime * 3.0 + dir.x * 40.0 + dir.y * 30.0 + dir.z * 20.0);
+        float twinkle = mix(0.85, 1.2, clamp(sparkle * 0.5 + 0.5, 0.0, 1.0));
+        float stars = crisp * twinkle * uStarDensity;
+
+        float microSeed = hash3(floor(starCoord + vec3(uTime * 6.0)));
+        stars += pow(microSeed, 12.0) * uStarDensity * 1.4;
+
+        color += vec3(stars);
+        color += nebula * 0.03;
+
+        gl_FragColor = vec4(clamp(color, 0.0, 1.5), 1.0);
+    }
+`;
+
+export const sunVertexShader = `
+    ${glslNoise}
+
+    uniform float uTime;
+    uniform float uNoiseScale;
+    uniform float uNoiseStrength;
+    uniform float uPulseAmplitude;
+    uniform float uPulseSpeed;
+
+    varying vec3 vWorldPosition;
+    varying vec3 vNormal;
+    varying float vNoise;
+
+    void main() {
+        vec3 pos = position;
+        float pulse = sin(uTime * uPulseSpeed) * 0.5 + 0.5;
+        float noiseValue = snoise(pos * uNoiseScale + vec3(uTime * 0.4, uTime * 0.31, -uTime * 0.27));
+        float displacement = noiseValue * uNoiseStrength * (0.6 + pulse * uPulseAmplitude);
+        vec3 displaced = pos + normal * displacement;
+
+        vNoise = noiseValue;
+        vec4 worldPosition = modelMatrix * vec4(displaced, 1.0);
+        vWorldPosition = worldPosition.xyz;
+        vNormal = normalize(normalMatrix * normal);
+
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced, 1.0);
+    }
+`;
+
+export const sunFragmentShader = `
+    ${glslNoise}
+
+    uniform float uTime;
+    uniform float uBrightness;
+    uniform float uHotspotStrength;
+    uniform float uPulseSpeed;
+    uniform vec3 uBaseColor;
+    uniform vec3 uHighlightColor;
+    uniform vec3 uRimColor;
+
+    varying vec3 vWorldPosition;
+    varying vec3 vNormal;
+    varying float vNoise;
+
+    void main() {
+        vec3 normal = normalize(vNormal);
+        vec3 viewDir = normalize(cameraPosition - vWorldPosition);
+
+        vec3 dir = normalize(vWorldPosition);
+        vec3 coord = dir * 3.2 + vec3(uTime * 0.12, uTime * 0.07, -uTime * 0.05);
+        vec3 warped = domainWarp(coord, 0.45, 2.1, 0.4);
+        float flow = fbm(coord + warped, 4, 0.52, 2.1);
+        flow = clamp((flow + 1.0) * 0.5, 0.0, 1.0);
+
+        float noiseFactor = clamp(vNoise * 0.5 + 0.5, 0.0, 1.0);
+        float heat = mix(noiseFactor, flow, 0.6);
+
+        vec3 surfaceColor = mix(uBaseColor, uHighlightColor, pow(heat, 1.3));
+
+        float fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 3.0);
+        vec3 rim = uRimColor * (0.6 + heat * 0.4) * fresnel;
+
+        float hotspot = pow(max(dot(normal, normalize(viewDir + normal * 0.35)), 0.0), 12.0);
+        surfaceColor += uHighlightColor * hotspot * uHotspotStrength;
+
+        float pulse = sin(uTime * uPulseSpeed * 0.6 + heat * 3.14159) * 0.5 + 0.5;
+        surfaceColor *= mix(0.9, 1.15, pulse);
+
+        vec3 finalColor = (surfaceColor + rim) * uBrightness;
+        gl_FragColor = vec4(finalColor, 1.0);
+    }
+`;
+
