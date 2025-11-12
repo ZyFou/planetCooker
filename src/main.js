@@ -487,6 +487,9 @@ const VISUAL_SETTING_PRESETS = {
 let frameCapTargetMs = 0;
 let frameCapLastTime = 0;
 const TARGET_FRAME_TIMES = { "60": 1000 / 60, "30": 1000 / 30, "24": 1000 / 24, "15": 1000 / 15 };
+
+// Flag to track if we've successfully loaded from hash (prevents default preset from overwriting)
+let hasLoadedFromHash = false;
 //#endregion
 
 //#region Parameters and presets
@@ -1142,24 +1145,30 @@ async function initFromHash() {
   const loadParam = new URLSearchParams(window.location.search).get("load");
   const loadId = hash || loadParam;
   
+  console.log('[initFromHash] Checking for load ID:', { hash, loadParam, loadId });
+  
   if (!loadId) return false;
   
   // Only try API if loadId looks like a short saved ID (nanoid-like)
   const isLikelyApiId = /^[A-Za-z0-9_-]{6,12}$/.test(loadId);
   currentHashIsApiId = isLikelyApiId;
   
+  console.log('[initFromHash] Load ID detected:', { loadId, isLikelyApiId });
+  
   if (isLikelyApiId) {
     // Preserve hash URL and remember id, even if API fails
     currentShareId = loadId;
     // Don't change URL format - keep hash for better reload handling
     try {
+      console.log('[initFromHash] Attempting to load from API:', loadId);
       const configData = await loadConfigurationFromAPIExt(loadId);
-      if (configData && configData.data) {
+      console.log('[initFromHash] API response:', configData);
+      if (configData?.data) {
         currentShareId = configData.id || loadId;
         // Apply the loaded configuration
         const prevType = params.planetType;
         const prevSeed = params.seed;
-        const data = configData.data || {};
+        const data = configData.data;
         Object.keys(data).forEach(k => { params[k] = data[k]; });
         
         // Guard against GUI onChange side-effects while syncing controls
@@ -1196,19 +1205,23 @@ async function initFromHash() {
         try {
           history.replaceState(null, "", `#${currentShareId}`);
         } catch {}
+        console.log('[initFromHash] Successfully loaded from API');
+        hasLoadedFromHash = true;
         return true;
+      } else {
+        console.warn('[initFromHash] API returned no data, trying as share code');
+        // Fall through to try decoding as share code
       }
     } catch (apiError) {
-      // Only log API errors if they're not "not found" errors
-      if (!apiError.message || !apiError.message.includes('Configuration not found')) {
-        console.warn('Failed to load configuration from API:', apiError);
-      }
+      // Log all API errors for debugging
+      console.warn('[initFromHash] API load failed, trying as share code:', apiError.message || apiError);
       // Fall through to try decoding as share code
     }
   }
   
   // Fallback: try to decode as direct share code (for both API failures and non-API hashes)
   try {
+    console.log('[initFromHash] Attempting to decode as share code:', loadId);
     const decoded = decodeShareExt(loadId);
       if (decoded) {
         const loadedData = decoded?.data ?? decoded;
@@ -1272,17 +1285,29 @@ async function initFromHash() {
             history.replaceState(null, "", `#${encoded}`);
           }
         } catch {}
+        console.log('[initFromHash] Successfully decoded share code');
+        hasLoadedFromHash = true;
         return true;
+      } else {
+        console.warn('[initFromHash] Decode returned no data');
       }
   } catch (decodeError) {
-    console.warn('Failed to decode share code:', decodeError);
+    console.warn('[initFromHash] Failed to decode share code:', decodeError);
   }
   
-  // If we got here and hash looked like an API id, keep short URL and skip default preset
-  if (currentHashIsApiId) {
-    return true;
+  // If we had a loadId but failed to load it, show a notification
+  // Only show for API IDs to avoid noise from invalid share codes
+  if (loadId && isLikelyApiId) {
+    // Delay notification slightly to avoid showing during initial page load
+    setTimeout(() => {
+      if (typeof showNotification === 'function') {
+        showNotification('Failed to load planet from code. Using default preset.', 'error');
+      }
+    }, 1000);
   }
   
+  // Only return true if we actually loaded something
+  // Don't return true just because hash looked like an API id - that would skip default preset incorrectly
   return false;
 }
 
@@ -1314,24 +1339,40 @@ async function initializeApp() {
   scene.background = new THREE.Color(0x05070f);
   await yieldToBrowser();
 
-  // Phase 2: Create and add starfield, render immediately
-  updateLoadingStatus("Loading starfield...");
-  const desiredCount = getStarfieldCount(params.starCount);
-  if (desiredCount !== params.starCount) {
-    params.starCount = desiredCount;
-    guiControllers.starCount?.updateDisplay?.();
+  // Phase 2: Load configuration from hash as early as possible (before creating objects)
+  const earlyHash = window.location.hash.slice(1);
+  const earlyLoadParam = new URLSearchParams(window.location.search).get("load");
+  const earlyHasLoadId = earlyHash || earlyLoadParam;
+  if (earlyHasLoadId) {
+    try {
+      console.log('[initializeApp] Early initFromHash start');
+      await initFromHash();
+      console.log('[initializeApp] Early initFromHash done, params:', { seed: params.seed, planetType: params.planetType });
+    } catch (e) {
+      console.warn('[initializeApp] Early initFromHash failed:', e);
+    }
   }
-  starField = createStarfieldExt({ 
-    seed: params.seed, 
-    count: desiredCount, 
-    resolution: visualSettings?.noiseResolution ?? 1.0 
-  });
-  scene.add(starField);
-  updateStarfieldUniforms();
-  renderer.render(scene, camera);
-  await yieldToBrowser();
 
-  // Phase 3: Create planet object
+  // Phase 3: Create and add starfield using (possibly) updated params
+  updateLoadingStatus("Loading starfield...");
+  {
+    const desiredCount = getStarfieldCount(params.starCount);
+    if (desiredCount !== params.starCount) {
+      params.starCount = desiredCount;
+      guiControllers.starCount?.updateDisplay?.();
+    }
+    starField = createStarfieldExt({ 
+      seed: params.seed, 
+      count: desiredCount, 
+      resolution: visualSettings?.noiseResolution ?? 1.0 
+    });
+    scene.add(starField);
+    updateStarfieldUniforms();
+    renderer.render(scene, camera);
+    await yieldToBrowser();
+  }
+
+  // Phase 4: Create planet object
   updateLoadingStatus("Loading planet...");
   planet = new Planet(scene, params, guiControllers);
   // Update planet reference in GUI controllers
@@ -1339,30 +1380,24 @@ async function initializeApp() {
   renderer.render(scene, camera);
   await yieldToBrowser();
 
-  // Phase 4: Create sun with planet root
+  // Phase 5: Create sun with planet root
   updateLoadingStatus("Loading star...");
   sun = new Sun(scene, planet.planetRoot);
   renderer.render(scene, camera);
   await yieldToBrowser();
 
-  // Phase 5: Initialize planet properties
+  // Phase 6: Apply current params exactly once (no defaults if a code was present)
+  if (!earlyHasLoadId) {
+    console.log('[initializeApp] No code present: applying default params');
+  } else {
+    console.log('[initializeApp] Code present: applying loaded params');
+  }
   planet.applyParams(params);
   planet.updateRings();
   updateSeedDisplay();
   renderer.render(scene, camera);
   await yieldToBrowser();
-
-  // Phase 6: Load configuration from hash (if present)
-  const loadedFromHash = await initFromHash();
-  if (!loadedFromHash) {
-    // Apply default Earth-like preset
-    planet.applyParams(params);
-  }
-  planet.updateRings();
-  renderer.render(scene, camera);
-  await yieldToBrowser();
-
-  // Phase 7: Final setup
+  // Phase 8: Final setup
   setupMobilePanelToggle();
   applyInitialVisualSettings();
   if (previewMode) {
