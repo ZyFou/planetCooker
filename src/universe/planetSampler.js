@@ -325,8 +325,10 @@ export class TerrainSampler {
     this.tempColor = new THREE.Color();
     this.tempColorB = new THREE.Color();
 
-    this.minLatitude = -Math.PI / 2 + 0.001;
-    this.maxLatitude = Math.PI / 2 - 0.001;
+    // Limit latitude to avoid pole issues (stay away from ±90 degrees)
+    // Match shader limit of ~80 degrees (1.4 radians)
+    this.minLatitude = -1.4;
+    this.maxLatitude = 1.4;
   }
 
   computeFinalHeight(dir) {

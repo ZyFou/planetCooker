@@ -19,11 +19,13 @@ export class FPSController {
     this.walkSpeed = baseWalkSpeed * gravityFactor;
 
     this.playerHeight = options.playerHeight ?? 1.74;
-    this.jumpVelocity = Math.sqrt(2 * this.gravity * 1.1 * gravityFactor);
+    // Reduced jump height by 3
+    this.jumpVelocity = Math.sqrt(2 * this.gravity * 1.1 * gravityFactor) / 3.0;
 
     this.sprintMultiplier = 1.6;
-    this.flySpeedMultiplier = 3.6;
-    this.flySprintMultiplier = 5.6;
+    // Reduced flight speed by 2
+    this.flySpeedMultiplier = 3.6 / 2.0;
+    this.flySprintMultiplier = 5.6 / 2.0;
     this.flyVerticalMultiplier = 0.95;
 
     this.velocity = new THREE.Vector3();

@@ -143,7 +143,7 @@ function bootstrap() {
       if (pointerInstructions) pointerInstructions.hidden = locked;
       if (crosshair) crosshair.hidden = !locked;
     },
-    baseWalkSpeed: 6,
+    baseWalkSpeed: 0.6, // Reduced by 10
     playerHeight: eyeHeight
   });
 

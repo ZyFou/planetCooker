@@ -177,8 +177,8 @@ export class SurfaceSceneManager {
     this.renderer = renderer;
 
     this.radius = getEffectiveRadius(planetParams);
-    // Much larger chunks for realistic walking experience
-    this.chunkSize = Math.max(this.radius * 10.0, 50.0);
+    // Much larger chunks for realistic walking experience (increased by 3x)
+    this.chunkSize = Math.max(this.radius * 30.0, 150.0);
     this.chunkResolution = 128; // Higher resolution for larger chunks
     this.chunkRange = 8; // Slightly reduced range since chunks are larger
     this.chunkOffsets = buildChunkOffsets(this.chunkRange);
