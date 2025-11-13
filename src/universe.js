@@ -4,6 +4,7 @@ import { ShipController } from "./universe/shipController.js";
 import { UniverseManager } from "./universe/universeManager.js";
 import { UniverseMap } from "./universe/universeMap.js";
 import { getEffectivePlanetRadius, getPlanetRadiusFromParams } from "./universe/planetFactory.js";
+import { createSpaceBackground, createStarfield } from "./app/stars.js";
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -15,6 +16,66 @@ document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x04060f);
+
+const universeSpaceParams = {
+  starCount: 4200,
+  starBrightness: 0.95,
+  starTwinkleSpeed: 0.55,
+  backgroundBrightness: 1.0
+};
+
+let universeSpaceBackground = null;
+let universeStarfield = null;
+
+function initializeUniverseSky() {
+  if (!universeSpaceBackground) {
+    universeSpaceBackground = createSpaceBackground({
+      radius: 80000,
+      nebulaIntensity: THREE.MathUtils.clamp(0.8 * universeSpaceParams.backgroundBrightness, 0.2, 2.4),
+      starDensity: THREE.MathUtils.clamp(0.9 * universeSpaceParams.backgroundBrightness, 0.25, 3.0),
+      gradientIntensity: THREE.MathUtils.clamp(0.4 * universeSpaceParams.backgroundBrightness, 0.15, 1.1),
+      baseColor: "#05070f",
+      nebulaColor1: "#2c1b4f",
+      nebulaColor2: "#123359"
+    });
+    scene.add(universeSpaceBackground);
+  }
+
+  if (!universeStarfield) {
+    universeStarfield = createStarfield({
+      seed: "universe",
+      count: universeSpaceParams.starCount
+    });
+    scene.add(universeStarfield);
+    updateUniverseStarfieldUniforms();
+  }
+
+  updateUniverseSpaceBackground();
+}
+
+function updateUniverseStarfieldUniforms() {
+  if (!universeStarfield?.material?.uniforms) return;
+  const uniforms = universeStarfield.material.uniforms;
+  const pixelRatio = Math.min(window.devicePixelRatio ?? 1, 2);
+  const height = window.innerHeight || 1080;
+  uniforms.uBrightness.value = universeSpaceParams.starBrightness;
+  uniforms.uTwinkleSpeed.value = universeSpaceParams.starTwinkleSpeed;
+  uniforms.uPixelRatio.value = pixelRatio;
+  if (uniforms.uScale) {
+    uniforms.uScale.value = pixelRatio * height * 1.2;
+  }
+}
+
+function updateUniverseSpaceBackground() {
+  if (!universeSpaceBackground?.material?.uniforms) return;
+  const uniforms = universeSpaceBackground.material.uniforms;
+  const brightness = THREE.MathUtils.clamp(universeSpaceParams.backgroundBrightness, 0.2, 3.0);
+  uniforms.uNebulaIntensity.value = THREE.MathUtils.clamp(0.8 * brightness, 0.2, 2.4);
+  uniforms.uStarDensity.value = THREE.MathUtils.clamp(0.9 * brightness, 0.25, 3.0);
+  uniforms.uGradientIntensity.value = THREE.MathUtils.clamp(0.4 * brightness, 0.15, 1.1);
+}
+
+initializeUniverseSky();
 
 const camera = new THREE.PerspectiveCamera(
   65,
@@ -252,6 +313,8 @@ function onResize() {
   renderer.setSize(window.innerWidth, window.innerHeight);
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
+  updateUniverseStarfieldUniforms();
+  updateUniverseSpaceBackground();
 }
 
 window.addEventListener("resize", onResize);
@@ -289,6 +352,7 @@ function animate(now) {
   
   const delta = Math.min(0.12, elapsed / 1000);
   lastFrameTime = now;
+  const elapsedSeconds = now * 0.001;
 
   const nearest = universe.getNearestPlanet(ship.position);
   let focusDistance = null;
@@ -302,6 +366,19 @@ function animate(now) {
 
   ship.update(delta, { focusDistance });
   universe.update(delta, ship.position, camera);
+
+  if (universeStarfield?.material?.uniforms) {
+    universeStarfield.material.uniforms.uTime.value = elapsedSeconds;
+  }
+  if (universeSpaceBackground?.material?.uniforms) {
+    universeSpaceBackground.material.uniforms.uTime.value = elapsedSeconds * 0.08;
+  }
+  if (universeStarfield) {
+    universeStarfield.position.copy(ship.position);
+  }
+  if (universeSpaceBackground) {
+    universeSpaceBackground.position.copy(ship.position);
+  }
 
   updateTrackingLine();
 

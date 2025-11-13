@@ -201,10 +201,14 @@ export function setupPlanetControls({
     registerFolder,
     scheduleShareUpdate,
     markPlanetDirty,
-    planet
+    planet,
+    updateSun,
+    updateSpaceBackgroundUniforms
 }) {
     // Store planet reference in guiControllers for later updates
     guiControllers.planet = planet;
+    const requestSunUpdate = typeof updateSun === 'function' ? updateSun : () => {};
+    const requestBackgroundUpdate = typeof updateSpaceBackgroundUniforms === 'function' ? updateSpaceBackgroundUniforms : () => {};
     // Initialize locks if not present
     if (!params.locks) {
         params.locks = {
@@ -625,6 +629,62 @@ export function setupPlanetControls({
         if (scheduleShareUpdate) scheduleShareUpdate();
     });
 
+    const folderStar = registerFolder(gui.addFolder('Star Settings'), { close: true });
+
+    const sunColorCtrl = folderStar.addColor(params, 'sunColor').name('Sun Color').onChange(value => {
+        requestSunUpdate({ sunColor: value });
+        requestBackgroundUpdate();
+        if (scheduleShareUpdate) scheduleShareUpdate();
+    });
+
+    const sunSizeCtrl = folderStar.add(params, 'sunSize', 0.3, 2.5, 0.01).name('Sun Size').onChange(value => {
+        requestSunUpdate({ sunSize: value });
+        if (scheduleShareUpdate) scheduleShareUpdate();
+    });
+
+    const sunNoiseScaleCtrl = folderStar.add(params, 'sunNoiseScale', 0.5, 4.5, 0.01).name('Noise Scale').onChange(value => {
+        requestSunUpdate({ sunNoiseScale: value });
+        if (scheduleShareUpdate) scheduleShareUpdate();
+    });
+
+    const sunNoiseStrengthCtrl = folderStar.add(params, 'sunNoiseStrength', 0.0, 0.6, 0.005).name('Noise Strength').onChange(value => {
+        requestSunUpdate({ sunNoiseStrength: value });
+        if (scheduleShareUpdate) scheduleShareUpdate();
+    });
+
+    const sunPulseAmplitudeCtrl = folderStar.add(params, 'sunPulseAmplitude', 0.0, 1.0, 0.01).name('Pulse Amplitude').onChange(value => {
+        requestSunUpdate({ sunPulseAmplitude: value });
+        if (scheduleShareUpdate) scheduleShareUpdate();
+    });
+
+    const sunPulseSpeedCtrl = folderStar.add(params, 'sunPulseSpeed', 0.0, 2.5, 0.01).name('Pulse Speed').onChange(value => {
+        requestSunUpdate({ sunPulseSpeed: value });
+        if (scheduleShareUpdate) scheduleShareUpdate();
+    });
+
+    const spaceBackgroundBrightnessCtrl = folderStar
+        .add(params, 'spaceBackgroundBrightness', 0.2, 3.0, 0.01)
+        .name('Background Brightness')
+        .onChange(() => {
+            requestBackgroundUpdate();
+            if (scheduleShareUpdate) scheduleShareUpdate();
+        });
+
+    guiControllers.sun = guiControllers.sun || {};
+    guiControllers.sun.color = sunColorCtrl;
+    guiControllers.sun.size = sunSizeCtrl;
+    guiControllers.sun.noiseScale = sunNoiseScaleCtrl;
+    guiControllers.sun.noiseStrength = sunNoiseStrengthCtrl;
+    guiControllers.sun.pulseAmplitude = sunPulseAmplitudeCtrl;
+    guiControllers.sun.pulseSpeed = sunPulseSpeedCtrl;
+    guiControllers.sunColor = sunColorCtrl;
+    guiControllers.sunSize = sunSizeCtrl;
+    guiControllers.sunNoiseScale = sunNoiseScaleCtrl;
+    guiControllers.sunNoiseStrength = sunNoiseStrengthCtrl;
+    guiControllers.sunPulseAmplitude = sunPulseAmplitudeCtrl;
+    guiControllers.sunPulseSpeed = sunPulseSpeedCtrl;
+    guiControllers.spaceBackgroundBrightness = spaceBackgroundBrightnessCtrl;
+
     // Gas Planet folder
     const folderGas = registerFolder(gui.addFolder('Gas Planet'), { close: true });
     
@@ -675,9 +735,11 @@ export function setupPlanetControls({
                 params[key] = preset[key];
             }
         });
-        
+
         if (guiControllers.planet) guiControllers.planet.applyParams(preset);
-        
+        requestSunUpdate(preset);
+        requestBackgroundUpdate();
+
         // Update GUI controllers
         folderTerrain.controllers.forEach(controller => {
             if (controller.property && params.hasOwnProperty(controller.property)) {
@@ -875,9 +937,11 @@ export function setupPlanetControls({
                 params[key] = preset[key];
             }
         });
-        
+
         if (guiControllers.planet) guiControllers.planet.applyParams(preset);
-        
+        requestSunUpdate(preset);
+        requestBackgroundUpdate();
+
         folderGas.controllers.forEach(controller => {
             if (controller.property && params.hasOwnProperty(controller.property)) {
                 if (controller.object) {

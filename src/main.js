@@ -97,7 +97,7 @@ sceneContainer.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x05070f);
 
-const camera = new THREE.PerspectiveCamera(55, sceneContainer.clientWidth / sceneContainer.clientHeight, 0.01, 50); // Clipping divided by 10
+const camera = new THREE.PerspectiveCamera(55, sceneContainer.clientWidth / sceneContainer.clientHeight, 0.01, 600); // Extended far clip for starfield/background
 camera.position.set(0, 2.4, 8.5);
 
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -519,6 +519,17 @@ const params = {
   colorSnow: "#ffffff",
   atmosphereDensity: 0.3,
   atmosphereColor: "#3a9eff",
+  // Sun & background
+  sunColor: "#ffd27f",
+  sunIntensity: 1.6,
+  sunDistance: 48,
+  sunSize: 1.1,
+  sunNoiseScale: 2.2,
+  sunNoiseStrength: 0.18,
+  sunPulseSpeed: 0.6,
+  sunPulseAmplitude: 0.4,
+  sunGlowStrength: 1.3,
+  sunHotspotStrength: 0.55,
   // Gas Planet Params
   gasPlanetSize: 1.0,
   gasStripeSpeed: 0.02,
@@ -534,6 +545,7 @@ const params = {
   starCount: 2200,
   starBrightness: 0.85,
   starTwinkleSpeed: 0.6,
+  spaceBackgroundBrightness: 1.0,
   // Moons and Rings
   moonCount: 0,
   moonMassScale: 1,
@@ -832,7 +844,16 @@ setupPlanetControls({
     registerFolder,
     scheduleShareUpdate: () => { shareDirty = true; debounceShare(); },
     markPlanetDirty: () => { planetDirty = true; },
-    planet: null // Will be set after planet is created
+    planet: null, // Will be set after planet is created
+    updateSun: (changes) => {
+        if (sun) {
+            sun.updateSun(changes);
+            refreshSunLighting();
+        }
+    },
+    updateSpaceBackgroundUniforms: () => {
+        updateSpaceBackgroundUniforms();
+    }
 });
 
 rebuildRingControls();
@@ -1382,11 +1403,12 @@ async function initializeApp() {
   {
     if (!spaceBackground) {
       const [nebula1, nebula2] = computeNebulaPalette();
+      const backgroundBrightness = THREE.MathUtils.clamp(params.spaceBackgroundBrightness ?? 1, 0.2, 3.0);
       spaceBackground = createSpaceBackgroundExt({
         radius: 260,
-        nebulaIntensity: THREE.MathUtils.clamp((params.starBrightness ?? 1) * 0.85, 0.25, 1.7),
-        starDensity: THREE.MathUtils.clamp(getStarfieldCount(params.starCount ?? 2000) / 2200, 0.35, 2.0),
-        gradientIntensity: 0.38,
+        nebulaIntensity: THREE.MathUtils.clamp((params.starBrightness ?? 1) * 0.85 * backgroundBrightness, 0.2, 2.4),
+        starDensity: THREE.MathUtils.clamp((getStarfieldCount(params.starCount ?? 2000) / 2200) * backgroundBrightness, 0.25, 3.0),
+        gradientIntensity: THREE.MathUtils.clamp(0.38 * backgroundBrightness, 0.15, 1.1),
         baseColor: "#05070f",
         nebulaColor1: `#${nebula1.getHexString()}`,
         nebulaColor2: `#${nebula2.getHexString()}`
@@ -3325,9 +3347,10 @@ function updateSpaceBackgroundUniforms() {
     const uniforms = spaceBackground.material.uniforms;
     const [nebula1, nebula2] = computeNebulaPalette();
     const starCountFactor = getStarfieldCount(params.starCount ?? 2000) / 2200;
-    uniforms.uNebulaIntensity.value = THREE.MathUtils.clamp((params.starBrightness ?? 1) * 0.85, 0.25, 1.7);
-    uniforms.uStarDensity.value = THREE.MathUtils.clamp(starCountFactor, 0.35, 2.0);
-    uniforms.uGradientIntensity.value = 0.38;
+    const backgroundBrightness = THREE.MathUtils.clamp(params.spaceBackgroundBrightness ?? 1, 0.2, 3.0);
+    uniforms.uNebulaIntensity.value = THREE.MathUtils.clamp((params.starBrightness ?? 1) * 0.85 * backgroundBrightness, 0.2, 2.4);
+    uniforms.uStarDensity.value = THREE.MathUtils.clamp(starCountFactor * backgroundBrightness, 0.25, 3.0);
+    uniforms.uGradientIntensity.value = THREE.MathUtils.clamp(0.38 * backgroundBrightness, 0.15, 1.1);
     uniforms.uBaseColor.value.set("#05070f");
     uniforms.uNebulaColor1.value.copy(nebula1);
     uniforms.uNebulaColor2.value.copy(nebula2);

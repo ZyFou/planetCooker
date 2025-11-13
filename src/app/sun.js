@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { sunVertexShader, sunFragmentShader } from "./shaders/planetShaders.js";
 
-const DEFAULT_SUN_PARAMS = {
+export const DEFAULT_SUN_PARAMS = {
     sunColor: "#ffd27f",
     sunIntensity: 1.6,
     sunDistance: 48,
@@ -21,84 +21,205 @@ function createPalette(baseColor) {
     return { base, highlight, rim };
 }
 
-export class Sun {
-    constructor(scene, planetRoot, params = {}) {
-        this.scene = scene;
-        this.planetRoot = planetRoot;
-        this.params = { ...DEFAULT_SUN_PARAMS, ...params };
+function createSunUniforms(params, palette) {
+    return {
+        uTime: { value: 0 },
+        uNoiseScale: { value: params.sunNoiseScale },
+        uNoiseStrength: { value: params.sunNoiseStrength },
+        uPulseAmplitude: { value: params.sunPulseAmplitude },
+        uPulseSpeed: { value: params.sunPulseSpeed },
+        uBrightness: { value: params.sunGlowStrength },
+        uHotspotStrength: { value: params.sunHotspotStrength },
+        uBaseColor: { value: palette.base.clone() },
+        uHighlightColor: { value: palette.highlight.clone() },
+        uRimColor: { value: palette.rim.clone() }
+    };
+}
 
-        const palette = createPalette(this.params.sunColor);
+export function createSunComponents(params = {}, options = {}) {
+    const merged = { ...DEFAULT_SUN_PARAMS, ...params };
+    const palette = createPalette(merged.sunColor);
+    const detail = options.detail ?? 6;
+    const geometry = options.geometry instanceof THREE.BufferGeometry
+        ? options.geometry
+        : new THREE.IcosahedronGeometry(1, detail);
+    const uniforms = createSunUniforms(merged, palette);
 
-        this.sunDirection = new THREE.Vector3(1.0, 0.5, 1.0).normalize();
+    const material = new THREE.ShaderMaterial({
+        vertexShader: sunVertexShader,
+        fragmentShader: sunFragmentShader,
+        uniforms,
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        depthWrite: false,
+        depthTest: true,
+        fog: false
+    });
 
-        this.light = new THREE.SpotLight(
-            palette.base,
-            this.params.sunIntensity,
-            1000,
-            Math.PI / 4,
-            0.2,
-            1.0
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = options.meshName ?? "SunVisual";
+    mesh.frustumCulled = false;
+    mesh.renderOrder = options.renderOrder ?? 0;
+
+    const sizeMultiplier = options.sizeMultiplier ?? 1;
+    mesh.scale.setScalar((merged.sunSize ?? DEFAULT_SUN_PARAMS.sunSize) * sizeMultiplier);
+
+    let lightTarget = null;
+    let light;
+
+    if (options.lightType === "point") {
+        light = new THREE.PointLight(
+            palette.base.clone(),
+            merged.sunIntensity,
+            options.lightDistance ?? 0,
+            options.lightDecay ?? 2.0
         );
-        this.light.target = planetRoot;
-        this.light.castShadow = true;
-        this.light.shadow.mapSize.width = 2048;
-        this.light.shadow.mapSize.height = 2048;
-        this.light.shadow.camera.near = 0.1;
-        this.light.shadow.camera.far = 100;
-        this.light.shadow.bias = -0.0001;
-        this.light.shadow.camera.fov = 45;
-        this.light.shadow.camera.aspect = 1.0;
+        light.castShadow = Boolean(options.castShadow);
+        if (light.castShadow) {
+            light.shadow.mapSize.width = options.shadowMapWidth ?? 1024;
+            light.shadow.mapSize.height = options.shadowMapHeight ?? 1024;
+            light.shadow.bias = options.shadowBias ?? -0.0005;
+        }
+    } else {
+        lightTarget = options.lightTarget ?? new THREE.Object3D();
+        if (!lightTarget.name) {
+            lightTarget.name = options.targetName ?? "SunLightTarget";
+        }
+        light = new THREE.SpotLight(
+            palette.base.clone(),
+            merged.sunIntensity,
+            options.lightDistance ?? 1000,
+            options.lightAngle ?? Math.PI / 4,
+            options.lightPenumbra ?? 0.2,
+            options.lightDecay ?? 1.0
+        );
+        light.target = lightTarget;
+        light.castShadow = options.castShadow ?? true;
+        light.shadow.mapSize.width = options.shadowMapWidth ?? 2048;
+        light.shadow.mapSize.height = options.shadowMapHeight ?? 2048;
+        light.shadow.camera.near = options.shadowNear ?? 0.1;
+        light.shadow.camera.far = options.shadowFar ?? 100;
+        light.shadow.camera.fov = options.shadowFov ?? 45;
+        light.shadow.camera.aspect = 1.0;
+        light.shadow.bias = options.shadowBias ?? -0.0001;
+    }
 
-        this.scene.add(this.light);
-        this.scene.add(this.light.target);
+    light.name = options.lightName ?? "Sun Light";
 
-        const geometry = new THREE.IcosahedronGeometry(1, 6);
-        this.uniforms = {
-            uTime: { value: 0 },
-            uNoiseScale: { value: this.params.sunNoiseScale },
-            uNoiseStrength: { value: this.params.sunNoiseStrength },
-            uPulseAmplitude: { value: this.params.sunPulseAmplitude },
-            uPulseSpeed: { value: this.params.sunPulseSpeed },
-            uBrightness: { value: this.params.sunGlowStrength },
-            uHotspotStrength: { value: this.params.sunHotspotStrength },
-            uBaseColor: { value: palette.base },
-            uHighlightColor: { value: palette.highlight },
-            uRimColor: { value: palette.rim }
-        };
+    const applyParams = (changes = {}) => {
+        if (!changes || typeof changes !== "object") {
+            return;
+        }
+        Object.assign(merged, changes);
 
-        const material = new THREE.ShaderMaterial({
-            vertexShader: sunVertexShader,
-            fragmentShader: sunFragmentShader,
-            uniforms: this.uniforms,
-            blending: THREE.AdditiveBlending,
-            transparent: true,
-            depthWrite: false,
-            depthTest: true,
-            fog: false
+        if (changes.sunColor) {
+            const nextPalette = createPalette(merged.sunColor);
+            palette.base.copy(nextPalette.base);
+            palette.highlight.copy(nextPalette.highlight);
+            palette.rim.copy(nextPalette.rim);
+            light.color.copy(palette.base);
+            uniforms.uBaseColor.value.copy(palette.base);
+            uniforms.uHighlightColor.value.copy(palette.highlight);
+            uniforms.uRimColor.value.copy(palette.rim);
+        }
+        if (changes.sunIntensity !== undefined) {
+            light.intensity = merged.sunIntensity;
+        }
+        if (changes.sunNoiseScale !== undefined) {
+            uniforms.uNoiseScale.value = merged.sunNoiseScale;
+        }
+        if (changes.sunNoiseStrength !== undefined) {
+            uniforms.uNoiseStrength.value = merged.sunNoiseStrength;
+        }
+        if (changes.sunPulseAmplitude !== undefined) {
+            uniforms.uPulseAmplitude.value = merged.sunPulseAmplitude;
+        }
+        if (changes.sunPulseSpeed !== undefined) {
+            uniforms.uPulseSpeed.value = merged.sunPulseSpeed;
+        }
+        if (changes.sunGlowStrength !== undefined) {
+            uniforms.uBrightness.value = merged.sunGlowStrength;
+        }
+        if (changes.sunHotspotStrength !== undefined) {
+            uniforms.uHotspotStrength.value = merged.sunHotspotStrength;
+        }
+        if (changes.sunSize !== undefined) {
+            mesh.scale.setScalar((merged.sunSize ?? DEFAULT_SUN_PARAMS.sunSize) * sizeMultiplier);
+        }
+    };
+
+    const update = (time = 0) => {
+        if (uniforms.uTime) {
+            uniforms.uTime.value = time;
+        }
+    };
+
+    const dispose = () => {
+        geometry.dispose?.();
+        material.dispose();
+    };
+
+    return {
+        mesh,
+        light,
+        target: lightTarget,
+        uniforms,
+        material,
+        params: merged,
+        applyParams,
+        update,
+        dispose,
+        palette
+    };
+}
+
+export class Sun {
+    constructor(scene, planetRoot = null, params = {}, options = {}) {
+        this.scene = scene;
+        this.planetRoot = planetRoot ?? null;
+        this.params = { ...DEFAULT_SUN_PARAMS, ...params };
+        this.sunDirection = (options.sunDirection ?? new THREE.Vector3(1.0, 0.5, 1.0)).clone().normalize();
+
+        const target = planetRoot ?? new THREE.Object3D();
+        if (!planetRoot && !target.name) {
+            target.name = options.targetName ?? "SunLightTarget";
+        }
+
+        this.components = createSunComponents(this.params, {
+            ...options,
+            lightType: options.lightType ?? "spot",
+            sizeMultiplier: options.sizeMultiplier ?? 0.38,
+            lightTarget: target
         });
 
-        this.sunVisual = new THREE.Mesh(geometry, material);
-        this.sunVisual.name = "SunVisual";
-        this.sunVisual.frustumCulled = false;
-        this.scene.add(this.sunVisual);
+        this.sunVisual = this.components.mesh;
+        this.uniforms = this.components.uniforms;
+        this.light = this.components.light;
+        this.lightTarget = this.light.target ?? target;
 
+        if (scene) {
+            if (this.lightTarget && !this.lightTarget.parent) {
+                scene.add(this.lightTarget);
+            }
+            scene.add(this.sunVisual);
+            scene.add(this.light);
+        }
+
+        this.components.applyParams(this.params);
         this._applyDistance();
-        this._applySize();
     }
 
     update(time = 0) {
         if (this.planetRoot) {
-            this.light.target.position.copy(this.planetRoot.position);
+            this.lightTarget.position.copy(this.planetRoot.position);
         }
         if (this.sunVisual) {
             this.sunVisual.position.copy(this.light.position);
-            if (this.planetRoot) {
-                this.sunVisual.lookAt(this.planetRoot.position);
+            if (this.lightTarget) {
+                this.sunVisual.lookAt(this.lightTarget.position);
             }
         }
-        if (this.uniforms?.uTime) {
-            this.uniforms.uTime.value = time;
-        }
+        this.components.update(time);
     }
 
     updateSun(params = {}) {
@@ -110,48 +231,14 @@ export class Sun {
     }
 
     applyParams(newParams = {}) {
+        if (!newParams || typeof newParams !== "object") {
+            return;
+        }
         Object.assign(this.params, newParams);
-
-        if (newParams.sunColor) {
-            const palette = createPalette(newParams.sunColor);
-            this.light.color.copy(palette.base);
-            this.uniforms.uBaseColor.value.copy(palette.base);
-            this.uniforms.uHighlightColor.value.copy(palette.highlight);
-            this.uniforms.uRimColor.value.copy(palette.rim);
-        }
-        if (newParams.sunIntensity !== undefined) {
-            this.light.intensity = newParams.sunIntensity;
-        }
-        if (newParams.sunNoiseScale !== undefined) {
-            this.uniforms.uNoiseScale.value = newParams.sunNoiseScale;
-        }
-        if (newParams.sunNoiseStrength !== undefined) {
-            this.uniforms.uNoiseStrength.value = newParams.sunNoiseStrength;
-        }
-        if (newParams.sunPulseAmplitude !== undefined) {
-            this.uniforms.uPulseAmplitude.value = newParams.sunPulseAmplitude;
-        }
-        if (newParams.sunPulseSpeed !== undefined) {
-            this.uniforms.uPulseSpeed.value = newParams.sunPulseSpeed;
-        }
-        if (newParams.sunGlowStrength !== undefined) {
-            this.uniforms.uBrightness.value = newParams.sunGlowStrength;
-        }
-        if (newParams.sunHotspotStrength !== undefined) {
-            this.uniforms.uHotspotStrength.value = newParams.sunHotspotStrength;
-        }
-        if (newParams.sunSize !== undefined) {
-            this._applySize();
-        }
+        this.components.applyParams(newParams);
         if (newParams.sunDistance !== undefined) {
             this._applyDistance();
         }
-    }
-
-    _applySize() {
-        if (!this.sunVisual) return;
-        const size = (this.params.sunSize ?? DEFAULT_SUN_PARAMS.sunSize) * 0.38;
-        this.sunVisual.scale.setScalar(size);
     }
 
     _applyDistance() {

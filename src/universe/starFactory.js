@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { createSunComponents } from "../app/sun.js";
 
 function colorToHex(color) {
   return `#${color.getHexString()}`;
@@ -50,36 +51,34 @@ export function createStar(rng, options = {}) {
   const radius = options.radius ?? rng.nextFloat(1.5, 4.5);
   const luminosity = options.luminosity ?? (radius * radius * (1.1 + rng.nextFloat(-0.2, 0.35)));
 
-  const geometry = new THREE.SphereGeometry(radius, 64, 64);
-  const material = new THREE.MeshBasicMaterial({
-    color,
-    toneMapped: false
-  });
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.name = options.name ?? "Star Mesh";
+  const sunParams = {
+    sunColor: colorToHex(color),
+    sunIntensity: options.intensity ?? (160 * luminosity),
+    sunSize: options.sunSize ?? 1.0,
+    sunNoiseScale: options.sunNoiseScale ?? (1.4 + rng.nextFloat(-0.3, 0.6)),
+    sunNoiseStrength: options.sunNoiseStrength ?? (0.16 + rng.nextFloat(-0.06, 0.12)),
+    sunPulseAmplitude: options.sunPulseAmplitude ?? (0.28 + rng.nextFloat(-0.08, 0.14)),
+    sunPulseSpeed: options.sunPulseSpeed ?? (0.45 + rng.nextFloat(-0.12, 0.22)),
+    sunGlowStrength: options.sunGlowStrength ?? (1.1 + rng.nextFloat(-0.2, 0.45)),
+    sunHotspotStrength: options.sunHotspotStrength ?? (0.45 + rng.nextFloat(-0.12, 0.2))
+  };
 
-  const glowGeometry = new THREE.SphereGeometry(radius * 1.4, 32, 32);
-  const glowMaterial = new THREE.MeshBasicMaterial({
-    color,
-    transparent: true,
-    opacity: 0.18,
-    depthWrite: false,
-    toneMapped: false
+  const sunComponents = createSunComponents(sunParams, {
+    lightType: "point",
+    sizeMultiplier: options.sizeMultiplier ?? radius,
+    lightDistance: options.range ?? 0,
+    lightDecay: options.decay ?? 2.0,
+    castShadow: Boolean(options.castShadow),
+    shadowMapWidth: options.shadowMapWidth,
+    shadowMapHeight: options.shadowMapHeight,
+    shadowBias: options.shadowBias ?? -0.0005,
+    meshName: options.name ?? "Star Mesh",
+    lightName: options.lightName ?? "Star Light"
   });
-  const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-  glow.name = "Star Glow";
-  mesh.add(glow);
 
-  const light = new THREE.PointLight(
-    color,
-    options.intensity ?? (160 * luminosity),
-    options.range ?? 0,
-    options.decay ?? 2.0
-  );
-  light.castShadow = Boolean(options.castShadow);
+  const mesh = sunComponents.mesh;
+  const light = sunComponents.light;
   light.shadow.mapSize.set(1024, 1024);
-  light.shadow.bias = -0.0005;
-  light.name = options.lightName ?? "Star Light";
 
   const spriteTexture = getStarBillboardTexture();
   const billboardMaterial = new THREE.PointsMaterial({
@@ -114,7 +113,6 @@ export function createStar(rng, options = {}) {
     usingBillboard = enableBillboard;
     billboard.visible = enableBillboard;
     mesh.visible = !enableBillboard;
-    glow.visible = !enableBillboard;
     light.visible = !enableBillboard;
   }
 
@@ -122,7 +120,6 @@ export function createStar(rng, options = {}) {
     const visible = Boolean(isVisible);
     group.visible = visible;
     mesh.visible = visible && !usingBillboard;
-    glow.visible = visible && !usingBillboard;
     light.visible = visible && !usingBillboard;
     billboard.visible = visible && usingBillboard;
   }
@@ -139,8 +136,8 @@ export function createStar(rng, options = {}) {
     group,
     mesh,
     light,
-    glow,
     billboard,
+    shader: sunComponents,
     radius,
     luminosity,
     color,
@@ -148,12 +145,14 @@ export function createStar(rng, options = {}) {
     toggleBillboard,
     setVisible,
     updateBillboard,
+    update(time = 0) {
+      sunComponents.update(time);
+    },
     get billboardActive() {
       return usingBillboard;
     },
     dispose() {
-      geometry.dispose();
-      glowGeometry.dispose();
+      sunComponents.dispose();
       billboardGeometry.dispose();
       billboardMaterial.dispose();
     }

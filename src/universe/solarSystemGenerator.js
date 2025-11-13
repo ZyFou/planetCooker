@@ -350,6 +350,8 @@ export function createSolarSystem(parentGroup, seedOrRng, options = {}) {
         this.star.setVisible?.(true);
       }
 
+      this.star.update?.(systemTime);
+
       for (let i = 0; i < planets.length; i += 1) {
         planets[i].update(delta, observerPosition, systemPosition, { frustum, camera });
       }
