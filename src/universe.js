@@ -28,29 +28,31 @@ let universeSpaceBackground = null;
 let universeStarfield = null;
 
 function initializeUniverseSky() {
-  if (!universeSpaceBackground) {
-    universeSpaceBackground = createSpaceBackground({
-      radius: 80000,
-      nebulaIntensity: THREE.MathUtils.clamp(0.8 * universeSpaceParams.backgroundBrightness, 0.2, 2.4),
-      starDensity: THREE.MathUtils.clamp(0.9 * universeSpaceParams.backgroundBrightness, 0.25, 3.0),
-      gradientIntensity: THREE.MathUtils.clamp(0.4 * universeSpaceParams.backgroundBrightness, 0.15, 1.1),
-      baseColor: "#05070f",
-      nebulaColor1: "#2c1b4f",
-      nebulaColor2: "#123359"
-    });
-    scene.add(universeSpaceBackground);
-  }
+  // Shader background disabled - using solid color background instead
+  // if (!universeSpaceBackground) {
+  //   universeSpaceBackground = createSpaceBackground({
+  //     radius: 80000,
+  //     nebulaIntensity: THREE.MathUtils.clamp(0.8 * universeSpaceParams.backgroundBrightness, 0.2, 2.4),
+  //     starDensity: THREE.MathUtils.clamp(0.9 * universeSpaceParams.backgroundBrightness, 0.25, 3.0),
+  //     gradientIntensity: THREE.MathUtils.clamp(0.4 * universeSpaceParams.backgroundBrightness, 0.15, 1.1),
+  //     baseColor: "#05070f",
+  //     nebulaColor1: "#2c1b4f",
+  //     nebulaColor2: "#123359"
+  //   });
+  //   scene.add(universeSpaceBackground);
+  // }
 
-  if (!universeStarfield) {
-    universeStarfield = createStarfield({
-      seed: "universe",
-      count: universeSpaceParams.starCount
-    });
-    scene.add(universeStarfield);
-    updateUniverseStarfieldUniforms();
-  }
+  // Starfield disabled - using star direction indicators instead
+  // if (!universeStarfield) {
+  //   universeStarfield = createStarfield({
+  //     seed: "universe",
+  //     count: universeSpaceParams.starCount
+  //   });
+  //   scene.add(universeStarfield);
+  //   updateUniverseStarfieldUniforms();
+  // }
 
-  updateUniverseSpaceBackground();
+  // updateUniverseSpaceBackground();
 }
 
 function updateUniverseStarfieldUniforms() {
@@ -313,8 +315,8 @@ function onResize() {
   renderer.setSize(window.innerWidth, window.innerHeight);
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
-  updateUniverseStarfieldUniforms();
-  updateUniverseSpaceBackground();
+  // updateUniverseStarfieldUniforms();
+  // updateUniverseSpaceBackground();
 }
 
 window.addEventListener("resize", onResize);
@@ -367,18 +369,18 @@ function animate(now) {
   ship.update(delta, { focusDistance });
   universe.update(delta, ship.position, camera);
 
-  if (universeStarfield?.material?.uniforms) {
-    universeStarfield.material.uniforms.uTime.value = elapsedSeconds;
-  }
-  if (universeSpaceBackground?.material?.uniforms) {
-    universeSpaceBackground.material.uniforms.uTime.value = elapsedSeconds * 0.08;
-  }
-  if (universeStarfield) {
-    universeStarfield.position.copy(ship.position);
-  }
-  if (universeSpaceBackground) {
-    universeSpaceBackground.position.copy(ship.position);
-  }
+  // if (universeStarfield?.material?.uniforms) {
+  //   universeStarfield.material.uniforms.uTime.value = elapsedSeconds;
+  // }
+  // if (universeSpaceBackground?.material?.uniforms) {
+  //   universeSpaceBackground.material.uniforms.uTime.value = elapsedSeconds * 0.08;
+  // }
+  // if (universeStarfield) {
+  //   universeStarfield.position.copy(ship.position);
+  // }
+  // if (universeSpaceBackground) {
+  //   universeSpaceBackground.position.copy(ship.position);
+  // }
 
   updateTrackingLine();
 

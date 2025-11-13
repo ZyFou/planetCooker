@@ -24,8 +24,11 @@ export class UniverseManager {
     this._cullSphere = new THREE.Sphere();
     this._tempWorld = new THREE.Vector3();
 
+    // Star direction indicators - always visible particles showing star positions
+    this._starIndicators = this._createStarIndicators();
     if (this.scene) {
       this.scene.add(this.root);
+      this.scene.add(this._starIndicators);
     }
   }
 
@@ -36,6 +39,11 @@ export class UniverseManager {
     this.systems.clear();
     if (this.scene) {
       this.scene.remove(this.root);
+      if (this._starIndicators) {
+        this.scene.remove(this._starIndicators);
+        this._starIndicators.geometry.dispose();
+        this._starIndicators.material.dispose();
+      }
     }
   }
 
@@ -70,6 +78,9 @@ export class UniverseManager {
 
       instance.update?.(delta, position, { frustum, camera });
     }
+
+    // Update star indicators with all star positions
+    this._updateStarIndicators(position);
   }
 
   getNearestPlanet(position) {
@@ -199,6 +210,105 @@ export class UniverseManager {
     );
     this._frustum.setFromProjectionMatrix(this._cameraViewProjection);
     return this._frustum;
+  }
+
+  _createStarIndicators() {
+    // Create a texture for the star indicator particles
+    const size = 128;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    const gradient = ctx.createRadialGradient(
+      size / 2,
+      size / 2,
+      size * 0.1,
+      size / 2,
+      size / 2,
+      size * 0.5
+    );
+    gradient.addColorStop(0, "rgba(255,255,255,1.0)");
+    gradient.addColorStop(0.3, "rgba(255,255,200,0.8)");
+    gradient.addColorStop(0.7, "rgba(200,220,255,0.4)");
+    gradient.addColorStop(1, "rgba(0,0,0,0.0)");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
+
+    // Create geometry and material for star indicators
+    const geometry = new THREE.BufferGeometry();
+    const maxStars = 1000; // Maximum number of star indicators
+    const positions = new Float32Array(maxStars * 3);
+    const colors = new Float32Array(maxStars * 3);
+    
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+    const material = new THREE.PointsMaterial({
+      map: texture,
+      size: 6, // Fixed pixel size
+      sizeAttenuation: false, // Always same size regardless of distance
+      transparent: true,
+      opacity: 0.9,
+      vertexColors: true,
+      depthWrite: false,
+      depthTest: true,
+      blending: THREE.AdditiveBlending,
+      toneMapped: false
+    });
+
+    const points = new THREE.Points(geometry, material);
+    points.name = "StarDirectionIndicators";
+    points.renderOrder = -500; // Render before most objects
+    points.frustumCulled = false;
+    
+    // Store reference to update later
+    points._maxStars = maxStars;
+    points._starCount = 0;
+    
+    return points;
+  }
+
+  _updateStarIndicators(observerPosition) {
+    if (!this._starIndicators || !observerPosition) return;
+
+    const positions = this._starIndicators.geometry.attributes.position.array;
+    const colors = this._starIndicators.geometry.attributes.color.array;
+    let starCount = 0;
+    const maxStars = this._starIndicators._maxStars;
+
+    // Collect all star positions from all systems
+    for (const { instance } of this.systems.values()) {
+      if (!instance.star || !instance.group) continue;
+      
+      if (starCount >= maxStars) break;
+
+      // Get star world position
+      instance.star.group.getWorldPosition(this._tempWorld);
+      
+      // Store position
+      positions[starCount * 3 + 0] = this._tempWorld.x;
+      positions[starCount * 3 + 1] = this._tempWorld.y;
+      positions[starCount * 3 + 2] = this._tempWorld.z;
+
+      // Use star color for the indicator
+      const starColor = instance.star.color || new THREE.Color(1, 1, 0.8);
+      colors[starCount * 3 + 0] = starColor.r;
+      colors[starCount * 3 + 1] = starColor.g;
+      colors[starCount * 3 + 2] = starColor.b;
+
+      starCount++;
+    }
+
+    // Update geometry
+    this._starIndicators.geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    this._starIndicators.geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    this._starIndicators.geometry.setDrawRange(0, starCount);
+    this._starIndicators.geometry.attributes.position.needsUpdate = true;
+    this._starIndicators.geometry.attributes.color.needsUpdate = true;
+    this._starIndicators._starCount = starCount;
   }
 }
 

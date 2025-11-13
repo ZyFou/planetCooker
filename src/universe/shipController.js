@@ -178,9 +178,9 @@ export class ShipController {
     this.position.addScaledVector(this.velocity, delta);
     this.ship.position.copy(this.position);
 
+    // Roll control with E only (A is now used for left movement)
     const rollE = this.keys.has("KeyE") ? 1 : 0;
-    const rollA = this.keys.has("KeyA") ? 1 : 0;
-    const rollInput = rollE - rollA;
+    const rollInput = rollE;
     const { rollSpeed } = this.settings;
     if (rollInput !== 0) {
       this.roll += rollInput * rollSpeed * delta;
@@ -223,7 +223,7 @@ export class ShipController {
     if (this.keys.has("KeyW") || this.keys.has("ArrowUp")) direction.add(forward);
     if (this.keys.has("KeyS") || this.keys.has("ArrowDown")) direction.sub(forward);
     if (this.keys.has("KeyD") || this.keys.has("ArrowRight")) direction.add(right);
-    if (this.keys.has("ArrowLeft")) direction.sub(right);
+    if (this.keys.has("KeyA") || this.keys.has("ArrowLeft")) direction.sub(right);
     if (this.keys.has("Space")) direction.add(up);
     if (this.keys.has("KeyQ")) direction.sub(up);
 
@@ -266,7 +266,7 @@ export class ShipController {
       event.preventDefault();
       this.triggerDash();
     }
-    if (code === "KeyA" || code === "KeyE") {
+    if (code === "KeyE") {
       event.preventDefault();
     }
     if ((code === "KeyV" || code === "Escape") && this.isPointerLocked) {
