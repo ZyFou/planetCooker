@@ -683,7 +683,7 @@ export const spaceBackgroundFragmentShader = `
         float time = uTime * 0.02;
 
         float gradient = smoothstep(-0.4, 0.75, dir.y);
-        vec3 color = uBaseColor + gradient * uGradientIntensity * vec3(0.08, 0.12, 0.2);
+        vec3 color = uBaseColor + gradient * uGradientIntensity * vec3(0.05, 0.08, 0.13);
 
         vec3 coord = dir * 2.2 + vec3(time * 0.12, time * 0.08, -time * 0.06);
         vec3 warped = domainWarp(coord, 0.45, 1.2, 0.27);
@@ -697,8 +697,8 @@ export const spaceBackgroundFragmentShader = `
             clamp(0.5 + 0.5 * sin(dir.x * 4.5 + dir.y * 2.6 + time * 0.18), 0.0, 1.0)
         );
         vec3 desaturatedNebula = mix(nebulaColor, vec3(dot(nebulaColor, vec3(0.299, 0.587, 0.114))), 0.35);
-        color = mix(color, desaturatedNebula, nebulaMask * uNebulaIntensity * 0.55);
-        color = mix(color, uBaseColor, 0.35);
+        color = mix(color, desaturatedNebula, nebulaMask * uNebulaIntensity * 0.4);
+        color = mix(color, uBaseColor, 0.48);
 
         vec3 starCoord = dir * 120.0;
         float baseStar = 1.0 - abs(snoise(starCoord + vec3(time * 0.55, 0.0, 0.0)));
@@ -706,16 +706,16 @@ export const spaceBackgroundFragmentShader = `
         float crisp = pow(starMask, 8.5);
         float sparkle = sin(uTime * 0.1 + dir.x * 24.0 + dir.y * 18.0 + dir.z * 12.0);
         float twinkle = mix(0.96, 1.015, clamp(sparkle * 0.5 + 0.5, 0.0, 1.0));
-        float stars = crisp * twinkle * uStarDensity * 0.35;
+        float stars = crisp * twinkle * uStarDensity * 0.25;
 
         float microSeed = hash3(starCoord + vec3(time * 0.18, -time * 0.12, time * 0.09));
-        stars += pow(smoothstep(0.92, 1.0, microSeed), 5.0) * uStarDensity * 0.18;
+        stars += pow(smoothstep(0.92, 1.0, microSeed), 5.0) * uStarDensity * 0.09;
 
         color += vec3(stars);
-        color += nebula * 0.004;
+        color += nebula * 0.0025;
 
-        vec3 finalColor = clamp(color, 0.0, 0.85);
-        finalColor = mix(finalColor, vec3(dot(finalColor, vec3(0.2126, 0.7152, 0.0722))), 0.18);
+        vec3 finalColor = clamp(color, 0.0, 0.6);
+        finalColor = mix(finalColor, vec3(dot(finalColor, vec3(0.2126, 0.7152, 0.0722))), 0.24);
         gl_FragColor = vec4(finalColor, 1.0);
     }
 `;
