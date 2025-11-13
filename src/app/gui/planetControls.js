@@ -642,6 +642,11 @@ export function setupPlanetControls({
         if (scheduleShareUpdate) scheduleShareUpdate();
     });
 
+    const sunDistanceCtrl = folderStar.add(params, 'sunDistance', 10, 200, 0.5).name('Sun Distance').onChange(value => {
+        requestSunUpdate({ sunDistance: value });
+        if (scheduleShareUpdate) scheduleShareUpdate();
+    });
+
     const sunNoiseScaleCtrl = folderStar.add(params, 'sunNoiseScale', 0.5, 4.5, 0.01).name('Noise Scale').onChange(value => {
         requestSunUpdate({ sunNoiseScale: value });
         if (scheduleShareUpdate) scheduleShareUpdate();
@@ -673,12 +678,14 @@ export function setupPlanetControls({
     guiControllers.sun = guiControllers.sun || {};
     guiControllers.sun.color = sunColorCtrl;
     guiControllers.sun.size = sunSizeCtrl;
+    guiControllers.sun.distance = sunDistanceCtrl;
     guiControllers.sun.noiseScale = sunNoiseScaleCtrl;
     guiControllers.sun.noiseStrength = sunNoiseStrengthCtrl;
     guiControllers.sun.pulseAmplitude = sunPulseAmplitudeCtrl;
     guiControllers.sun.pulseSpeed = sunPulseSpeedCtrl;
     guiControllers.sunColor = sunColorCtrl;
     guiControllers.sunSize = sunSizeCtrl;
+    guiControllers.sunDistance = sunDistanceCtrl;
     guiControllers.sunNoiseScale = sunNoiseScaleCtrl;
     guiControllers.sunNoiseStrength = sunNoiseStrengthCtrl;
     guiControllers.sunPulseAmplitude = sunPulseAmplitudeCtrl;
