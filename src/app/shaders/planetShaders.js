@@ -680,12 +680,12 @@ export const spaceBackgroundFragmentShader = `
 
     void main() {
         vec3 dir = normalize(vWorldPosition);
-        float time = uTime * 0.05;
+        float time = uTime * 0.02;
 
         float gradient = smoothstep(-0.6, 0.9, dir.y);
         vec3 color = uBaseColor + gradient * uGradientIntensity * vec3(0.25, 0.3, 0.4);
 
-        vec3 coord = dir * 2.4 + vec3(time * 0.5, time * 0.35, -time * 0.2);
+        vec3 coord = dir * 2.4 + vec3(time * 0.2, time * 0.14, -time * 0.08);
         vec3 warped = domainWarp(coord, 0.6, 1.4, 0.32);
         float nebula = fbm(coord + warped, 5, 0.55, 2.05);
         nebula = clamp((nebula + 1.0) * 0.5, 0.0, 1.0);
@@ -693,7 +693,7 @@ export const spaceBackgroundFragmentShader = `
         vec3 nebulaColor = mix(
             uNebulaColor1,
             uNebulaColor2,
-            clamp(0.5 + 0.5 * sin(dir.x * 8.0 + dir.y * 5.0 + time * 0.8), 0.0, 1.0)
+            clamp(0.5 + 0.5 * sin(dir.x * 6.0 + dir.y * 3.5 + time * 0.25), 0.0, 1.0)
         );
         color = mix(color, nebulaColor, nebula * uNebulaIntensity);
 
@@ -701,15 +701,15 @@ export const spaceBackgroundFragmentShader = `
         float baseStar = 1.0 - abs(snoise(starCoord + vec3(time * 0.6, 0.0, 0.0)));
         float starMask = smoothstep(0.78, 0.96, baseStar);
         float crisp = pow(starMask, 7.0);
-        float sparkle = sin(uTime * 0.5 + dir.x * 28.0 + dir.y * 20.0 + dir.z * 14.0);
-        float twinkle = mix(0.9, 1.08, clamp(sparkle * 0.5 + 0.5, 0.0, 1.0));
-        float stars = crisp * twinkle * uStarDensity;
+        float sparkle = sin(uTime * 0.15 + dir.x * 28.0 + dir.y * 20.0 + dir.z * 14.0);
+        float twinkle = mix(0.94, 1.03, clamp(sparkle * 0.5 + 0.5, 0.0, 1.0));
+        float stars = crisp * twinkle * uStarDensity * 0.7;
 
-        float microSeed = hash3(starCoord + vec3(time * 0.6, -time * 0.35, time * 0.25));
-        stars += pow(smoothstep(0.88, 1.0, microSeed), 5.0) * uStarDensity * 0.65;
+        float microSeed = hash3(starCoord + vec3(time * 0.24, -time * 0.16, time * 0.11));
+        stars += pow(smoothstep(0.9, 1.0, microSeed), 4.0) * uStarDensity * 0.35;
 
         color += vec3(stars);
-        color += nebula * 0.02;
+        color += nebula * 0.01;
 
         gl_FragColor = vec4(clamp(color, 0.0, 1.3), 1.0);
     }
