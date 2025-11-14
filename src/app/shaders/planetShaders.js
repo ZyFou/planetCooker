@@ -703,15 +703,16 @@ export const spaceBackgroundFragmentShader = `
         vec3 starCoord = dir * 120.0;
         float baseStar = 1.0 - abs(snoise(starCoord + vec3(time * 0.55, 0.0, 0.0)));
         float starMask = smoothstep(0.82, 0.97, baseStar);
-        float crisp = pow(starMask, 8.5);
+        float linePattern = pow(starMask, 7.0);
         float sparkle = sin(uTime * 0.1 + dir.x * 24.0 + dir.y * 18.0 + dir.z * 12.0);
-        float twinkle = mix(0.96, 1.015, clamp(sparkle * 0.5 + 0.5, 0.0, 1.0));
-        float stars = crisp * twinkle * uStarDensity * 0.25;
+        float twinkle = mix(0.85, 1.05, clamp(sparkle * 0.5 + 0.5, 0.0, 1.0));
+        float darkNoise = linePattern * twinkle * uStarDensity * 0.6;
 
         float microSeed = hash3(starCoord + vec3(time * 0.18, -time * 0.12, time * 0.09));
-        stars += pow(smoothstep(0.92, 1.0, microSeed), 5.0) * uStarDensity * 0.09;
+        darkNoise += pow(smoothstep(0.92, 1.0, microSeed), 5.0) * uStarDensity * 0.15;
 
-        color += vec3(stars);
+        float noiseMix = clamp(darkNoise, 0.0, 0.95);
+        color = mix(color, vec3(0.0), noiseMix);
         color += nebula * 0.0025;
 
         vec3 finalColor = clamp(color, 0.0, 0.6);
