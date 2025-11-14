@@ -64,6 +64,24 @@ export class Planet {
         if (this.params.noiseType === undefined) this.params.noiseType = 'classic';
         if (this.params.noiseVariant === undefined) this.params.noiseVariant = 0.5;
 
+        const volumetricDefaults = {
+            volumetricCloudsEnabled: true,
+            volumetricCloudCount: 18,
+            volumetricCloudPuffCount: 8,
+            volumetricCloudSpread: 0.4,
+            volumetricCloudFlatness: 0.45,
+            volumetricCloudPuffSize: 0.28,
+            volumetricCloudParticleSize: 0.16,
+            volumetricCloudParticleOpacity: 0.06,
+            volumetricCloudParticlesPerCloud: 320
+        };
+        Object.entries(volumetricDefaults).forEach(([key, value]) => {
+            if (this.params[key] === undefined) {
+                this.params[key] = value;
+            }
+        });
+        this._volumetricCloudShell = { inner: 0.05, outer: 0.12 };
+
         // Create uniforms for rocky planet
         this.rockyUniforms = {
             uTime: { value: 0 },
@@ -156,6 +174,20 @@ export class Planet {
         this.cloudMesh = new THREE.Mesh(new THREE.SphereGeometry(1.03, 64, 64), cloudMaterial);
         this.spinGroup.add(this.cloudMesh);
         this.cloudMesh.scale.setScalar((params.planetSize ?? 1.0) * 1.03);
+
+        this.volumetricCloudSprite = this._createVolumetricCloudTexture();
+        this.volumetricCloudMaterial = new THREE.PointsMaterial({
+            map: this.volumetricCloudSprite,
+            transparent: true,
+            depthWrite: false,
+            sizeAttenuation: true,
+            blending: THREE.NormalBlending,
+            color: new THREE.Color(0xffffff)
+        });
+        this.volumetricCloudGroup = new THREE.Group();
+        this.spinGroup.add(this.volumetricCloudGroup);
+        this._updateVolumetricCloudMaterial();
+        this._regenerateVolumetricClouds();
 
         // Set initial planet type
         this.setPlanetType(params.planetType ?? 'earth');
@@ -264,6 +296,9 @@ export class Planet {
             this.atmosphereMesh.scale.setScalar((this.params.gasPlanetSize ?? 1.0) * 1.15);
             this.cloudMesh.visible = false;
             this.atmosphereMesh.visible = false;
+            if (this.volumetricCloudGroup) {
+                this.volumetricCloudGroup.visible = false;
+            }
         } else {
             this.planetMesh.material = this.rockyMaterial;
             this.planetMesh.scale.setScalar(this.params.planetSize ?? 1.0);
@@ -271,6 +306,12 @@ export class Planet {
             this.cloudMesh.scale.setScalar((this.params.planetSize ?? 1.0) * 1.03);
             this.cloudMesh.visible = true;
             this.atmosphereMesh.visible = true;
+            if (this.volumetricCloudGroup) {
+                this.volumetricCloudGroup.visible = this.params.volumetricCloudsEnabled !== false;
+                if (this.volumetricCloudGroup.visible) {
+                    this._regenerateVolumetricClouds();
+                }
+            }
         }
     }
 
@@ -322,6 +363,33 @@ export class Planet {
             if (newParams.atmosphereColor) this.atmosphereUniforms.uAtmosphereColor.value.set(newParams.atmosphereColor);
         }
 
+        const volShapeKeys = [
+            'volumetricCloudsEnabled',
+            'volumetricCloudCount',
+            'volumetricCloudPuffCount',
+            'volumetricCloudSpread',
+            'volumetricCloudFlatness',
+            'volumetricCloudPuffSize',
+            'planetSize'
+        ];
+        const volMaterialKeys = [
+            'volumetricCloudParticleSize',
+            'volumetricCloudParticleOpacity'
+        ];
+        let shouldRegenVolClouds = false;
+        let shouldUpdateVolMaterial = false;
+
+        volShapeKeys.forEach(key => {
+            if (newParams[key] !== undefined) {
+                shouldRegenVolClouds = true;
+            }
+        });
+        volMaterialKeys.forEach(key => {
+            if (newParams[key] !== undefined) {
+                shouldUpdateVolMaterial = true;
+            }
+        });
+
         // Update scales
         if (newParams.planetType === 'gas') {
             if (newParams.gasPlanetSize !== undefined) {
@@ -353,6 +421,13 @@ export class Planet {
         if (newParams.planetType && newParams.planetType !== this.params.planetType) {
             this.setPlanetType(newParams.planetType);
         }
+
+        if (shouldUpdateVolMaterial) {
+            this._updateVolumetricCloudMaterial();
+        }
+        if (shouldRegenVolClouds) {
+            this._regenerateVolumetricClouds();
+        }
     }
 
     updateSunDirection(sunDirection) {
@@ -374,6 +449,9 @@ export class Planet {
         // Rotate clouds and atmosphere
         this.cloudMesh.rotation.y += rotationDelta * 1.2;
         this.atmosphereMesh.rotation.y += rotationDelta * 0.1;
+        if (this.volumetricCloudGroup && this.volumetricCloudGroup.visible) {
+            this.volumetricCloudGroup.rotation.y += rotationDelta * 0.35;
+        }
 
         // Rotate entire ring group (global spin)
         if (this.params.ringSpinSpeed !== undefined) {
@@ -552,6 +630,128 @@ export class Planet {
         // Apply ring angle (independent of axis tilt)
         if (this.params.ringAngle !== undefined && this.ringGroup) {
             this.ringGroup.rotation.z = (this.params.ringAngle * Math.PI) / 180;
+        }
+    }
+
+    _createVolumetricCloudTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        const gradient = ctx.createRadialGradient(
+            canvas.width / 2, canvas.height / 2, 0,
+            canvas.width / 2, canvas.height / 2, canvas.width / 2
+        );
+        gradient.addColorStop(0.0, 'rgba(255,255,255,0.9)');
+        gradient.addColorStop(0.5, 'rgba(255,255,255,0.5)');
+        gradient.addColorStop(1.0, 'rgba(255,255,255,0.0)');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = THREE.ClampToEdgeWrapping;
+        texture.wrapT = THREE.ClampToEdgeWrapping;
+        texture.needsUpdate = true;
+        return texture;
+    }
+
+    _createVolumetricCloud({ puffCount, spread, flatness, puffSize }) {
+        if (!this.volumetricCloudMaterial) return null;
+        const flatnessFactor = 1.0 - THREE.MathUtils.clamp(flatness ?? 0.0, 0.0, 0.95);
+        const particlesPerCloud = THREE.MathUtils.clamp(this.params.volumetricCloudParticlesPerCloud ?? 320, 80, 1600);
+        const totalParticles = Math.max(80, Math.floor(particlesPerCloud));
+        const positions = [];
+
+        const puffs = Math.max(1, Math.floor(puffCount ?? 4));
+        const particlesPerPuff = Math.max(20, Math.floor(totalParticles / puffs));
+
+        for (let i = 0; i < puffs; i++) {
+            const puffCenter = new THREE.Vector3(
+                (Math.random() - 0.5) * spread * 2,
+                (Math.random() - 0.5) * spread * flatnessFactor,
+                (Math.random() - 0.5) * spread * 2
+            );
+            for (let j = 0; j < particlesPerPuff; j++) {
+                let x, y, z, d;
+                do {
+                    x = (Math.random() - 0.5) * puffSize;
+                    y = (Math.random() - 0.5) * puffSize;
+                    z = (Math.random() - 0.5) * puffSize;
+                    d = x * x + y * y + z * z;
+                } while (d > (puffSize * 0.5) ** 2);
+
+                positions.push(
+                    puffCenter.x + x,
+                    puffCenter.y + y * flatnessFactor,
+                    puffCenter.z + z
+                );
+            }
+        }
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        return new THREE.Points(geometry, this.volumetricCloudMaterial);
+    }
+
+    _clearVolumetricClouds() {
+        if (!this.volumetricCloudGroup) return;
+        while (this.volumetricCloudGroup.children.length > 0) {
+            const child = this.volumetricCloudGroup.children.pop();
+            this.volumetricCloudGroup.remove(child);
+            child?.geometry?.dispose();
+        }
+    }
+
+    _updateVolumetricCloudMaterial() {
+        if (!this.volumetricCloudMaterial) return;
+        const baseRadius = this.planetMesh.scale.x || 1;
+        const sizeRatio = THREE.MathUtils.clamp(this.params.volumetricCloudParticleSize ?? 0.16, 0.02, 0.6);
+        this.volumetricCloudMaterial.size = sizeRatio * baseRadius;
+        this.volumetricCloudMaterial.opacity = THREE.MathUtils.clamp(this.params.volumetricCloudParticleOpacity ?? 0.06, 0.02, 0.25);
+        this.volumetricCloudMaterial.needsUpdate = true;
+    }
+
+    _regenerateVolumetricClouds() {
+        if (!this.volumetricCloudGroup) return;
+        if (!this.params.volumetricCloudsEnabled || this.params.planetType === 'gas') {
+            this.volumetricCloudGroup.visible = false;
+            this._clearVolumetricClouds();
+            return;
+        }
+
+        this.volumetricCloudGroup.visible = true;
+        this._clearVolumetricClouds();
+
+        const baseRadius = this.planetMesh.scale.x || 1;
+        const spread = THREE.MathUtils.clamp(this.params.volumetricCloudSpread ?? 0.4, 0.05, 1.8) * baseRadius;
+        const puffSize = THREE.MathUtils.clamp(this.params.volumetricCloudPuffSize ?? 0.28, 0.05, 1.6) * baseRadius;
+        const puffCount = Math.max(1, Math.floor(this.params.volumetricCloudPuffCount ?? 8));
+        const count = Math.max(0, Math.floor(this.params.volumetricCloudCount ?? 18));
+        const flatness = THREE.MathUtils.clamp(this.params.volumetricCloudFlatness ?? 0.45, 0.0, 0.95);
+        const inner = baseRadius * (1 + this._volumetricCloudShell.inner);
+        const outer = baseRadius * (1 + this._volumetricCloudShell.outer);
+
+        const up = new THREE.Vector3(0, 1, 0);
+        for (let i = 0; i < count; i++) {
+            const cloud = this._createVolumetricCloud({ puffCount, spread, flatness, puffSize });
+            if (!cloud) continue;
+
+            const dir = new THREE.Vector3(
+                Math.random() * 2 - 1,
+                Math.random() * 2 - 1,
+                Math.random() * 2 - 1
+            );
+            if (dir.lengthSq() === 0) {
+                i--;
+                continue;
+            }
+            dir.normalize();
+            const altitude = THREE.MathUtils.lerp(inner, outer, Math.random());
+            cloud.position.copy(dir).multiplyScalar(altitude);
+
+            const quaternion = new THREE.Quaternion().setFromUnitVectors(up, dir);
+            cloud.quaternion.copy(quaternion);
+
+            this.volumetricCloudGroup.add(cloud);
         }
     }
 

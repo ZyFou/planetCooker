@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Volumetric Clouds</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+            background-color: #111;
+            color: #fff;
+        }
+        canvas {
+            display: block;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            padding: 10px 15px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
+        #controls {
+            position: absolute;
+            top: 50px; /* Below info */
+            left: 10px;
+            padding: 10px 15px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            width: 280px; /* Wider for labels */
+        }
+        .slider-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr 35px; /* Adjusted grid */
+            align-items: center;
+            gap: 8px;
+        }
+        .slider-row label {
+            white-space: nowrap;
+        }
+        .slider-row input[type="range"] {
+            width: 100%;
+        }
+        .slider-row span {
+            text-align: right;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">Drag to rotate. Scroll to zoom.</div>
+    <div id="controls">
+        <div class="slider-row">
+            <label for="cloudCount">Cloud Count</label>
+            <input type="range" id="cloudCount" min="5" max="50" value="25" step="1">
+            <span id="cloudCountValue">25</span>
+        </div>
+        <div class="slider-row">
+            <label for="puffCount">Puffs / Cloud</label>
+            <input type="range" id="puffCount" min="3" max="20" value="8" step="1">
+            <span id="puffCountValue">8</span>
+        </div>
+        <div class="slider-row">
+            <label for="cloudSpread">Cloud Size</label>
+            <input type="range" id="cloudSpread" min="5" max="30" value="15" step="1">
+            <span id="cloudSpreadValue">15</span>
+        </div>
+        <div class="slider-row">
+            <label for="cloudFlatness">Cloud Flatness</label>
+            <input type="range" id="cloudFlatness" min="0" max="0.9" value="0.5" step="0.1">
+            <span id="cloudFlatnessValue">0.5</span>
+        </div>
+        <div class="slider-row">
+            <label for="puffSize">Cloud Fluffiness</label>
+            <input type="range" id="puffSize" min="5" max="30" value="15" step="1">
+            <span id="puffSizeValue">15</span>
+        </div>
+        <div class="slider-row">
+            <label for="particleSize">Particle Size</label>
+            <input type="range" id="particleSize" min="5" max="50" value="20" step="1">
+            <span id="particleSizeValue">20</span>
+        </div>
+        <div class="slider-row">
+            <label for="particleOpacity">Particle Opacity</label>
+            <input type="range" id="particleOpacity" min="0.01" max="0.15" value="0.08" step="0.01">
+            <span id="particleOpacityValue">0.08</span>
+        </div>
+    </div>
+    <canvas id="cloud-canvas"></canvas>
+
+    <!-- Import three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Import OrbitControls for mouse interaction -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script type="module">
+        let scene, camera, renderer, controls, cloudGroup;
+        let cloudTexture; // Make texture global
+
+        // --- Cloud Parameters ---
+        const cloudParams = {
+            cloudCount: 25,
+            puffCount: 8,
+            cloudSpread: 15, // New: How far puffs are spread
+            cloudFlatness: 0.5, // New: How flat the cloud is (0=sphere, 0.9=flat)
+            puffSize: 15, // Renamed: was "Cloud Fluffiness", now radius of puff
+            particleSize: 20,
+            particleOpacity: 0.08
+        };
+
+        // --- Planet Parameters ---
+        const planetRadius = 25;
+        const cloudAtmosphereMin = 5;
+        const cloudAtmosphereMax = 8;
+
+
+        function init() {
+            // --- Basic Scene Setup ---
+            scene = new THREE.Scene();
+
+            // Set background color and fog
+            const skyColor = 0x87CEEB; // A nice light sky blue
+            scene.background = new THREE.Color(skyColor);
+            // Fog helps create a sense of depth and atmosphere
+            scene.fog = new THREE.Fog(skyColor, 100, 300); // Adjusted fog distance
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 50, 120); // Moved camera further out and up
+
+            renderer = new THREE.WebGLRenderer({ 
+                canvas: document.getElementById('cloud-canvas'),
+                antialias: true 
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+
+            // --- Lighting ---
+            // Soft ambient light for the whole scene
+            const ambientLight = new THREE.AmbientLight(0xaaaaaa);
+            scene.add(ambientLight);
+
+            // A directional light to simulate the sun
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
+            directionalLight.position.set(1, 1, 0).normalize();
+            scene.add(directionalLight);
+
+            // --- Controls ---
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            // --- Create Planet ---
+            const planetGeometry = new THREE.SphereGeometry(25, 32, 32); // Radius of 25
+            const planetMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x228B22, // A nice green
+                specular: 0x111111, 
+                shininess: 5 
+            });
+            const planet = new THREE.Mesh(planetGeometry, planetMaterial);
+            scene.add(planet);
+
+            // --- Create Clouds ---
+            cloudGroup = new THREE.Group();
+            scene.add(cloudGroup);
+            
+            // Create the texture once
+            cloudTexture = createCloudTexture();
+
+            // --- Setup UI Listeners ---
+            setupUI();
+
+            // --- Initial Cloud Generation ---
+            regenerateClouds();
+            
+            // --- Event Listeners ---
+            window.addEventListener('resize', onWindowResize, false);
+
+            // Start the animation loop
+            animate();
+        }
+
+        /**
+         * Sets up the slider event listeners
+         */
+        function setupUI() {
+            const sliders = {
+                'cloudCount': 'cloudCountValue',
+                'puffCount': 'puffCountValue',
+                'cloudSpread': 'cloudSpreadValue', // New
+                'cloudFlatness': 'cloudFlatnessValue', // New
+                'puffSize': 'puffSizeValue',
+                'particleSize': 'particleSizeValue',
+                'particleOpacity': 'particleOpacityValue'
+            };
+
+            // This function will be called to regenerate clouds
+            // We throttle it so it doesn't fire too rapidly
+            let timeout;
+            const onParamsChange = () => {
+                clearTimeout(timeout);
+                // Regenerate after 200ms of inactivity to avoid freezing
+                timeout = setTimeout(regenerateClouds, 200); 
+            };
+
+            // This function only updates material properties, which is fast
+            const onMaterialChange = () => {
+                cloudGroup.children.forEach(cloud => {
+                    if (cloud.material) {
+                        cloud.material.size = cloudParams.particleSize;
+                        cloud.material.opacity = cloudParams.particleOpacity;
+                    }
+                });
+            };
+
+            for (const [param, valueId] of Object.entries(sliders)) {
+                const slider = document.getElementById(param);
+                const valueSpan = document.getElementById(valueId);
+
+                slider.addEventListener('input', (e) => {
+                    const value = parseFloat(e.target.value);
+                    cloudParams[param] = value;
+                    valueSpan.textContent = value.toFixed(param === 'particleOpacity' || param === 'cloudFlatness' ? 2 : 0);
+
+                    // Changing particle size or opacity is cheap, just update materials
+                    if (param === 'particleSize' || param === 'particleOpacity') {
+                        onMaterialChange();
+                    } else {
+                        // Changing geometry (count, puffs, size) is expensive, so regenerate
+                        onParamsChange();
+                    }
+                });
+            }
+        }
+
+        /**
+         * Clears and regenerates all clouds based on cloudParams
+         */
+        function regenerateClouds() {
+            // Clear existing clouds
+            while(cloudGroup.children.length > 0){ 
+                const cloud = cloudGroup.children[0];
+                // Dispose of the geometry to free up memory
+                if (cloud.geometry) {
+                    cloud.geometry.dispose();
+                }
+                // We share the material, so we don't dispose of it
+                cloudGroup.remove(cloud);
+            }
+
+            // --- Cloud Positioning Logic ---
+            for (let i = 0; i < cloudParams.cloudCount; i++) {
+                // Pass params to createCloud
+                const cloud = createCloud(
+                    cloudTexture, 
+                    cloudParams.puffCount, 
+                    cloudParams.cloudSpread, // New
+                    cloudParams.cloudFlatness, // New
+                    cloudParams.puffSize, 
+                    cloudParams.particleSize, 
+                    cloudParams.particleOpacity
+                );
+                
+                // 1. Get a random direction vector (a point on a unit sphere)
+                const position = new THREE.Vector3(
+                    Math.random() * 2 - 1,
+                    Math.random() * 2 - 1,
+                    Math.random() * 2 - 1
+                ).normalize();
+
+                // 2. Give it a random altitude within the "atmosphere"
+                const altitude = planetRadius + cloudAtmosphereMin + (Math.random() * (cloudAtmosphereMax - cloudAtmosphereMin));
+                position.multiplyScalar(altitude);
+
+                // Set the cloud's position
+                cloud.position.copy(position);
+
+                // 3. Orient the cloud
+                // We want the cloud's "up" (Y-axis) to point away from the planet's center.
+                const defaultUp = new THREE.Vector3(0, 1, 0);
+                const targetDirection = position.clone().normalize();
+                const quaternion = new THREE.Quaternion();
+                quaternion.setFromUnitVectors(defaultUp, targetDirection);
+                cloud.quaternion.copy(quaternion);
+
+                cloudGroup.add(cloud);
+            }
+        }
+
+
+        /**
+         * Creates a soft, round texture on a 2D canvas.
+         * This will be used for each particle.
+         */
+        function createCloudTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128;
+            canvas.height = 128;
+            const context = canvas.getContext('2d');
+
+            // Create a radial gradient
+            const gradient = context.createRadialGradient(
+                canvas.width / 2, canvas.height / 2, 0, 
+                canvas.width / 2, canvas.height / 2, canvas.width / 2
+            );
+            // White and fluffy in the middle, fading to transparent
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+            gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.5)');
+            gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+            context.fillStyle = gradient;
+            context.fillRect(0, 0, canvas.width, canvas.height);
+
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        /**
+         * Creates a single "volumetric" cloud.
+         * A cloud is a THREE.Points object made of many particles ("puffs").
+         * Accepts parameters for customization.
+         */
+        function createCloud(texture, puffCount, cloudSpread, cloudFlatness, puffSize, particleSize, particleOpacity) {
+            const positions = [];
+            const cloudParticleCount = 500; // Total particles, divided among puffs
+            const flatnessFactor = 1.0 - cloudFlatness;
+
+            // We create several "puffs" to build up the cloud shape
+            // const puffSize = 15; // Now "puffSize", radius of individual puff
+            // const cloudSpread = 15; // New, spread of puffs
+
+            for (let i = 0; i < puffCount; i++) {
+                // Random center for this puff
+                const puffCenter = new THREE.Vector3(
+                    (Math.random() - 0.5) * cloudSpread * 2,
+                    (Math.random() - 0.5) * cloudSpread * flatnessFactor, // Apply flatness
+                    (Math.random() - 0.5) * cloudSpread * 2
+                );
+
+                // Add particles around this puff center
+                for (let j = 0; j < cloudParticleCount / puffCount; j++) {
+                    // Generate a random point within a sphere for a rounder puff
+                    let x, y, z, d;
+                    do {
+                        x = (Math.random() - 0.5) * puffSize;
+                        y = (Math.random() - 0.5) * puffSize;
+                        z = (Math.random() - 0.5) * puffSize;
+                        d = x*x + y*y + z*z;
+                    } while (d > (puffSize * 0.5) ** 2); // Keep points within a radius (puffSize)
+
+                    // Apply flatness to the particle's y position as well
+                    const y_flat = y * flatnessFactor;
+
+                    positions.push(puffCenter.x + x);
+                    positions.push(puffCenter.y + y_flat);
+                    positions.push(puffCenter.z + z);
+                }
+            }
+
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+            const material = new THREE.PointsMaterial({
+                map: texture,
+                size: particleSize, // Use parameter
+                transparent: true,
+                opacity: particleOpacity, // Use parameter
+                blending: THREE.NormalBlending,
+                sizeAttenuation: true, // Particles get smaller further away
+                depthWrite: false, // Allows particles to blend correctly
+            });
+
+            const cloud = new THREE.Points(geometry, material);
+            return cloud;
+        }
+
+        /**
+         * Handles window resize events.
+         */
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        /**
+         * The main animation loop.
+         */
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Slowly rotate the entire cloud group for a wind effect
+            cloudGroup.rotation.y += 0.0005;
+
+            // Update controls for damping
+            controls.update();
+            
+            renderer.render(scene, camera);
+        }
+
+        // --- Start the experience ---
+        init();
+
+    </script>
+</body>
+</html>
