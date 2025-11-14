@@ -528,6 +528,8 @@ const params = {
   volumetricCloudParticleSize: 0.16,
   volumetricCloudParticleOpacity: 0.06,
   volumetricCloudParticlesPerCloud: 320,
+  volumetricCloudSize: 1.0,
+  volumetricCloudHeight: 1.0,
   // Sun & background
   sunColor: "#ffd27f",
   sunIntensity: 1.6,

@@ -240,7 +240,17 @@ export function setupPlanetControls({
             gasColor2: false,
             gasColor3: false,
             gasColor4: false,
-            gasColor5: false
+            gasColor5: false,
+            volumetricCloudCount: false,
+            volumetricCloudPuffCount: false,
+            volumetricCloudSpread: false,
+            volumetricCloudFlatness: false,
+            volumetricCloudPuffSize: false,
+            volumetricCloudParticleSize: false,
+            volumetricCloudParticleOpacity: false,
+            volumetricCloudParticlesPerCloud: false,
+            volumetricCloudSize: false,
+            volumetricCloudHeight: false
         };
     } else {
         params.locks.noiseType ??= false;
@@ -630,19 +640,20 @@ export function setupPlanetControls({
     });
 
     const folderVolClouds = registerFolder(gui.addFolder('Volumetric Clouds'), { close: true });
-    const applyVolParam = key => value => {
-        if (guiControllers.planet) guiControllers.planet.applyParams({ [key]: value });
+    folderVolClouds.add(params, 'volumetricCloudsEnabled').name('Enable Clouds').onChange(value => {
+        if (guiControllers.planet) guiControllers.planet.applyParams({ volumetricCloudsEnabled: value });
         if (scheduleShareUpdate) scheduleShareUpdate();
-    };
-    folderVolClouds.add(params, 'volumetricCloudsEnabled').name('Enable Clouds').onChange(applyVolParam('volumetricCloudsEnabled'));
-    folderVolClouds.add(params, 'volumetricCloudCount', 0, 40, 1).name('Cloud Count').onChange(applyVolParam('volumetricCloudCount'));
-    folderVolClouds.add(params, 'volumetricCloudPuffCount', 1, 20, 1).name('Puffs per Cloud').onChange(applyVolParam('volumetricCloudPuffCount'));
-    folderVolClouds.add(params, 'volumetricCloudSpread', 0.05, 1.5, 0.01).name('Spread (×R)').onChange(applyVolParam('volumetricCloudSpread'));
-    folderVolClouds.add(params, 'volumetricCloudFlatness', 0.0, 0.95, 0.01).name('Flatness').onChange(applyVolParam('volumetricCloudFlatness'));
-    folderVolClouds.add(params, 'volumetricCloudPuffSize', 0.05, 1.2, 0.01).name('Puff Size (×R)').onChange(applyVolParam('volumetricCloudPuffSize'));
-    folderVolClouds.add(params, 'volumetricCloudParticleSize', 0.02, 0.6, 0.01).name('Particle Size (×R)').onChange(applyVolParam('volumetricCloudParticleSize'));
-    folderVolClouds.add(params, 'volumetricCloudParticleOpacity', 0.02, 0.2, 0.01).name('Particle Opacity').onChange(applyVolParam('volumetricCloudParticleOpacity'));
-    folderVolClouds.add(params, 'volumetricCloudParticlesPerCloud', 80, 1600, 20).name('Particles / Cloud').onChange(applyVolParam('volumetricCloudParticlesPerCloud'));
+    });
+    addSliderWithPercentAndLock(folderVolClouds, 'volumetricCloudCount', 'Cloud Count', 0, 40, () => {});
+    addSliderWithPercentAndLock(folderVolClouds, 'volumetricCloudPuffCount', 'Puffs per Cloud', 1, 20, () => {});
+    addSliderWithPercentAndLock(folderVolClouds, 'volumetricCloudSpread', 'Spread (×R)', 0.05, 1.5, () => {});
+    addSliderWithPercentAndLock(folderVolClouds, 'volumetricCloudFlatness', 'Flatness', 0.0, 0.95, () => {});
+    addSliderWithPercentAndLock(folderVolClouds, 'volumetricCloudPuffSize', 'Puff Size (×R)', 0.05, 1.2, () => {});
+    addSliderWithPercentAndLock(folderVolClouds, 'volumetricCloudParticleSize', 'Particle Size (×R)', 0.02, 0.6, () => {});
+    addSliderWithPercentAndLock(folderVolClouds, 'volumetricCloudParticleOpacity', 'Particle Opacity', 0.02, 0.2, () => {});
+    addSliderWithPercentAndLock(folderVolClouds, 'volumetricCloudParticlesPerCloud', 'Particles / Cloud', 80, 1600, () => {});
+    addSliderWithPercentAndLock(folderVolClouds, 'volumetricCloudSize', 'Cloud Size', 0.4, 2.4, () => {});
+    addSliderWithPercentAndLock(folderVolClouds, 'volumetricCloudHeight', 'Cloud Height', 0.5, 2.0, () => {});
 
     const folderStar = registerFolder(gui.addFolder('Star Settings'), { close: true });
 

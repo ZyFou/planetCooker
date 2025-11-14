@@ -73,14 +73,16 @@ export class Planet {
             volumetricCloudPuffSize: 0.28,
             volumetricCloudParticleSize: 0.16,
             volumetricCloudParticleOpacity: 0.06,
-            volumetricCloudParticlesPerCloud: 320
+            volumetricCloudParticlesPerCloud: 320,
+            volumetricCloudSize: 1.0,
+            volumetricCloudHeight: 1.0
         };
         Object.entries(volumetricDefaults).forEach(([key, value]) => {
             if (this.params[key] === undefined) {
                 this.params[key] = value;
             }
         });
-        this._volumetricCloudShell = { inner: 0.05, outer: 0.12 };
+        this._volumetricCloudBaseShell = { inner: 0.05, outer: 0.12 };
 
         // Create uniforms for rocky planet
         this.rockyUniforms = {
@@ -370,6 +372,9 @@ export class Planet {
             'volumetricCloudSpread',
             'volumetricCloudFlatness',
             'volumetricCloudPuffSize',
+            'volumetricCloudParticlesPerCloud',
+            'volumetricCloudSize',
+            'volumetricCloudHeight',
             'planetSize'
         ];
         const volMaterialKeys = [
@@ -722,13 +727,17 @@ export class Planet {
         this._clearVolumetricClouds();
 
         const baseRadius = this.planetMesh.scale.x || 1;
-        const spread = THREE.MathUtils.clamp(this.params.volumetricCloudSpread ?? 0.4, 0.05, 1.8) * baseRadius;
-        const puffSize = THREE.MathUtils.clamp(this.params.volumetricCloudPuffSize ?? 0.28, 0.05, 1.6) * baseRadius;
+        const sizeMul = THREE.MathUtils.clamp(this.params.volumetricCloudSize ?? 1.0, 0.4, 2.4);
+        const spread = THREE.MathUtils.clamp(this.params.volumetricCloudSpread ?? 0.4, 0.05, 1.8) * baseRadius * sizeMul;
+        const puffSize = THREE.MathUtils.clamp(this.params.volumetricCloudPuffSize ?? 0.28, 0.05, 1.6) * baseRadius * sizeMul;
         const puffCount = Math.max(1, Math.floor(this.params.volumetricCloudPuffCount ?? 8));
         const count = Math.max(0, Math.floor(this.params.volumetricCloudCount ?? 18));
         const flatness = THREE.MathUtils.clamp(this.params.volumetricCloudFlatness ?? 0.45, 0.0, 0.95);
-        const inner = baseRadius * (1 + this._volumetricCloudShell.inner);
-        const outer = baseRadius * (1 + this._volumetricCloudShell.outer);
+        const heightMul = THREE.MathUtils.clamp(this.params.volumetricCloudHeight ?? 1.0, 0.5, 2.0);
+        const innerBase = this._volumetricCloudBaseShell?.inner ?? 0.05;
+        const outerBase = this._volumetricCloudBaseShell?.outer ?? 0.12;
+        const inner = baseRadius * (1 + innerBase * heightMul);
+        const outer = baseRadius * (1 + outerBase * heightMul);
 
         const up = new THREE.Vector3(0, 1, 0);
         for (let i = 0; i < count; i++) {
