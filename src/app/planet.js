@@ -75,7 +75,8 @@ export class Planet {
             volumetricCloudParticleOpacity: 0.06,
             volumetricCloudParticlesPerCloud: 320,
             volumetricCloudSize: 1.0,
-            volumetricCloudHeight: 1.0
+            volumetricCloudHeight: 1.0,
+            volumetricCloudColor: "#ffffff"
         };
         Object.entries(volumetricDefaults).forEach(([key, value]) => {
             if (this.params[key] === undefined) {
@@ -184,7 +185,7 @@ export class Planet {
             depthWrite: false,
             sizeAttenuation: true,
             blending: THREE.NormalBlending,
-            color: new THREE.Color(0xffffff)
+            color: new THREE.Color(params.volumetricCloudColor ?? "#ffffff")
         });
         this.volumetricCloudGroup = new THREE.Group();
         this.spinGroup.add(this.volumetricCloudGroup);
@@ -379,7 +380,8 @@ export class Planet {
         ];
         const volMaterialKeys = [
             'volumetricCloudParticleSize',
-            'volumetricCloudParticleOpacity'
+            'volumetricCloudParticleOpacity',
+            'volumetricCloudColor'
         ];
         let shouldRegenVolClouds = false;
         let shouldUpdateVolMaterial = false;
@@ -714,6 +716,9 @@ export class Planet {
         const sizeRatio = THREE.MathUtils.clamp(this.params.volumetricCloudParticleSize ?? 0.16, 0.02, 0.6);
         this.volumetricCloudMaterial.size = sizeRatio * baseRadius;
         this.volumetricCloudMaterial.opacity = THREE.MathUtils.clamp(this.params.volumetricCloudParticleOpacity ?? 0.06, 0.02, 0.25);
+        if (this.params.volumetricCloudColor !== undefined) {
+            this.volumetricCloudMaterial.color.set(this.params.volumetricCloudColor);
+        }
         this.volumetricCloudMaterial.needsUpdate = true;
     }
 

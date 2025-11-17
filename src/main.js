@@ -17,6 +17,10 @@ let planet;
 let sun;
 const clock = new THREE.Clock();
 
+// Share constants - must be defined before any functions that use them
+const SHARE_VERSION = 2;
+const SHARE_EXCLUDED_KEYS = new Set(["rings"]);
+
 const debounceShare = debounce(() => {
   if (!shareDirty) return;
   updateShareCode();
@@ -536,6 +540,7 @@ const params = {
   volumetricCloudParticlesPerCloud: 320,
   volumetricCloudSize: 1.0,
   volumetricCloudHeight: 1.0,
+  volumetricCloudColor: "#ffffff",
   // Sun & background
   sunColor: "#ffd27f",
   sunIntensity: 1.6,
@@ -2902,9 +2907,6 @@ function updateShareCode() {
       }
     } catch {}
 }
-
-const SHARE_VERSION = 2;
-const SHARE_EXCLUDED_KEYS = new Set(["rings"]);
 
 function cloneShareValue(value) {
   if (value === undefined) return undefined;

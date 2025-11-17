@@ -250,7 +250,8 @@ export function setupPlanetControls({
             volumetricCloudParticleOpacity: false,
             volumetricCloudParticlesPerCloud: false,
             volumetricCloudSize: false,
-            volumetricCloudHeight: false
+            volumetricCloudHeight: false,
+            volumetricCloudColor: false
         };
     } else {
         params.locks.noiseType ??= false;
@@ -654,6 +655,7 @@ export function setupPlanetControls({
     addSliderWithPercentAndLock(folderVolClouds, 'volumetricCloudParticlesPerCloud', 'Particles / Cloud', 80, 1600, () => {});
     addSliderWithPercentAndLock(folderVolClouds, 'volumetricCloudSize', 'Cloud Size', 0.4, 2.4, () => {});
     addSliderWithPercentAndLock(folderVolClouds, 'volumetricCloudHeight', 'Cloud Height', 0.5, 2.0, () => {});
+    addColorWithLock(folderVolClouds, 'volumetricCloudColor', 'Cloud Color', () => {});
 
     const folderStar = registerFolder(gui.addFolder('Star Settings'), { close: true });
 

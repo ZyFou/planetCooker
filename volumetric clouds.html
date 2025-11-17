@@ -94,6 +94,16 @@
             <input type="range" id="particleOpacity" min="0.01" max="0.15" value="0.08" step="0.01">
             <span id="particleOpacityValue">0.08</span>
         </div>
+        <div class="slider-row">
+            <label for="godRayIntensity">God Ray Intensity</label>
+            <input type="range" id="godRayIntensity" min="0" max="2" value="1.2" step="0.1">
+            <span id="godRayIntensityValue">1.2</span>
+        </div>
+        <div class="slider-row">
+            <label for="godRayDecay">God Ray Decay</label>
+            <input type="range" id="godRayDecay" min="0.7" max="0.99" value="0.95" step="0.01">
+            <span id="godRayDecayValue">0.95</span>
+        </div>
     </div>
     <canvas id="cloud-canvas"></canvas>
 
@@ -101,10 +111,17 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <!-- Import OrbitControls for mouse interaction -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- Import post-processing -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
 
     <script type="module">
         let scene, camera, renderer, controls, cloudGroup;
         let cloudTexture; // Make texture global
+        let composer, godRayPass, sun, sunLight;
+        let renderTarget, renderTarget2;
 
         // --- Cloud Parameters ---
         const cloudParams = {
@@ -114,7 +131,9 @@
             cloudFlatness: 0.5, // New: How flat the cloud is (0=sphere, 0.9=flat)
             puffSize: 15, // Renamed: was "Cloud Fluffiness", now radius of puff
             particleSize: 20,
-            particleOpacity: 0.08
+            particleOpacity: 0.08,
+            godRayIntensity: 1.2,
+            godRayDecay: 0.95
         };
 
         // --- Planet Parameters ---
@@ -122,6 +141,54 @@
         const cloudAtmosphereMin = 5;
         const cloudAtmosphereMax = 8;
 
+        // --- Volumetric Light Shader for God Rays ---
+        const VolumetricLightShader = {
+            uniforms: {
+                tDiffuse: { value: null },
+                lightPosition: { value: new THREE.Vector2(0.5, 0.5) },
+                exposure: { value: 0.18 },
+                decay: { value: 0.95 },
+                density: { value: 0.8 },
+                weight: { value: 0.4 },
+                samples: { value: 50.0 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform vec2 lightPosition;
+                uniform float exposure;
+                uniform float decay;
+                uniform float density;
+                uniform float weight;
+                uniform float samples;
+                varying vec2 vUv;
+                
+                void main() {
+                    vec2 texCoord = vUv;
+                    vec2 deltaTextCoord = texCoord - lightPosition;
+                    deltaTextCoord *= 1.0 / samples * density;
+                    float illuminationDecay = 1.0;
+                    vec4 color = texture2D(tDiffuse, texCoord);
+                    
+                    vec2 currentTexCoord = texCoord;
+                    for(int i = 0; i < 50; i++) {
+                        currentTexCoord -= deltaTextCoord;
+                        vec4 sampleColor = texture2D(tDiffuse, currentTexCoord);
+                        sampleColor *= illuminationDecay * weight;
+                        color += sampleColor;
+                        illuminationDecay *= decay;
+                    }
+                    
+                    gl_FragColor = color * exposure;
+                }
+            `
+        };
 
         function init() {
             // --- Basic Scene Setup ---
@@ -148,9 +215,34 @@
             scene.add(ambientLight);
 
             // A directional light to simulate the sun
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
-            directionalLight.position.set(1, 1, 0).normalize();
-            scene.add(directionalLight);
+            sunLight = new THREE.DirectionalLight(0xffffff, 0.7);
+            sunLight.position.set(1, 1, 0).normalize();
+            scene.add(sunLight);
+
+            // --- Create Visible Sun ---
+            const sunGeometry = new THREE.SphereGeometry(8, 32, 32);
+            const sunMaterial = new THREE.MeshBasicMaterial({
+                color: 0xFFE87C,
+                emissive: 0xFFE87C,
+                emissiveIntensity: 1.0
+            });
+            sun = new THREE.Mesh(sunGeometry, sunMaterial);
+            
+            // Position sun in the direction of the light
+            const sunDistance = 200;
+            sun.position.copy(sunLight.position).multiplyScalar(sunDistance);
+            scene.add(sun);
+            
+            // Add sun glow effect
+            const sunGlowGeometry = new THREE.SphereGeometry(10, 32, 32);
+            const sunGlowMaterial = new THREE.MeshBasicMaterial({
+                color: 0xFFE87C,
+                transparent: true,
+                opacity: 0.3
+            });
+            const sunGlow = new THREE.Mesh(sunGlowGeometry, sunGlowMaterial);
+            sunGlow.position.copy(sun.position);
+            scene.add(sunGlow);
 
             // --- Controls ---
             controls = new THREE.OrbitControls(camera, renderer.domElement);
@@ -180,11 +272,58 @@
             // --- Initial Cloud Generation ---
             regenerateClouds();
             
+            // --- Setup Post-Processing for God Rays ---
+            setupPostProcessing();
+            
             // --- Event Listeners ---
             window.addEventListener('resize', onWindowResize, false);
 
             // Start the animation loop
             animate();
+        }
+
+        /**
+         * Sets up post-processing for volumetric god rays
+         */
+        function setupPostProcessing() {
+            // Create render targets
+            renderTarget = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight);
+            renderTarget2 = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight);
+
+            // Create composer
+            composer = new THREE.EffectComposer(renderer);
+            
+            // Add render pass - this renders the scene
+            const renderPass = new THREE.RenderPass(scene, camera);
+            renderPass.renderToScreen = false;
+            composer.addPass(renderPass);
+
+            // Create god ray shader pass
+            // ShaderPass automatically sets tDiffuse to the previous pass output
+            godRayPass = new THREE.ShaderPass(VolumetricLightShader);
+            godRayPass.uniforms['decay'].value = cloudParams.godRayDecay;
+            godRayPass.uniforms['exposure'].value = cloudParams.godRayIntensity * 0.15;
+            godRayPass.renderToScreen = true;
+            composer.addPass(godRayPass);
+        }
+
+        /**
+         * Updates the sun position in screen space for god rays
+         */
+        function updateSunScreenPosition() {
+            if (!sun || !camera) return;
+            
+            // Get sun position in screen space
+            const vector = sun.position.clone();
+            vector.project(camera);
+            
+            // Convert to 0-1 range
+            const x = (vector.x + 1) / 2;
+            const y = (vector.y + 1) / 2;
+            
+            if (godRayPass) {
+                godRayPass.uniforms['lightPosition'].value.set(x, y);
+            }
         }
 
         /**
@@ -198,7 +337,9 @@
                 'cloudFlatness': 'cloudFlatnessValue', // New
                 'puffSize': 'puffSizeValue',
                 'particleSize': 'particleSizeValue',
-                'particleOpacity': 'particleOpacityValue'
+                'particleOpacity': 'particleOpacityValue',
+                'godRayIntensity': 'godRayIntensityValue',
+                'godRayDecay': 'godRayDecayValue'
             };
 
             // This function will be called to regenerate clouds
@@ -227,11 +368,20 @@
                 slider.addEventListener('input', (e) => {
                     const value = parseFloat(e.target.value);
                     cloudParams[param] = value;
-                    valueSpan.textContent = value.toFixed(param === 'particleOpacity' || param === 'cloudFlatness' ? 2 : 0);
+                    valueSpan.textContent = value.toFixed(param === 'particleOpacity' || param === 'cloudFlatness' || param === 'godRayDecay' ? 2 : param === 'godRayIntensity' ? 1 : 0);
 
                     // Changing particle size or opacity is cheap, just update materials
                     if (param === 'particleSize' || param === 'particleOpacity') {
                         onMaterialChange();
+                    } else if (param === 'godRayIntensity' || param === 'godRayDecay') {
+                        // Update god ray shader uniforms
+                        if (godRayPass) {
+                            if (param === 'godRayIntensity') {
+                                godRayPass.uniforms['exposure'].value = value * 0.15;
+                            } else if (param === 'godRayDecay') {
+                                godRayPass.uniforms['decay'].value = value;
+                            }
+                        }
                     } else {
                         // Changing geometry (count, puffs, size) is expensive, so regenerate
                         onParamsChange();
@@ -387,6 +537,17 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            
+            // Resize render targets and composer
+            if (renderTarget) {
+                renderTarget.setSize(window.innerWidth, window.innerHeight);
+            }
+            if (renderTarget2) {
+                renderTarget2.setSize(window.innerWidth, window.innerHeight);
+            }
+            if (composer) {
+                composer.setSize(window.innerWidth, window.innerHeight);
+            }
         }
 
         /**
@@ -401,7 +562,15 @@
             // Update controls for damping
             controls.update();
             
-            renderer.render(scene, camera);
+            // Update sun screen position for god rays
+            updateSunScreenPosition();
+            
+            // Render with post-processing
+            if (composer) {
+                composer.render();
+            } else {
+                renderer.render(scene, camera);
+            }
         }
 
         // --- Start the experience ---
