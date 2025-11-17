@@ -157,14 +157,18 @@ export function createSpaceBackground({
   gradientIntensity = 0.4,
   baseColor = "#04060f",
   nebulaColor1 = "#402074",
-  nebulaColor2 = "#1b3c68"
+  nebulaColor2 = "#1b3c68",
+  skyResolution = 1.0
 } = {}) {
-  const geometry = new THREE.SphereGeometry(radius, 64, 64);
+  // Reduce geometry resolution based on skyResolution (64 segments at 1.0, 32 at 0.5, 16 at 0.25)
+  const segments = Math.max(16, Math.round(64 * skyResolution));
+  const geometry = new THREE.SphereGeometry(radius, segments, segments);
   const uniforms = {
     uTime: { value: 0 },
     uNebulaIntensity: { value: nebulaIntensity },
     uStarDensity: { value: starDensity },
     uGradientIntensity: { value: gradientIntensity },
+    uSkyResolution: { value: skyResolution },
     uBaseColor: { value: new THREE.Color(baseColor) },
     uNebulaColor1: { value: new THREE.Color(nebulaColor1) },
     uNebulaColor2: { value: new THREE.Color(nebulaColor2) }

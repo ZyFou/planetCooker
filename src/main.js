@@ -72,6 +72,10 @@ const gasResolutionInput = document.getElementById("gas-resolution");
 const gasResolutionValue = document.getElementById("gas-resolution-value");
 const ringDetailInput = document.getElementById("ring-detail");
 const ringDetailValue = document.getElementById("ring-detail-value");
+const cloudResolutionInput = document.getElementById("cloud-resolution");
+const cloudResolutionValue = document.getElementById("cloud-resolution-value");
+const skyResolutionInput = document.getElementById("sky-resolution");
+const skyResolutionValue = document.getElementById("sky-resolution-value");
 const photoToggleButton = document.getElementById("photo-toggle");
 const photoShutterButton = document.getElementById("photo-shutter");
 const previewMode = new URLSearchParams(window.location.search).get("preview") === "1";
@@ -476,15 +480,17 @@ const visualSettings = {
   noiseResolution: 1.0,
   gasResolution: 1.0,
   starMax: 4000,
-  ringDetail: 1.0
+  ringDetail: 1.0,
+  cloudResolution: 1.0,
+  skyResolution: 1.0
 };
 
 const VISUAL_SETTING_PRESETS = {
-  ultra: { frameRate: "unlimited", resolutionScale: 2.0, lightingScale: 1.2, particleMax: 2000, noiseResolution: 2.0, gasResolution: 2.0, starMax: 4000, ringDetail: 1.25 },
-  high: { frameRate: "unlimited", resolutionScale: 1.5, lightingScale: 1.1, particleMax: 1600, noiseResolution: 1.5, gasResolution: 1.5, starMax: 3600, ringDetail: 1.0 },
-  default: { frameRate: "unlimited", resolutionScale: 1.0, lightingScale: 1.0, particleMax: 1000, noiseResolution: 1.0, gasResolution: 1.0, starMax: 4000, ringDetail: 1.0 },
-  low: { frameRate: "30", resolutionScale: 0.75, lightingScale: 0.85, particleMax: 800, noiseResolution: 0.75, gasResolution: 0.75, starMax: 2000, ringDetail: 0.75 },
-  potato: { frameRate: "24", resolutionScale: 0.5, lightingScale: 0.7, particleMax: 400, noiseResolution: 0.5, gasResolution: 0.5, starMax: 800, ringDetail: 0.5 }
+  ultra: { frameRate: "unlimited", resolutionScale: 2.0, lightingScale: 1.2, particleMax: 2000, noiseResolution: 2.0, gasResolution: 2.0, starMax: 4000, ringDetail: 1.25, cloudResolution: 1.0, skyResolution: 1.0 },
+  high: { frameRate: "unlimited", resolutionScale: 1.5, lightingScale: 1.1, particleMax: 1600, noiseResolution: 1.5, gasResolution: 1.5, starMax: 3600, ringDetail: 1.0, cloudResolution: 1.0, skyResolution: 1.0 },
+  default: { frameRate: "unlimited", resolutionScale: 1.0, lightingScale: 1.0, particleMax: 1000, noiseResolution: 1.0, gasResolution: 1.0, starMax: 4000, ringDetail: 1.0, cloudResolution: 1.0, skyResolution: 1.0 },
+  low: { frameRate: "30", resolutionScale: 0.75, lightingScale: 0.85, particleMax: 800, noiseResolution: 0.75, gasResolution: 0.75, starMax: 2000, ringDetail: 0.75, cloudResolution: 0.75, skyResolution: 0.75 },
+  potato: { frameRate: "24", resolutionScale: 0.5, lightingScale: 0.7, particleMax: 400, noiseResolution: 0.5, gasResolution: 0.5, starMax: 800, ringDetail: 0.5, cloudResolution: 0.5, skyResolution: 0.5 }
 };
 
 let frameCapTargetMs = 0;
@@ -1171,6 +1177,11 @@ function applyVisualSettings() {
   refreshSunLighting();
   updateSpaceBackgroundUniforms();
   
+  // Regenerate volumetric clouds if cloud resolution changed
+  if (planet && planet._regenerateVolumetricClouds) {
+    planet._regenerateVolumetricClouds();
+  }
+  
   // Update starfield if it exists
   if (starField?.material?.uniforms?.uPixelRatio) {
     starField.material.uniforms.uPixelRatio.value = pixelRatio;
@@ -1422,7 +1433,8 @@ async function initializeApp() {
         gradientIntensity: THREE.MathUtils.clamp(0.38 * backgroundBrightness, 0.15, 1.1),
         baseColor: "#05070f",
         nebulaColor1: `#${nebula1.getHexString()}`,
-        nebulaColor2: `#${nebula2.getHexString()}`
+        nebulaColor2: `#${nebula2.getHexString()}`,
+        skyResolution: visualSettings?.skyResolution ?? 1.0
       });
       scene.add(spaceBackground);
     }
@@ -1445,6 +1457,8 @@ async function initializeApp() {
 
   // Phase 4: Create planet object
   updateLoadingStatus("Loading planet...");
+  // Pass visualSettings to guiControllers for Planet to access
+  guiControllers.visualSettings = visualSettings;
   planet = new Planet(scene, params, guiControllers);
   // Update planet reference in GUI controllers
   guiControllers.planet = planet;
@@ -2664,7 +2678,9 @@ function setupMobilePanelToggle() {
         noiseResolution: 1.0,
         gasResolution: 1.0,
         starMax: 4000,
-        ringDetail: 1.0
+        ringDetail: 1.0,
+        cloudResolution: 1.0,
+        skyResolution: 1.0
       });
       updateVisualSettingsUI();
       applyVisualSettings();
@@ -3157,6 +3173,22 @@ function updateVisualSettingsUI() {
       ringDetailValue.textContent = Math.round(visualSettings.ringDetail * 100) + "%";
     }
   }
+  
+  // Update cloud resolution
+  if (cloudResolutionInput) {
+    cloudResolutionInput.value = visualSettings.cloudResolution;
+    if (cloudResolutionValue) {
+      cloudResolutionValue.textContent = Math.round(visualSettings.cloudResolution * 100) + "%";
+    }
+  }
+  
+  // Update sky resolution
+  if (skyResolutionInput) {
+    skyResolutionInput.value = visualSettings.skyResolution;
+    if (skyResolutionValue) {
+      skyResolutionValue.textContent = Math.round(visualSettings.skyResolution * 100) + "%";
+    }
+  }
 }
 
 function setupVisualSettingsControls() {
@@ -3238,6 +3270,28 @@ function setupVisualSettingsControls() {
     if (ringDetailValue) {
       ringDetailValue.textContent = Math.round(visualSettings.ringDetail * 100) + "%";
     }
+  });
+  
+  // Cloud resolution
+  cloudResolutionInput?.addEventListener("input", (e) => {
+    visualSettings.cloudResolution = parseFloat(e.target.value);
+    if (cloudResolutionValue) {
+      cloudResolutionValue.textContent = Math.round(visualSettings.cloudResolution * 100) + "%";
+    }
+    // Regenerate volumetric clouds when resolution changes
+    if (planet) {
+      planet._regenerateVolumetricClouds();
+    }
+  });
+  
+  // Sky resolution
+  skyResolutionInput?.addEventListener("input", (e) => {
+    visualSettings.skyResolution = parseFloat(e.target.value);
+    if (skyResolutionValue) {
+      skyResolutionValue.textContent = Math.round(visualSettings.skyResolution * 100) + "%";
+    }
+    // Update space background when resolution changes
+    updateSpaceBackgroundUniforms();
   });
 }
 
@@ -3356,6 +3410,10 @@ function computeNebulaPalette() {
 function updateSpaceBackgroundUniforms() {
     if (!spaceBackground?.material?.uniforms) return;
     const uniforms = spaceBackground.material.uniforms;
+    // Update sky resolution uniform
+    if (uniforms.uSkyResolution) {
+        uniforms.uSkyResolution.value = visualSettings?.skyResolution ?? 1.0;
+    }
     const [nebula1, nebula2] = computeNebulaPalette();
     const starCountFactor = getStarfieldCount(params.starCount ?? 2000) / 2200;
     const backgroundBrightness = THREE.MathUtils.clamp(params.spaceBackgroundBrightness ?? 1, 0.2, 3.0);

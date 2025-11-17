@@ -662,8 +662,10 @@ export class Planet {
     _createVolumetricCloud({ puffCount, spread, flatness, puffSize }) {
         if (!this.volumetricCloudMaterial) return null;
         const flatnessFactor = 1.0 - THREE.MathUtils.clamp(flatness ?? 0.0, 0.0, 0.95);
+        // Apply cloud resolution scaling
+        const cloudResolution = this.guiControllers?.visualSettings?.cloudResolution ?? 1.0;
         const particlesPerCloud = THREE.MathUtils.clamp(this.params.volumetricCloudParticlesPerCloud ?? 320, 80, 1600);
-        const totalParticles = Math.max(80, Math.floor(particlesPerCloud));
+        const totalParticles = Math.max(80, Math.floor(particlesPerCloud * cloudResolution));
         const positions = [];
 
         const puffs = Math.max(1, Math.floor(puffCount ?? 4));
@@ -727,11 +729,13 @@ export class Planet {
         this._clearVolumetricClouds();
 
         const baseRadius = this.planetMesh.scale.x || 1;
+        // Apply cloud resolution scaling
+        const cloudResolution = this.guiControllers?.visualSettings?.cloudResolution ?? 1.0;
         const sizeMul = THREE.MathUtils.clamp(this.params.volumetricCloudSize ?? 1.0, 0.4, 2.4);
         const spread = THREE.MathUtils.clamp(this.params.volumetricCloudSpread ?? 0.4, 0.05, 1.8) * baseRadius * sizeMul;
         const puffSize = THREE.MathUtils.clamp(this.params.volumetricCloudPuffSize ?? 0.28, 0.05, 1.6) * baseRadius * sizeMul;
-        const puffCount = Math.max(1, Math.floor(this.params.volumetricCloudPuffCount ?? 8));
-        const count = Math.max(0, Math.floor(this.params.volumetricCloudCount ?? 18));
+        const puffCount = Math.max(1, Math.floor((this.params.volumetricCloudPuffCount ?? 8) * cloudResolution));
+        const count = Math.max(0, Math.floor((this.params.volumetricCloudCount ?? 18) * cloudResolution));
         const flatness = THREE.MathUtils.clamp(this.params.volumetricCloudFlatness ?? 0.45, 0.0, 0.95);
         const heightMul = THREE.MathUtils.clamp(this.params.volumetricCloudHeight ?? 1.0, 0.5, 2.0);
         const innerBase = this._volumetricCloudBaseShell?.inner ?? 0.05;

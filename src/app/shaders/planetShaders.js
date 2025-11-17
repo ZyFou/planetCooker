@@ -666,6 +666,7 @@ export const spaceBackgroundFragmentShader = `
     uniform float uNebulaIntensity;
     uniform float uStarDensity;
     uniform float uGradientIntensity;
+    uniform float uSkyResolution;
     uniform vec3 uBaseColor;
     uniform vec3 uNebulaColor1;
     uniform vec3 uNebulaColor2;
@@ -687,7 +688,9 @@ export const spaceBackgroundFragmentShader = `
 
         vec3 coord = dir * 2.2 + vec3(time * 0.12, time * 0.08, -time * 0.06);
         vec3 warped = domainWarp(coord, 0.45, 1.2, 0.27);
-        float nebula = fbm(coord + warped, 5, 0.55, 2.05);
+        // Reduce octaves based on sky resolution (5 octaves at 1.0, 3 at 0.5, 2 at 0.25)
+        int nebulaOctaves = int(mix(2.0, 5.0, clamp(uSkyResolution, 0.0, 1.0)));
+        float nebula = fbm(coord + warped, nebulaOctaves, 0.55, 2.05);
         nebula = clamp((nebula + 1.0) * 0.5, 0.0, 1.0);
         nebula = pow(nebula, 2.4);
         float nebulaMask = smoothstep(0.15, 0.8, nebula);
