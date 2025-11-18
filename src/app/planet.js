@@ -48,7 +48,7 @@ export class Planet {
         this.spinGroup.add(this.ringGroup);
         this.ringMeshes = [];
         this.ringTextures = [];
-        
+
         // Create groups for moons
         this.moonsGroup = new THREE.Group();
         this.planetRoot.add(this.moonsGroup);
@@ -59,7 +59,7 @@ export class Planet {
         this.sunDirection = new THREE.Vector3(1.0, 0.5, 1.0).normalize();
 
         // Create geometry (high detail icosahedron)
-        this.geometry = new THREE.IcosahedronGeometry(1, 128);
+        this.geometry = new THREE.IcosahedronGeometry(1, 96);
 
         if (this.params.noiseType === undefined) this.params.noiseType = 'classic';
         if (this.params.noiseVariant === undefined) this.params.noiseVariant = 0.5;
@@ -201,22 +201,22 @@ export class Planet {
         canvas.width = 1024;
         canvas.height = 512;
         const ctx = canvas.getContext('2d');
-        
+
         // Generate seamless cloud texture
         ctx.fillStyle = 'black';
         ctx.fillRect(0, 0, 1024, 512);
-        
+
         // Use a seed for consistent random generation
         let seed = 12345;
         const random = () => {
             seed = (seed * 9301 + 49297) % 233280;
             return seed / 233280;
         };
-        
+
         // Generate clouds with blur
         ctx.filter = 'blur(30px)';
         ctx.fillStyle = 'rgba(255,255,255,0.4)';
-        
+
         // Generate clouds, ensuring seamless wrapping
         // Store cloud positions to duplicate near edges
         const clouds = [];
@@ -225,12 +225,12 @@ export class Planet {
             const y = random() * 512;
             const radius = random() * 50 + 20;
             clouds.push({ x, y, radius });
-            
+
             ctx.beginPath();
             ctx.arc(x, y, radius, 0, Math.PI * 2);
             ctx.fill();
         }
-        
+
         // Duplicate clouds near the edges to ensure seamless wrapping
         // Clouds within 100px of the right edge should also appear on the left
         for (const cloud of clouds) {
@@ -247,14 +247,14 @@ export class Planet {
                 ctx.fill();
             }
         }
-        
+
         ctx.filter = 'none';
-        
+
         // Get image data to ensure seamless wrapping
         const imageData = ctx.getImageData(0, 0, 1024, 512);
         const data = imageData.data;
         const edgeBlendWidth = 30; // Pixels to blend at the seam
-        
+
         // Make the texture seamless by blending the left and right edges
         for (let y = 0; y < 512; y++) {
             for (let x = 0; x < edgeBlendWidth; x++) {
@@ -262,26 +262,26 @@ export class Planet {
                 const leftIdx = (y * 1024 + x) * 4;
                 // Right edge pixel (from right side, matching position)
                 const rightIdx = (y * 1024 + (1024 - 1 - x)) * 4;
-                
+
                 // Average the left and right edge pixels for seamless blending
                 const avgR = (data[leftIdx] + data[rightIdx]) * 0.5;
                 const avgG = (data[leftIdx + 1] + data[rightIdx + 1]) * 0.5;
                 const avgB = (data[leftIdx + 2] + data[rightIdx + 2]) * 0.5;
                 const avgA = (data[leftIdx + 3] + data[rightIdx + 3]) * 0.5;
-                
+
                 // Apply blended values to both edges
                 data[leftIdx] = avgR;
                 data[leftIdx + 1] = avgG;
                 data[leftIdx + 2] = avgB;
                 data[leftIdx + 3] = avgA;
-                
+
                 data[rightIdx] = avgR;
                 data[rightIdx + 1] = avgG;
                 data[rightIdx + 2] = avgB;
                 data[rightIdx + 3] = avgA;
             }
         }
-        
+
         ctx.putImageData(imageData, 0, 0);
 
         const texture = new THREE.CanvasTexture(canvas);
@@ -292,7 +292,7 @@ export class Planet {
 
     setPlanetType(type) {
         this.params.planetType = type;
-        
+
         if (type === 'gas') {
             this.planetMesh.material = this.gasMaterial;
             this.planetMesh.scale.setScalar(this.params.gasPlanetSize ?? 1.0);
@@ -452,7 +452,7 @@ export class Planet {
         // Rotate planet
         const rotationDelta = (this.params.rotationSpeed ?? 0.05) * delta * Math.PI * 2;
         this.spinGroup.rotation.y += rotationDelta;
-        
+
         // Rotate clouds and atmosphere
         this.cloudMesh.rotation.y += rotationDelta * 1.2;
         this.atmosphereMesh.rotation.y += rotationDelta * 0.1;
@@ -464,7 +464,7 @@ export class Planet {
         if (this.params.ringSpinSpeed !== undefined) {
             this.ringGroup.rotation.y += this.params.ringSpinSpeed * delta;
         }
-        
+
         // Rotate individual rings (each ring can have its own spin speed)
         this.ringMeshes.forEach((ringMesh, index) => {
             const ringData = this.params.rings?.[index];
@@ -477,7 +477,7 @@ export class Planet {
     // Moon and ring methods
     updateMoons() {
         if (!this.params.moonSettings) return;
-        
+
         // Clear existing moons
         while (this.moonsGroup.children.length > 0) {
             const child = this.moonsGroup.children[0];
@@ -502,7 +502,7 @@ export class Planet {
             // Create moon pivot (for orbit)
             const moonPivot = new THREE.Group();
             moonPivot.userData.moonIndex = i;
-            
+
             // Create moon mesh
             const moonGeometry = new THREE.SphereGeometry(moon.size || 0.2, 16, 16);
             const moonMaterial = new THREE.MeshStandardMaterial({
@@ -569,7 +569,7 @@ export class Planet {
             const segments = 128; // Increased for smoother rings
 
             const ringGeometry = new THREE.RingGeometry(innerRadius, outerRadius, segments);
-            
+
             let texture;
             try {
                 const innerRatio = innerRadius / outerRadius;
@@ -633,7 +633,7 @@ export class Planet {
         if (this.params.axisTilt !== undefined) {
             this.planetRoot.rotation.z = (this.params.axisTilt * Math.PI) / 180;
         }
-        
+
         // Apply ring angle (independent of axis tilt)
         if (this.params.ringAngle !== undefined && this.ringGroup) {
             this.ringGroup.rotation.z = (this.params.ringAngle * Math.PI) / 180;
@@ -661,8 +661,7 @@ export class Planet {
         return texture;
     }
 
-    _createVolumetricCloud({ puffCount, spread, flatness, puffSize }) {
-        if (!this.volumetricCloudMaterial) return null;
+    _createVolumetricCloudPositions({ puffCount, spread, flatness, puffSize }) {
         const flatnessFactor = 1.0 - THREE.MathUtils.clamp(flatness ?? 0.0, 0.0, 0.95);
         // Apply cloud resolution scaling
         const cloudResolution = this.guiControllers?.visualSettings?.cloudResolution ?? 1.0;
@@ -695,10 +694,7 @@ export class Planet {
                 );
             }
         }
-
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-        return new THREE.Points(geometry, this.volumetricCloudMaterial);
+        return positions;
     }
 
     _clearVolumetricClouds() {
@@ -749,9 +745,12 @@ export class Planet {
         const outer = baseRadius * (1 + outerBase * heightMul);
 
         const up = new THREE.Vector3(0, 1, 0);
+        const allPositions = [];
+        const tempVec = new THREE.Vector3();
+
         for (let i = 0; i < count; i++) {
-            const cloud = this._createVolumetricCloud({ puffCount, spread, flatness, puffSize });
-            if (!cloud) continue;
+            const cloudPositions = this._createVolumetricCloudPositions({ puffCount, spread, flatness, puffSize });
+            if (!cloudPositions || cloudPositions.length === 0) continue;
 
             const dir = new THREE.Vector3(
                 Math.random() * 2 - 1,
@@ -764,12 +763,24 @@ export class Planet {
             }
             dir.normalize();
             const altitude = THREE.MathUtils.lerp(inner, outer, Math.random());
-            cloud.position.copy(dir).multiplyScalar(altitude);
+            const cloudPos = dir.clone().multiplyScalar(altitude);
 
             const quaternion = new THREE.Quaternion().setFromUnitVectors(up, dir);
-            cloud.quaternion.copy(quaternion);
 
-            this.volumetricCloudGroup.add(cloud);
+            // Transform local cloud points to world space and add to big list
+            for (let j = 0; j < cloudPositions.length; j += 3) {
+                tempVec.set(cloudPositions[j], cloudPositions[j + 1], cloudPositions[j + 2]);
+                tempVec.applyQuaternion(quaternion);
+                tempVec.add(cloudPos);
+                allPositions.push(tempVec.x, tempVec.y, tempVec.z);
+            }
+        }
+
+        if (allPositions.length > 0) {
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(allPositions, 3));
+            const cloudMesh = new THREE.Points(geometry, this.volumetricCloudMaterial);
+            this.volumetricCloudGroup.add(cloudMesh);
         }
     }
 

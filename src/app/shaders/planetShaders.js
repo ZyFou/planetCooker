@@ -181,23 +181,28 @@ export const terrainVertexShader = `
         hm = 1.0 - abs(hm);
         hm = pow(hm, 3.0);
 
-        // Alternate noise flavors
-        float ridged = fbmRidged(continentCoord * (2.0 + variant), 6, mix(0.35, uRoughness, 0.6), uDetail + 0.5);
-        float billow = fbmBillow(continentCoord * (1.2 + variant * 0.6), 6, mix(0.5, uRoughness, 0.5), uDetail * (0.9 + variant * 0.4));
-        float warpStrength = mix(0.18, 0.55, variant);
-        vec3 warpedCoord = continentCoord + domainWarp(continentCoord, warpStrength, 1.3 + variant * 2.2, variant);
-        float warped = fbm(warpedCoord, 6, uRoughness, uDetail * (1.1 + variant * 0.3));
-
         // Combine and normalize roughly to [0, 1]
         float noiseType = clamp(uNoiseType, 0.0, 3.0);
         float finalHeight;
+
+        // Optimize: Only calculate the noise needed for the current type
         if (noiseType < 0.5) {
+            // Classic
             finalHeight = (h * 0.55 + hm * 0.45) + 0.5;
         } else if (noiseType < 1.5) {
+            // Ridged
+            float ridged = fbmRidged(continentCoord * (2.0 + variant), 6, mix(0.35, uRoughness, 0.6), uDetail + 0.5);
             finalHeight = mix(h + 0.5, h * 0.35 + ridged * 0.65 + 0.5, 0.75);
         } else if (noiseType < 2.5) {
+            // Billowy
+            float billow = fbmBillow(continentCoord * (1.2 + variant * 0.6), 6, mix(0.5, uRoughness, 0.5), uDetail * (0.9 + variant * 0.4));
             finalHeight = mix(h + 0.5, billow * 0.75 + 0.25, 0.7);
         } else {
+            // Warped
+            float warpStrength = mix(0.18, 0.55, variant);
+            vec3 warpedCoord = continentCoord + domainWarp(continentCoord, warpStrength, 1.3 + variant * 2.2, variant);
+            float warped = fbm(warpedCoord, 6, uRoughness, uDetail * (1.1 + variant * 0.3));
+            
             float blend = mix(0.6, 0.85, variant);
             finalHeight = mix(h + 0.5, warped * blend + 0.5 * (1.0 - blend), blend);
         }
@@ -474,23 +479,28 @@ export const flatTerrainVertexShader = `
         hm = 1.0 - abs(hm);
         hm = pow(hm, 3.0);
 
-        // Alternate noise flavors
-        float ridged = fbmRidged(continentCoord * (2.0 + variant), 6, mix(0.35, uRoughness, 0.6), uDetail + 0.5);
-        float billow = fbmBillow(continentCoord * (1.2 + variant * 0.6), 6, mix(0.5, uRoughness, 0.5), uDetail * (0.9 + variant * 0.4));
-        float warpStrength = mix(0.18, 0.55, variant);
-        vec3 warpedCoord = continentCoord + domainWarp(continentCoord, warpStrength, 1.3 + variant * 2.2, variant);
-        float warped = fbm(warpedCoord, 6, uRoughness, uDetail * (1.1 + variant * 0.3));
-
         // Combine and normalize roughly to [0, 1]
         float noiseType = clamp(uNoiseType, 0.0, 3.0);
         float finalHeight;
+
+        // Optimize: Only calculate the noise needed for the current type
         if (noiseType < 0.5) {
+            // Classic
             finalHeight = (h * 0.55 + hm * 0.45) + 0.5;
         } else if (noiseType < 1.5) {
+            // Ridged
+            float ridged = fbmRidged(continentCoord * (2.0 + variant), 6, mix(0.35, uRoughness, 0.6), uDetail + 0.5);
             finalHeight = mix(h + 0.5, h * 0.35 + ridged * 0.65 + 0.5, 0.75);
         } else if (noiseType < 2.5) {
+            // Billowy
+            float billow = fbmBillow(continentCoord * (1.2 + variant * 0.6), 6, mix(0.5, uRoughness, 0.5), uDetail * (0.9 + variant * 0.4));
             finalHeight = mix(h + 0.5, billow * 0.75 + 0.25, 0.7);
         } else {
+            // Warped
+            float warpStrength = mix(0.18, 0.55, variant);
+            vec3 warpedCoord = continentCoord + domainWarp(continentCoord, warpStrength, 1.3 + variant * 2.2, variant);
+            float warped = fbm(warpedCoord, 6, uRoughness, uDetail * (1.1 + variant * 0.3));
+            
             float blend = mix(0.6, 0.85, variant);
             finalHeight = mix(h + 0.5, warped * blend + 0.5 * (1.0 - blend), blend);
         }
