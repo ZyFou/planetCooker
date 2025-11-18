@@ -23,6 +23,7 @@ const rockyPlanetPresets = {
         atmosphereReflection: 0.3,
         atmosphereDetail: 2.0,
         atmosphereFalloff: 2.0,
+        atmosphereHeight: 1.15,
         atmosphereColor: "#3a9eff"
     },
     'Mars': {
@@ -45,6 +46,7 @@ const rockyPlanetPresets = {
         atmosphereReflection: 0.2,
         atmosphereDetail: 1.5,
         atmosphereFalloff: 2.5,
+        atmosphereHeight: 1.1,
         atmosphereColor: "#ff6b47"
     },
     'Venus': {
@@ -67,6 +69,7 @@ const rockyPlanetPresets = {
         atmosphereReflection: 0.4,
         atmosphereDetail: 2.5,
         atmosphereFalloff: 1.8,
+        atmosphereHeight: 1.25,
         atmosphereColor: "#ffa500"
     },
     'Moon': {
@@ -85,6 +88,7 @@ const rockyPlanetPresets = {
         colorMountainHigh: "#c0c0c0",
         colorSnow: "#d3d3d3",
         atmosphereDensity: 0.0,
+        atmosphereHeight: 1.0,
         atmosphereColor: "#000000"
     },
     'Ocean World': {
@@ -107,6 +111,7 @@ const rockyPlanetPresets = {
         atmosphereReflection: 0.35,
         atmosphereDetail: 2.2,
         atmosphereFalloff: 2.0,
+        atmosphereHeight: 1.15,
         atmosphereColor: "#4a9eff"
     },
     'Desert Planet': {
@@ -129,6 +134,7 @@ const rockyPlanetPresets = {
         atmosphereReflection: 0.25,
         atmosphereDetail: 1.8,
         atmosphereFalloff: 2.2,
+        atmosphereHeight: 1.12,
         atmosphereColor: "#ffd700"
     }
 };
@@ -254,6 +260,7 @@ export function setupPlanetControls({
             atmosphereReflection: false,
             atmosphereDetail: false,
             atmosphereFalloff: false,
+            atmosphereHeight: false,
             atmosphereColor: false,
             gasPlanetSize: false,
             gasStripeSpeed: false,
@@ -663,6 +670,7 @@ export function setupPlanetControls({
     addSliderWithPercentAndLock(folderAtmo, 'atmosphereReflection', 'Reflection', 0.0, 1.0, () => {});
     addSliderWithPercentAndLock(folderAtmo, 'atmosphereDetail', 'Detail', 0.0, 5.0, () => {});
     addSliderWithPercentAndLock(folderAtmo, 'atmosphereFalloff', 'Falloff', 0.5, 5.0, () => {});
+    addSliderWithPercentAndLock(folderAtmo, 'atmosphereHeight', 'Height', 1.0, 2.0, () => {});
     addColorWithLock(folderAtmo, 'atmosphereColor', 'Color', () => {});
     folderAtmo.add(params, 'rotationSpeed', 0.0, 0.5).name('Rotation Speed').onChange(v => {
         if (scheduleShareUpdate) scheduleShareUpdate();

@@ -145,7 +145,8 @@ export class Planet {
         this.planetMesh.scale.setScalar(params.planetSize ?? 1.0);
 
         // Create atmosphere
-        const atmoGeometry = new THREE.IcosahedronGeometry(1.15, 64); // Increased detail for better quality
+        const atmosphereHeight = params.atmosphereHeight ?? 1.15;
+        const atmoGeometry = new THREE.IcosahedronGeometry(1.0, 64); // Base size 1.0, scaled by atmosphereHeight
         this.atmosphereUniforms = {
             uSunDirection: { value: this.sunDirection.clone() },
             uAtmosphereColor: { value: new THREE.Color(params.atmosphereColor ?? "#3a9eff") },
@@ -167,7 +168,7 @@ export class Planet {
         });
         this.atmosphereMesh = new THREE.Mesh(atmoGeometry, atmoMaterial);
         this.spinGroup.add(this.atmosphereMesh);
-        this.atmosphereMesh.scale.setScalar((params.planetSize ?? 1.0) * 1.15);
+        this.atmosphereMesh.scale.setScalar((params.planetSize ?? 1.0) * atmosphereHeight);
 
         // Create clouds (simple CanvasTexture as in planet.html)
         this.cloudTexture = this._generateCloudTexture();
@@ -301,7 +302,8 @@ export class Planet {
         if (type === 'gas') {
             this.planetMesh.material = this.gasMaterial;
             this.planetMesh.scale.setScalar(this.params.gasPlanetSize ?? 1.0);
-            this.atmosphereMesh.scale.setScalar((this.params.gasPlanetSize ?? 1.0) * 1.15);
+            const atmosphereHeight = this.params.atmosphereHeight ?? 1.15;
+            this.atmosphereMesh.scale.setScalar((this.params.gasPlanetSize ?? 1.0) * atmosphereHeight);
             this.cloudMesh.visible = false;
             this.atmosphereMesh.visible = false;
             if (this.volumetricCloudGroup) {
@@ -310,7 +312,8 @@ export class Planet {
         } else {
             this.planetMesh.material = this.rockyMaterial;
             this.planetMesh.scale.setScalar(this.params.planetSize ?? 1.0);
-            this.atmosphereMesh.scale.setScalar((this.params.planetSize ?? 1.0) * 1.15);
+            const atmosphereHeight = this.params.atmosphereHeight ?? 1.15;
+            this.atmosphereMesh.scale.setScalar((this.params.planetSize ?? 1.0) * atmosphereHeight);
             this.cloudMesh.scale.setScalar((this.params.planetSize ?? 1.0) * 1.03);
             this.cloudMesh.visible = true;
             this.atmosphereMesh.visible = true;
@@ -407,16 +410,25 @@ export class Planet {
         });
 
         // Update scales
+        const atmosphereHeight = this.params.atmosphereHeight ?? 1.15;
         if (newParams.planetType === 'gas') {
             if (newParams.gasPlanetSize !== undefined) {
                 this.planetMesh.scale.setScalar(newParams.gasPlanetSize);
-                this.atmosphereMesh.scale.setScalar(newParams.gasPlanetSize * 1.15);
+                this.atmosphereMesh.scale.setScalar(newParams.gasPlanetSize * atmosphereHeight);
+            }
+            if (newParams.atmosphereHeight !== undefined) {
+                const height = newParams.atmosphereHeight;
+                this.atmosphereMesh.scale.setScalar((this.params.gasPlanetSize ?? 1.0) * height);
             }
         } else {
             if (newParams.planetSize !== undefined) {
                 this.planetMesh.scale.setScalar(newParams.planetSize);
-                this.atmosphereMesh.scale.setScalar(newParams.planetSize * 1.15);
+                this.atmosphereMesh.scale.setScalar(newParams.planetSize * atmosphereHeight);
                 this.cloudMesh.scale.setScalar(newParams.planetSize * 1.03);
+            }
+            if (newParams.atmosphereHeight !== undefined) {
+                const height = newParams.atmosphereHeight;
+                this.atmosphereMesh.scale.setScalar((this.params.planetSize ?? 1.0) * height);
             }
         }
 
