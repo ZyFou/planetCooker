@@ -14,6 +14,15 @@ export class UniverseManager {
     this.maxSystems = options.maxSystems ?? 64;
     this.systemOptions = options.systemOptions ?? {};
     this.visibility = options.visibility ?? {};
+    this.galaxyOptions = options.galaxyOptions ?? {
+      galaxyRadius: 100000,
+      coreRadius: 15000,
+      spiralArms: 2,
+      armTwist: 0.00015,
+      armWidth: 0.6,
+      thickness: 4000,
+      coreThickness: 8000
+    };
     this.systems = new Map();
 
     this.root = new THREE.Group();
@@ -54,10 +63,11 @@ export class UniverseManager {
     this._ensureSectorsAround(sector);
     this._pruneFarSectors(sector);
 
-    for (const system of this.systems.values()) {
-      const { instance } = system;
+    for (const { instance, empty } of this.systems.values()) {
+      if (empty) continue;
+      const { group } = instance;
       let isVisible = true;
-      if (frustum && instance?.group) {
+      if (frustum && group) {
         const boundingRadius =
           instance.boundingRadius ??
           this.visibility.systemCullDistance ??
@@ -80,14 +90,20 @@ export class UniverseManager {
     }
 
     // Update star indicators with all star positions
-    this._updateStarIndicators(position);
+    // Throttle star indicator updates to every 10 frames or so to save CPU
+    if (!this._frameCounter) this._frameCounter = 0;
+    this._frameCounter++;
+    if (this._frameCounter % 10 === 0) {
+      this._updateStarIndicators(position);
+    }
   }
 
   getNearestPlanet(position) {
     let nearest = null;
     let minDistanceSq = Infinity;
 
-    for (const { instance } of this.systems.values()) {
+    for (const { instance, empty } of this.systems.values()) {
+      if (empty) continue;
       const systemPos = instance.group.position;
       for (const planetEntry of instance.planets) {
         const worldPos = planetEntry.worldPosition.clone();
@@ -110,6 +126,7 @@ export class UniverseManager {
   getAllSystems() {
     const systems = [];
     for (const [key, entry] of this.systems.entries()) {
+      if (entry.empty) continue;
       const { instance, sector } = entry;
       systems.push({
         key,
@@ -176,22 +193,79 @@ export class UniverseManager {
     const key = sectorKey(sector);
     const seed = hashString(key);
     const rng = new SeededRNG(seed);
+
+    // Galaxy generation logic
+    const sectorX = (sector.x + 0.5) * this.sectorSize;
+    const sectorY = (sector.y + 0.5) * this.sectorSize;
+    const sectorZ = (sector.z + 0.5) * this.sectorSize;
+    
+    const distFromCenter = Math.sqrt(sectorX * sectorX + sectorZ * sectorZ);
+    const angle = Math.atan2(sectorZ, sectorX);
+    
+    // Spiral arm density calculation
+    const { galaxyRadius, coreRadius, spiralArms, armTwist, armWidth, thickness, coreThickness } = this.galaxyOptions;
+    
+    // Base radial falloff (gaussian-ish)
+    let density = Math.exp(-Math.pow(distFromCenter / (galaxyRadius * 0.6), 2));
+    
+    // Core density override
+    if (distFromCenter < coreRadius) {
+      density = Math.max(density, 1.0 - (distFromCenter / coreRadius) * 0.2);
+    } else {
+      // Spiral arms
+      const twistAngle = angle + distFromCenter * armTwist;
+      const armPhase = (twistAngle * spiralArms) % (Math.PI * 2);
+      // Normalize to -PI to PI
+      let normPhase = armPhase;
+      if (normPhase > Math.PI) normPhase -= Math.PI * 2;
+      if (normPhase < -Math.PI) normPhase += Math.PI * 2;
+      
+      const armDist = Math.abs(normPhase);
+      // Higher density near arm center
+      const armDensity = Math.max(0, Math.cos(armDist * (1 / armWidth)));
+      density *= (0.3 + 0.7 * armDensity); // Base density + arm boost
+    }
+    
+    // Height attenuation
+    const heightScale = distFromCenter < coreRadius ? coreThickness : thickness;
+    const heightFactor = Math.exp(-Math.abs(sectorY) / (heightScale * 0.5));
+    density *= heightFactor;
+    
+    // Probabilistic culling based on density
+    // We use a threshold to decide if a system exists here
+    // Random value from RNG is [0, 1)
+    if (rng.next() > density * 1.5) { // 1.5 multiplier to tune overall density
+      // No system in this sector
+      this.systems.set(key, {
+        sector,
+        instance: { 
+          group: new THREE.Group(), 
+          planets: [], 
+          dispose: () => {} // dummy dispose
+        },
+        jitter: new THREE.Vector3()
+      });
+      // We still set it so we don't try to reload it constantly
+      // but we mark it as empty so we don't render anything
+      this.systems.get(key).empty = true;
+      return;
+    }
+
     const system = createSolarSystem(this.root, rng, {
       name: `System ${key}`,
       ...this.systemOptions,
       visibility: this.visibility
     });
+    
+    // Position within sector, biased towards galactic plane
     const jitterStrength = this.sectorSize * 0.4;
     const jitter = new THREE.Vector3(
       (rng.next() - 0.5) * jitterStrength,
-      (rng.next() - 0.5) * jitterStrength * 0.45,
+      (rng.next() - 0.5) * jitterStrength * 0.2, // Less vertical jitter
       (rng.next() - 0.5) * jitterStrength
     );
-    const basePosition = new THREE.Vector3(
-      (sector.x + 0.5) * this.sectorSize,
-      (sector.y + 0.5) * this.sectorSize,
-      (sector.z + 0.5) * this.sectorSize
-    );
+    
+    const basePosition = new THREE.Vector3(sectorX, sectorY, sectorZ);
     basePosition.add(jitter);
     system.group.position.copy(basePosition);
     this.systems.set(key, {
@@ -280,7 +354,8 @@ export class UniverseManager {
     const maxStars = this._starIndicators._maxStars;
 
     // Collect all star positions from all systems
-    for (const { instance } of this.systems.values()) {
+    for (const { instance, empty } of this.systems.values()) {
+      if (empty) continue;
       if (!instance.star || !instance.group) continue;
       
       if (starCount >= maxStars) break;
@@ -303,8 +378,6 @@ export class UniverseManager {
     }
 
     // Update geometry
-    this._starIndicators.geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    this._starIndicators.geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
     this._starIndicators.geometry.setDrawRange(0, starCount);
     this._starIndicators.geometry.attributes.position.needsUpdate = true;
     this._starIndicators.geometry.attributes.color.needsUpdate = true;

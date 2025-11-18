@@ -94,12 +94,22 @@ const universe = new UniverseManager(scene, {
   sectorSize: 8000,
   loadRadius: 1,
   visibility: {
-    systemCullDistance: 35000,
-    planetCullDistance: 25000,
-    orbitUpdateDistance: 18000,
+    systemCullDistance: 32000, // Reduced from 35000
+    planetCullDistance: 22000, // Reduced from 25000
+    orbitUpdateDistance: 15000, // Reduced from 18000
     fullDetailDistance: 1500,
     unloadDetailDistance: 2800,
-    placeholderSegments: 16
+    placeholderSegments: 12, // Reduced from 16
+    starBillboardDistance: 60000
+  },
+  galaxyOptions: {
+    galaxyRadius: 150000,
+    coreRadius: 25000,
+    spiralArms: 2,
+    armTwist: 0.00012,
+    armWidth: 0.7,
+    thickness: 5000,
+    coreThickness: 12000
   }
 });
 
@@ -356,7 +366,18 @@ function animate(now) {
   lastFrameTime = now;
   const elapsedSeconds = now * 0.001;
 
-  const nearest = universe.getNearestPlanet(ship.position);
+  // Throttle expensive nearest-planet search to every ~100ms
+  if (!window._lastNearestUpdate || now - window._lastNearestUpdate > 100) {
+    const nearest = universe.getNearestPlanet(ship.position);
+    window._lastNearestPlanet = nearest;
+    window._lastNearestUpdate = now;
+    
+    // Update HUD only when we update nearest info
+    const speed = ship.velocity.length();
+    updateHud(speed, nearest);
+  }
+  
+  const nearest = window._lastNearestPlanet;
   let focusDistance = null;
 
   if (nearest) {
@@ -384,12 +405,10 @@ function animate(now) {
 
   updateTrackingLine();
 
-  const speed = ship.velocity.length();
-
-  updateHud(speed, nearest);
+  // HUD updated in throttled block above
 
   // Update map if visible
-  if (universeMap) {
+  if (universeMap && universeMap.isVisible) {
     universeMap.update();
   }
 

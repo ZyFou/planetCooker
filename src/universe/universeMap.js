@@ -13,8 +13,12 @@ export class UniverseMap {
     this.raycaster = new THREE.Raycaster();
     this.mouse = new THREE.Vector2();
     this.systemMarkers = new Map();
+    this.markerMeshes = []; // Cache for raycasting
     this.shipMarker = null;
     this.trackingLine = null;
+    
+    // Shared geometry for all system markers to save memory
+    this.markerGeometry = new THREE.IcosahedronGeometry(400, 1);
 
     // Create map scene
     this.scene = new THREE.Scene();
@@ -141,8 +145,8 @@ export class UniverseMap {
     this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
     this.raycaster.setFromCamera(this.mouse, this.camera);
-    const markerMeshes = Array.from(this.systemMarkers.values()).map(m => m.mesh);
-    const intersects = this.raycaster.intersectObjects(markerMeshes, false);
+    // Use cached array
+    const intersects = this.raycaster.intersectObjects(this.markerMeshes, false);
 
     if (intersects.length > 0) {
       // Temporarily disable OrbitControls to allow click
@@ -159,6 +163,7 @@ export class UniverseMap {
 
   _onMouseMove(event) {
     if (!this.isVisible) return;
+    // Optional: throttling mouse move could also help if we had hover effects
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -177,16 +182,16 @@ export class UniverseMap {
     this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-    console.log("Click on map canvas, mouse coords:", this.mouse);
+    // console.log("Click on map canvas, mouse coords:", this.mouse);
 
     // Update raycaster with current camera and mouse position
     this.raycaster.setFromCamera(this.mouse, this.camera);
-    const markerMeshes = Array.from(this.systemMarkers.values()).map(m => m.mesh);
     
-    console.log("Checking intersection with", markerMeshes.length, "markers");
-    const intersects = this.raycaster.intersectObjects(markerMeshes, false);
+    // Use cached array
+    // console.log("Checking intersection with", this.markerMeshes.length, "markers");
+    const intersects = this.raycaster.intersectObjects(this.markerMeshes, false);
 
-    console.log("Click detected, intersects:", intersects.length);
+    // console.log("Click detected, intersects:", intersects.length);
     if (intersects.length > 0) {
       // Prevent orbit controls from panning when clicking on a system
       event.preventDefault();
@@ -194,8 +199,6 @@ export class UniverseMap {
       const marker = intersects[0].object.userData.marker;
       console.log("System clicked:", marker.systemData.name);
       this._selectSystem(marker.systemData);
-    } else {
-      console.log("No system clicked - click was on empty space");
     }
   }
 
@@ -207,21 +210,20 @@ export class UniverseMap {
   }
 
   _createSystemMarker(systemData) {
-    // Make markers larger and more visible
-    const geometry = new THREE.SphereGeometry(500, 16, 16);
+    // Use shared geometry
     const material = new THREE.MeshBasicMaterial({
       color: systemData.star?.color ?? 0xffffff,
       emissive: systemData.star?.color ?? 0xffffff,
       emissiveIntensity: 0.5
     });
-    const mesh = new THREE.Mesh(geometry, material);
+    const mesh = new THREE.Mesh(this.markerGeometry, material);
     mesh.userData.marker = { systemData };
     mesh.position.copy(systemData.position);
     
     // Make sure the mesh is pickable
     mesh.raycast = THREE.Mesh.prototype.raycast;
 
-    console.log("Created marker for system:", systemData.name, "at position:", systemData.position);
+    // console.log("Created marker for system:", systemData.name, "at position:", systemData.position);
     return { mesh, systemData };
   }
 
@@ -318,13 +320,14 @@ export class UniverseMap {
     for (const [key, marker] of this.systemMarkers.entries()) {
       if (!currentKeys.has(key)) {
         this.scene.remove(marker.mesh);
-        marker.mesh.geometry.dispose();
+        // geometry is shared, don't dispose it here
         marker.mesh.material.dispose();
         this.systemMarkers.delete(key);
       }
     }
 
     // Add/update markers for current systems
+    let markersChanged = false;
     for (const systemData of systems) {
       if (this.systemMarkers.has(systemData.key)) {
         // Update existing marker position
@@ -336,7 +339,12 @@ export class UniverseMap {
         const marker = this._createSystemMarker(systemData);
         this.scene.add(marker.mesh);
         this.systemMarkers.set(systemData.key, marker);
+        markersChanged = true;
       }
+    }
+    
+    if (markersChanged || this.markerMeshes.length !== this.systemMarkers.size) {
+      this.markerMeshes = Array.from(this.systemMarkers.values()).map(m => m.mesh);
     }
 
     // Update controls target to ship position (but allow user to override)
@@ -456,10 +464,14 @@ export class UniverseMap {
 
     for (const marker of this.systemMarkers.values()) {
       this.scene.remove(marker.mesh);
-      marker.mesh.geometry.dispose();
+      // Geometry shared, not disposed
       marker.mesh.material.dispose();
     }
     this.systemMarkers.clear();
+    this.markerMeshes = [];
+    if (this.markerGeometry) {
+      this.markerGeometry.dispose();
+    }
 
     if (this.shipMarker) {
       this.scene.remove(this.shipMarker);
