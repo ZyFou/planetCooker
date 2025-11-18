@@ -126,6 +126,72 @@ const ship = new ShipController(camera, {
 const hudSpeed = document.getElementById("hud-speed");
 const hudTarget = document.getElementById("hud-target");
 const pointerHint = document.getElementById("pointer-hint");
+const hudFps = document.getElementById("hud-fps");
+const fpsSettings = document.getElementById("fps-settings");
+const fpsToggle = document.getElementById("fps-toggle");
+const fpsTargetInput = document.getElementById("fps-target");
+
+// FPS tracking
+let fpsFrameCount = 0;
+let fpsLastTime = 0;
+let currentFPS = 0;
+let showFPS = true;
+let targetFPS = 60;
+let minFrameTime = 1000 / targetFPS;
+
+// FPS settings panel
+let fpsSettingsVisible = false;
+
+function updateFPSSettings() {
+  if (fpsToggle) {
+    showFPS = fpsToggle.checked;
+    if (hudFps) {
+      hudFps.hidden = !showFPS;
+    }
+  }
+  if (fpsTargetInput) {
+    targetFPS = Math.max(30, Math.min(144, parseInt(fpsTargetInput.value) || 60));
+    minFrameTime = 1000 / targetFPS;
+  }
+}
+
+function toggleFPSSettings() {
+  fpsSettingsVisible = !fpsSettingsVisible;
+  if (fpsSettings) {
+    fpsSettings.hidden = !fpsSettingsVisible;
+  }
+  if (fpsSettingsVisible) {
+    // Exit pointer lock when opening settings
+    if (document.pointerLockElement) {
+      document.exitPointerLock();
+    }
+  }
+}
+
+// Initialize FPS settings
+if (fpsToggle) {
+  fpsToggle.addEventListener("change", updateFPSSettings);
+}
+if (fpsTargetInput) {
+  fpsTargetInput.addEventListener("change", updateFPSSettings);
+  fpsTargetInput.addEventListener("input", updateFPSSettings);
+}
+
+// Escape key handler for FPS settings
+document.addEventListener("keydown", (event) => {
+  if (event.code === "Escape" || event.key === "Escape" || event.keyCode === 27) {
+    if (fpsSettingsVisible) {
+      event.preventDefault();
+      toggleFPSSettings();
+    } else if (!universeMap?.isVisible) {
+      // Only toggle FPS settings if map is not open
+      event.preventDefault();
+      toggleFPSSettings();
+    }
+  }
+}, true);
+
+updateFPSSettings();
 
 // Tracking line
 let trackedSystem = null;
@@ -190,35 +256,24 @@ let universeMap = null;
 let mapKeyPressed = false;
 
 function initializeMap() {
-  console.log("initializeMap() called");
   const mapContainer = document.getElementById("map-overlay");
-  console.log("Map container found:", !!mapContainer);
   if (mapContainer && !universeMap) {
     try {
-      console.log("Creating UniverseMap instance...");
       universeMap = new UniverseMap(
         mapContainer,
         universe,
         () => ship.position,
         setTrackedSystem
       );
-      console.log("UniverseMap created successfully");
     } catch (error) {
       console.error("Failed to initialize map:", error);
       console.error(error.stack);
     }
-  } else if (!mapContainer) {
-    console.warn("Map container not found in DOM");
-  } else if (universeMap) {
-    console.log("Map already initialized");
   }
 }
 
 // Map toggle handler
 function handleMapToggle(event) {
-  // Log all keydown events to debug
-  console.log("Key pressed:", event.code, event.key, "keyCode:", event.keyCode);
-  
   // Handle M key - check both code and key for different keyboard layouts
   const isMKey = event.code === "KeyM" || 
                  event.key === "m" || 
@@ -229,51 +284,38 @@ function handleMapToggle(event) {
     return;
   }
   
-  console.log("M key detected!");
-  
   if (mapKeyPressed) {
-    console.log("Map key already pressed, ignoring");
     return;
   }
   
   // Don't handle if it's a repeat keypress
   if (event.repeat) {
-    console.log("Key repeat, ignoring");
     return;
   }
   
-  console.log("Processing M key press");
   mapKeyPressed = true;
   event.preventDefault();
   event.stopPropagation();
   
   // Ensure map is initialized
   if (!universeMap) {
-    console.log("Initializing map...");
     initializeMap();
   }
   
   if (universeMap) {
-    console.log("Toggling map, current state:", universeMap.isVisible, "mapKeyPressed:", mapKeyPressed);
     if (universeMap.isVisible) {
-      console.log("Hiding map");
       universeMap.hide();
       // Reset key pressed flag immediately after hiding
       setTimeout(() => {
         mapKeyPressed = false;
-        console.log("Map key flag reset after hide");
       }, 50);
     } else {
-      console.log("Showing map");
       // Exit pointer lock when opening map
       if (document.pointerLockElement) {
         document.exitPointerLock();
       }
       universeMap.show();
     }
-  } else {
-    console.warn("Map not initialized. Map container may be missing.");
-    console.log("Map container exists:", !!document.getElementById("map-overlay"));
   }
 }
 
@@ -285,19 +327,16 @@ function handleMapKeyUp(event) {
                  event.keyCode === 77;
   
   if (isMKey) {
-    console.log("M key released");
     mapKeyPressed = false;
   }
 }
 
-console.log("Registering map key handlers...");
 // Use capture phase and make sure it's not blocked
 document.addEventListener("keydown", (event) => {
   // Always allow M key to toggle map, even when map is open
   handleMapToggle(event);
 }, true);
 document.addEventListener("keyup", handleMapKeyUp, true);
-console.log("Map key handlers registered");
 
 // Initialize map - since this is a module script, DOM should already be ready
 // But we'll try to initialize immediately and also on next tick as fallback
@@ -317,8 +356,6 @@ if (initialTarget) {
 }
 
 let lastFrameTime = performance.now();
-const targetFPS = 60;
-const minFrameTime = 1000 / targetFPS; // ~16.67ms per frame
 
 function onResize() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -356,10 +393,34 @@ function updateHud(speed, targetInfo) {
 function animate(now) {
   const elapsed = now - lastFrameTime;
   
-  // Limit to 60 FPS - only process frame if enough time has passed
+  // Limit to target FPS - only process frame if enough time has passed
   if (elapsed < minFrameTime) {
     requestAnimationFrame(animate);
     return;
+  }
+  
+  // Update FPS counter
+  if (fpsLastTime === 0) {
+    fpsLastTime = now;
+  }
+  fpsFrameCount++;
+  const fpsElapsed = now - fpsLastTime;
+  if (fpsElapsed >= 500) { // Update FPS display every 500ms
+    currentFPS = Math.round((fpsFrameCount * 1000) / fpsElapsed);
+    fpsFrameCount = 0;
+    fpsLastTime = now;
+    
+    if (hudFps && showFPS) {
+      hudFps.textContent = `FPS: ${currentFPS}`;
+      // Color code based on performance
+      if (currentFPS >= targetFPS * 0.9) {
+        hudFps.style.color = "#9ad0ff";
+      } else if (currentFPS >= targetFPS * 0.6) {
+        hudFps.style.color = "#ffd966";
+      } else {
+        hudFps.style.color = "#ff6b6b";
+      }
+    }
   }
   
   const delta = Math.min(0.12, elapsed / 1000);

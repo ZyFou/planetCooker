@@ -13,6 +13,21 @@
       <div class="hud__status" id="hud-speed">Speed: 0 km/s</div>
       <div class="hud__detail" id="hud-target">No target in range</div>
     </div>
+    <div class="hud-fps" id="hud-fps" hidden>FPS: 0</div>
+    <div class="fps-settings" id="fps-settings" hidden>
+      <div class="fps-settings__panel">
+        <div class="fps-settings__heading">FPS Settings</div>
+        <div class="fps-settings__row">
+          <label>Show FPS:</label>
+          <input type="checkbox" id="fps-toggle" checked>
+        </div>
+        <div class="fps-settings__row">
+          <label>Target FPS:</label>
+          <input type="number" id="fps-target" min="30" max="144" value="60" step="1">
+        </div>
+        <div class="fps-settings__hint">Press Esc to close</div>
+      </div>
+    </div>
     <div class="pointer-hint" id="pointer-hint">
       Click anywhere to take control.<br />
       Press Esc to release.

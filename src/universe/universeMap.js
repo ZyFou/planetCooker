@@ -94,7 +94,6 @@ export class UniverseMap {
       this.closeButton.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
-        console.log("Close button clicked");
         this.hide();
       });
     }
@@ -197,7 +196,6 @@ export class UniverseMap {
       event.preventDefault();
       event.stopPropagation();
       const marker = intersects[0].object.userData.marker;
-      console.log("System clicked:", marker.systemData.name);
       this._selectSystem(marker.systemData);
     }
   }
@@ -228,7 +226,6 @@ export class UniverseMap {
   }
 
   _selectSystem(systemData) {
-    console.log("Selecting system:", systemData.name);
     this.selectedSystem = systemData;
     this._updateInfoPanel();
     
@@ -244,11 +241,9 @@ export class UniverseMap {
 
   _updateInfoPanel() {
     if (!this.infoPanel || !this.selectedSystem) {
-      console.log("Cannot update info panel - missing panel or system");
       return;
     }
 
-    console.log("Updating info panel for:", this.selectedSystem.name);
     const shipPos = this.shipPositionGetter();
     const distance = shipPos.distanceTo(this.selectedSystem.position);
 
@@ -277,7 +272,6 @@ export class UniverseMap {
     }
 
     this.infoPanel.classList.add("map-info-panel--visible");
-    console.log("Info panel should now be visible");
   }
 
   _formatDistance(km) {
@@ -379,7 +373,6 @@ export class UniverseMap {
   }
 
   show() {
-    console.log("Map show() called");
     this.isVisible = true;
     
     // Force visibility styles directly
@@ -411,13 +404,10 @@ export class UniverseMap {
     this._updateSystemMarkers();
     
     // Force an immediate render to ensure the map is visible
-    const systems = this.universeManager.getAllSystems();
-    console.log(`Map showing with ${systems.length} systems`);
     this.update();
   }
 
   hide() {
-    console.log("Map hide() called");
     this.isVisible = false;
     this.container.style.opacity = "0";
     this.container.style.pointerEvents = "none";
@@ -433,11 +423,6 @@ export class UniverseMap {
       this.infoPanel.classList.remove("map-info-panel--visible");
     }
     this.selectedSystem = null;
-    
-    // Force a small delay to ensure state is reset
-    setTimeout(() => {
-      console.log("Map hidden, isVisible:", this.isVisible);
-    }, 100);
   }
 
   _updateSystemMarkers() {
