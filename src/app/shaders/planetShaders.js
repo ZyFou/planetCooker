@@ -324,40 +324,87 @@ export const terrainFragmentShader = `
 `;
 
 export const atmosphereVertexShader = `
+    ${glslNoise}
+    
     varying vec3 vNormal;
     varying vec3 vViewDir;
+    varying vec3 vWorldPosition;
+    varying vec3 vLocalPosition;
 
     void main() {
         vNormal = normalize(normalMatrix * normal);
         vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        vWorldPosition = worldPosition.xyz;
+        vLocalPosition = position;
         vViewDir = normalize(cameraPosition - worldPosition.xyz);
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }
 `;
 
 export const atmosphereFragmentShader = `
+    ${glslNoise}
+    
     uniform vec3 uSunDirection;
     uniform vec3 uAtmosphereColor;
     uniform float uAtmosphereDensity;
+    uniform float uAtmosphereIntensity;
+    uniform float uAtmosphereReflection;
+    uniform float uAtmosphereDetail;
+    uniform float uAtmosphereFalloff;
+    uniform float uTime;
 
     varying vec3 vNormal;
     varying vec3 vViewDir;
+    varying vec3 vWorldPosition;
+    varying vec3 vLocalPosition;
 
     void main() {
-        // Rim lighting effect (Fresnel-ish)
-        float viewDotNormal = dot(vViewDir, vNormal);
-        // Invert because we are looking at it from outside
-        float intensity = pow(0.6 - viewDotNormal, 2.5); 
-
-        // Day/Night fading for atmosphere
-        float lightIntensity = max(dot(vNormal, uSunDirection), 0.0);
+        vec3 normal = normalize(vNormal);
+        vec3 viewDir = normalize(vViewDir);
+        vec3 sunDir = normalize(uSunDirection);
         
-        vec3 atmosphere = uAtmosphereColor * intensity * uAtmosphereDensity;
+        // Base uniform intensity - ensures visibility from all angles
+        float baseIntensity = uAtmosphereIntensity;
         
-        // Boost it slightly on the sunlit side
-        atmosphere *= (0.3 + 0.7 * smoothstep(-0.5, 1.0, lightIntensity));
+        // Subtle rim enhancement (much weaker than before for uniformity)
+        float viewDotNormal = dot(viewDir, normal);
+        float rimFactor = pow(1.0 - max(viewDotNormal, 0.0), uAtmosphereFalloff);
+        // Make rim effect much subtler - only adds 10-20% enhancement
+        float rimIntensity = 1.0 + rimFactor * 0.15;
+        
+        // Day/night variation (subtle)
+        float lightDotNormal = dot(normal, sunDir);
+        float dayNightFactor = 0.7 + 0.3 * smoothstep(-0.3, 1.0, lightDotNormal);
+        
+        // Atmospheric detail using noise
+        vec3 detailCoord = normalize(vLocalPosition) * uAtmosphereDetail;
+        float detailNoise = snoise(detailCoord + vec3(uTime * 0.01)) * 0.5 + 0.5;
+        // Subtle detail variation (5-10% variation)
+        float detailFactor = 1.0 + (detailNoise - 0.5) * 0.1;
+        
+        // Reflection effect (specular highlight from sun)
+        vec3 reflectDir = reflect(-sunDir, normal);
+        float specular = pow(max(dot(viewDir, reflectDir), 0.0), 32.0);
+        float reflection = specular * uAtmosphereReflection;
+        
+        // Combine all factors
+        float finalIntensity = baseIntensity * rimIntensity * dayNightFactor * detailFactor;
+        
+        // Calculate final color
+        vec3 atmosphere = uAtmosphereColor * finalIntensity * uAtmosphereDensity;
+        
+        // Add reflection highlight
+        atmosphere += uAtmosphereColor * reflection * 0.5;
+        
+        // Ensure minimum visibility for uniformity
+        float minVisibility = uAtmosphereDensity * 0.3;
+        atmosphere = max(atmosphere, uAtmosphereColor * minVisibility);
+        
+        // Calculate alpha based on intensity
+        float alpha = length(atmosphere) * 0.5;
+        alpha = clamp(alpha, 0.0, 1.0);
 
-        gl_FragColor = vec4(atmosphere, atmosphere.r + atmosphere.g + atmosphere.b);
+        gl_FragColor = vec4(atmosphere, alpha);
     }
 `;
 

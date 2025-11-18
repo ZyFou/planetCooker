@@ -19,6 +19,10 @@ const rockyPlanetPresets = {
         colorMountainHigh: "#888888",
         colorSnow: "#ffffff",
         atmosphereDensity: 0.3,
+        atmosphereIntensity: 1.0,
+        atmosphereReflection: 0.3,
+        atmosphereDetail: 2.0,
+        atmosphereFalloff: 2.0,
         atmosphereColor: "#3a9eff"
     },
     'Mars': {
@@ -37,6 +41,10 @@ const rockyPlanetPresets = {
         colorMountainHigh: "#daa520",
         colorSnow: "#ff6347",
         atmosphereDensity: 0.1,
+        atmosphereIntensity: 0.8,
+        atmosphereReflection: 0.2,
+        atmosphereDetail: 1.5,
+        atmosphereFalloff: 2.5,
         atmosphereColor: "#ff6b47"
     },
     'Venus': {
@@ -55,6 +63,10 @@ const rockyPlanetPresets = {
         colorMountainHigh: "#daa520",
         colorSnow: "#f0e68c",
         atmosphereDensity: 0.8,
+        atmosphereIntensity: 1.2,
+        atmosphereReflection: 0.4,
+        atmosphereDetail: 2.5,
+        atmosphereFalloff: 1.8,
         atmosphereColor: "#ffa500"
     },
     'Moon': {
@@ -91,6 +103,10 @@ const rockyPlanetPresets = {
         colorMountainHigh: "#6b8e23",
         colorSnow: "#ffffff",
         atmosphereDensity: 0.4,
+        atmosphereIntensity: 1.1,
+        atmosphereReflection: 0.35,
+        atmosphereDetail: 2.2,
+        atmosphereFalloff: 2.0,
         atmosphereColor: "#4a9eff"
     },
     'Desert Planet': {
@@ -109,6 +125,10 @@ const rockyPlanetPresets = {
         colorMountainHigh: "#daa520",
         colorSnow: "#f5deb3",
         atmosphereDensity: 0.2,
+        atmosphereIntensity: 0.9,
+        atmosphereReflection: 0.25,
+        atmosphereDetail: 1.8,
+        atmosphereFalloff: 2.2,
         atmosphereColor: "#ffd700"
     }
 };
@@ -230,6 +250,10 @@ export function setupPlanetControls({
             colorMountainHigh: false,
             colorSnow: false,
             atmosphereDensity: false,
+            atmosphereIntensity: false,
+            atmosphereReflection: false,
+            atmosphereDetail: false,
+            atmosphereFalloff: false,
             atmosphereColor: false,
             gasPlanetSize: false,
             gasStripeSpeed: false,
@@ -634,8 +658,12 @@ export function setupPlanetControls({
 
     // Atmosphere & Misc folder
     const folderAtmo = registerFolder(gui.addFolder('Atmosphere & Misc'), { close: false });
-    addSliderWithPercentAndLock(folderAtmo, 'atmosphereDensity', 'Atmo Density', 0.0, 1.0, () => {});
-    addColorWithLock(folderAtmo, 'atmosphereColor', 'Atmo Color', () => {});
+    addSliderWithPercentAndLock(folderAtmo, 'atmosphereDensity', 'Density', 0.0, 1.0, () => {});
+    addSliderWithPercentAndLock(folderAtmo, 'atmosphereIntensity', 'Intensity', 0.0, 2.0, () => {});
+    addSliderWithPercentAndLock(folderAtmo, 'atmosphereReflection', 'Reflection', 0.0, 1.0, () => {});
+    addSliderWithPercentAndLock(folderAtmo, 'atmosphereDetail', 'Detail', 0.0, 5.0, () => {});
+    addSliderWithPercentAndLock(folderAtmo, 'atmosphereFalloff', 'Falloff', 0.5, 5.0, () => {});
+    addColorWithLock(folderAtmo, 'atmosphereColor', 'Color', () => {});
     folderAtmo.add(params, 'rotationSpeed', 0.0, 0.5).name('Rotation Speed').onChange(v => {
         if (scheduleShareUpdate) scheduleShareUpdate();
     });

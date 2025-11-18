@@ -145,11 +145,16 @@ export class Planet {
         this.planetMesh.scale.setScalar(params.planetSize ?? 1.0);
 
         // Create atmosphere
-        const atmoGeometry = new THREE.IcosahedronGeometry(1.15, 32);
+        const atmoGeometry = new THREE.IcosahedronGeometry(1.15, 64); // Increased detail for better quality
         this.atmosphereUniforms = {
             uSunDirection: { value: this.sunDirection.clone() },
             uAtmosphereColor: { value: new THREE.Color(params.atmosphereColor ?? "#3a9eff") },
-            uAtmosphereDensity: { value: params.atmosphereDensity ?? 0.3 }
+            uAtmosphereDensity: { value: params.atmosphereDensity ?? 0.3 },
+            uAtmosphereIntensity: { value: params.atmosphereIntensity ?? 1.0 },
+            uAtmosphereReflection: { value: params.atmosphereReflection ?? 0.3 },
+            uAtmosphereDetail: { value: params.atmosphereDetail ?? 2.0 },
+            uAtmosphereFalloff: { value: params.atmosphereFalloff ?? 2.0 },
+            uTime: { value: 0 }
         };
         const atmoMaterial = new THREE.ShaderMaterial({
             vertexShader: atmosphereVertexShader,
@@ -364,6 +369,10 @@ export class Planet {
         if (this.atmosphereUniforms) {
             if (newParams.atmosphereDensity !== undefined) this.atmosphereUniforms.uAtmosphereDensity.value = newParams.atmosphereDensity;
             if (newParams.atmosphereColor) this.atmosphereUniforms.uAtmosphereColor.value.set(newParams.atmosphereColor);
+            if (newParams.atmosphereIntensity !== undefined) this.atmosphereUniforms.uAtmosphereIntensity.value = newParams.atmosphereIntensity;
+            if (newParams.atmosphereReflection !== undefined) this.atmosphereUniforms.uAtmosphereReflection.value = newParams.atmosphereReflection;
+            if (newParams.atmosphereDetail !== undefined) this.atmosphereUniforms.uAtmosphereDetail.value = newParams.atmosphereDetail;
+            if (newParams.atmosphereFalloff !== undefined) this.atmosphereUniforms.uAtmosphereFalloff.value = newParams.atmosphereFalloff;
         }
 
         const volShapeKeys = [
@@ -448,14 +457,15 @@ export class Planet {
         // Update time uniforms
         if (this.rockyUniforms) this.rockyUniforms.uTime.value = time;
         if (this.gasUniforms) this.gasUniforms.uTime.value = time;
+        if (this.atmosphereUniforms) this.atmosphereUniforms.uTime.value = time;
 
         // Rotate planet
         const rotationDelta = (this.params.rotationSpeed ?? 0.05) * delta * Math.PI * 2;
         this.spinGroup.rotation.y += rotationDelta;
 
-        // Rotate clouds and atmosphere
+        // Rotate clouds and atmosphere (atmosphere doesn't rotate to maintain uniform appearance)
         this.cloudMesh.rotation.y += rotationDelta * 1.2;
-        this.atmosphereMesh.rotation.y += rotationDelta * 0.1;
+        // Atmosphere rotation removed for uniform appearance
         if (this.volumetricCloudGroup && this.volumetricCloudGroup.visible) {
             this.volumetricCloudGroup.rotation.y += rotationDelta * 0.35;
         }
