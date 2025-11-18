@@ -64,6 +64,8 @@ export class Planet {
         if (this.params.noiseType === undefined) this.params.noiseType = 'classic';
         if (this.params.noiseVariant === undefined) this.params.noiseVariant = 0.5;
 
+        if (this.params.surfaceCloudsEnabled === undefined) this.params.surfaceCloudsEnabled = false;
+
         const volumetricDefaults = {
             volumetricCloudsEnabled: true,
             volumetricCloudCount: 18,
@@ -161,7 +163,7 @@ export class Planet {
             vertexShader: atmosphereVertexShader,
             fragmentShader: atmosphereFragmentShader,
             uniforms: this.atmosphereUniforms,
-            side: THREE.BackSide,
+            side: THREE.FrontSide, // Changed from BackSide to prevent double layer rendering
             blending: THREE.AdditiveBlending,
             transparent: true,
             depthWrite: false
@@ -315,7 +317,7 @@ export class Planet {
             const atmosphereHeight = this.params.atmosphereHeight ?? 1.15;
             this.atmosphereMesh.scale.setScalar((this.params.planetSize ?? 1.0) * atmosphereHeight);
             this.cloudMesh.scale.setScalar((this.params.planetSize ?? 1.0) * 1.03);
-            this.cloudMesh.visible = true;
+            this.cloudMesh.visible = this.params.surfaceCloudsEnabled !== false;
             this.atmosphereMesh.visible = true;
             if (this.volumetricCloudGroup) {
                 this.volumetricCloudGroup.visible = this.params.volumetricCloudsEnabled !== false;
@@ -366,6 +368,10 @@ export class Planet {
             if (newParams.gasColor3) this.gasUniforms.uColor3.value.set(newParams.gasColor3);
             if (newParams.gasColor4) this.gasUniforms.uColor4.value.set(newParams.gasColor4);
             if (newParams.gasColor5) this.gasUniforms.uColor5.value.set(newParams.gasColor5);
+        }
+
+        if (newParams.surfaceCloudsEnabled !== undefined) {
+            this.cloudMesh.visible = newParams.surfaceCloudsEnabled && this.params.planetType !== 'gas';
         }
 
         // Update atmosphere uniforms

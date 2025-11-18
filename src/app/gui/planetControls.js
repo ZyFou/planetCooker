@@ -671,6 +671,10 @@ export function setupPlanetControls({
     addSliderWithPercentAndLock(folderAtmo, 'atmosphereDetail', 'Detail', 0.0, 5.0, () => {});
     addSliderWithPercentAndLock(folderAtmo, 'atmosphereFalloff', 'Falloff', 0.5, 5.0, () => {});
     addSliderWithPercentAndLock(folderAtmo, 'atmosphereHeight', 'Height', 1.0, 2.0, () => {});
+    folderAtmo.add(params, 'surfaceCloudsEnabled').name('Surface Clouds').onChange(value => {
+        if (guiControllers.planet) guiControllers.planet.applyParams({ surfaceCloudsEnabled: value });
+        if (scheduleShareUpdate) scheduleShareUpdate();
+    });
     addColorWithLock(folderAtmo, 'atmosphereColor', 'Color', () => {});
     folderAtmo.add(params, 'rotationSpeed', 0.0, 0.5).name('Rotation Speed').onChange(v => {
         if (scheduleShareUpdate) scheduleShareUpdate();
