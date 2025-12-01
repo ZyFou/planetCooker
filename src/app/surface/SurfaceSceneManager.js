@@ -309,8 +309,10 @@ export class SurfaceSceneManager {
   }
 
   setupSky() {
+    // Use neutral sky colors instead of atmosphere color for walk mode
     const horizon = this.palette.horizon.clone();
-    const top = this.palette.atmosphere.clone().lerp(new THREE.Color("#38bdf8"), 0.2);
+    // Use a neutral dark blue/black sky instead of atmosphere color
+    const top = new THREE.Color("#0a0e1a");
     const gradientTexture = createSkyGradientTexture(top, horizon);
 
     // Larger sky dome for larger chunks

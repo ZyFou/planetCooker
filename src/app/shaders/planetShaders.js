@@ -463,57 +463,37 @@ export const flatTerrainVertexShader = `
         // Get world position (plane coordinates: x, y=0, z)
         vec3 worldPos = (modelMatrix * vec4(position, 1.0)).xyz;
         
-        // Use a more stable projection: directly use world coordinates
-        // but scale them to match the planet's noise space
-        // This avoids the latitude/longitude conversion issues
+        // Terrain scale factor: converts world units to angular displacement
+        // This ensures terrain features are properly scaled for walking
+        // A larger factor means more terrain variation per world unit
+        float terrainScale = 0.002 / max(uRadius, 0.1);
         
-        // Calculate distance from spawn point in plane space
-        float distX = worldPos.x;
-        float distZ = worldPos.z;
+        // Calculate angular displacement from spawn point
+        // Scale world coordinates to get reasonable lat/lon deltas
+        float latDelta = worldPos.z * terrainScale;
+        float lonDelta = worldPos.x * terrainScale;
         
-        // Convert to spherical coordinates more carefully
-        // Limit the maximum distance to avoid pole issues
-        // Use a much larger limit to accommodate large chunks (chunkSize = radius * 30)
-        // Allow up to ~1000 units in each direction (enough for multiple large chunks)
-        float maxDist = uRadius * 100.0; // Much larger limit for large chunks
-        distX = clamp(distX, -maxDist, maxDist);
-        distZ = clamp(distZ, -maxDist, maxDist);
-        
-        // Calculate latitude with better bounds
+        // Apply latitude bounds to prevent pole singularities
         float maxLat = 1.4; // ~80 degrees
-        float latDelta = distZ / uRadius;
         float lat = clamp(uBaseLatitude + latDelta, -maxLat, maxLat);
         
-        // For longitude, use a more stable calculation
-        // Use the actual latitude for cos, but clamp it to avoid extreme values
+        // For longitude, account for latitude (distance per longitude shrinks at poles)
         float avgLat = clamp((uBaseLatitude + lat) * 0.5, -1.3, 1.3);
-        float cosLat = cos(avgLat);
-        cosLat = clamp(cosLat, 0.15, 1.0); // More conservative bounds
+        float cosLat = max(0.15, cos(avgLat));
+        float lon = uBaseLongitude + lonDelta / cosLat;
         
-        float lonDelta = distX / (uRadius * cosLat);
-        // Limit longitude delta to prevent wrapping issues
-        lonDelta = clamp(lonDelta, -3.14159, 3.14159);
-        float lon = uBaseLongitude + lonDelta;
+        // Wrap longitude to [-PI, PI]
         lon = mod(lon + 3.14159, 6.28318) - 3.14159;
         
-        // Convert spherical to cartesian (3D direction vector)
-        float cosLat2 = cos(lat);
-        cosLat2 = clamp(cosLat2, 0.15, 1.0);
-        vec3 dir = vec3(
+        // Convert spherical to cartesian (3D direction vector for noise sampling)
+        float cosLat2 = max(0.15, cos(lat));
+        vec3 dir = normalize(vec3(
             cosLat2 * cos(lon),
             sin(lat),
             cosLat2 * sin(lon)
-        );
-        dir = normalize(dir);
+        ));
         
-        // Fallback if dir is invalid
-        if (length(dir) < 0.1 || any(isnan(dir)) || any(isinf(dir))) {
-            float baseLat = clamp(uBaseLatitude, -1.4, 1.4);
-            float baseLon = uBaseLongitude;
-            float baseCosLat = max(0.15, cos(baseLat));
-            dir = vec3(baseCosLat * cos(baseLon), sin(baseLat), baseCosLat * sin(baseLon));
-            dir = normalize(dir);
-        }
+        // Use direction for noise sampling
         vec3 pos = dir;
         float variant = clamp(uNoiseVariant, 0.0, 1.0);
 
@@ -557,10 +537,12 @@ export const flatTerrainVertexShader = `
         vHeight = finalHeight;
         vLatitude = abs(dir.y);
 
-        // Displacement
+        // Displacement - apply mountain height more prominently
         float displacement = 0.0;
         if (finalHeight > uSeaLevel) {
-             displacement = (finalHeight - uSeaLevel) * uMountainHeight * 0.3 * uRadius;
+             // Scale displacement by mountain height and radius for proper terrain relief
+             float relief = (finalHeight - uSeaLevel);
+             displacement = relief * uMountainHeight * max(uRadius, 1.0) * 0.5;
         }
         
         // Apply displacement in Y (up) direction for flat plane

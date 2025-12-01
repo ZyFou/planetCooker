@@ -412,21 +412,35 @@ export class TerrainSampler {
   }
 
   sampleAtPlane(x, z) {
-    const lat = THREE.MathUtils.clamp(
-      this.baseLatitude + z / this.radius,
+    // Terrain scale factor: converts world units to angular displacement
+    // Must match the shader's terrainScale for consistent height sampling
+    const terrainScale = 0.002 / Math.max(this.radius, 0.1);
+    
+    // Calculate angular displacement from spawn point
+    const latDelta = z * terrainScale;
+    const lonDelta = x * terrainScale;
+    
+    // Apply latitude bounds to prevent pole singularities
+    const lat = clamp(
+      this.baseLatitude + latDelta,
       this.minLatitude,
       this.maxLatitude
     );
-    const avgLat = (this.baseLatitude + lat) * 0.5;
-    const cosLat = Math.max(0.0001, Math.cos(avgLat));
-    let lon = this.baseLongitude + x / (this.radius * cosLat);
+    
+    // For longitude, account for latitude
+    const avgLat = clamp((this.baseLatitude + lat) * 0.5, -1.3, 1.3);
+    const cosLat = Math.max(0.15, Math.cos(avgLat));
+    let lon = this.baseLongitude + lonDelta / cosLat;
+    
+    // Wrap longitude to [-PI, PI]
     lon = ((lon + Math.PI) % (2 * Math.PI)) - Math.PI;
 
     const dir = sphericalToCartesian(lat, lon);
     const finalHeight = this.computeFinalHeight(dir);
     const relief = finalHeight - this.seaLevel;
+    // Match shader displacement calculation for consistent height sampling
     const displacement = relief > 0
-      ? relief * this.mountainHeight * 0.3 * this.planetScale
+      ? relief * this.mountainHeight * Math.max(this.planetScale, 1.0) * 0.5
       : 0;
     const latitude = Math.abs(dir.y);
     return { finalHeight, displacement, latitude };
