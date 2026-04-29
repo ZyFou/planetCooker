@@ -1,4 +1,4 @@
-import * as THREE from "three";
+import { createDefaultRing } from "../rings.js";
 
 export function setupRingControls({
 	gui,
@@ -23,33 +23,6 @@ export function setupRingControls({
 		if (typeof params.ringCount !== "number") params.ringCount = params.rings.length || 0;
 	}
 
-	function createDefaultRing(index = 0, planetSize = 1.0) {
-		const rng = new THREE.MathUtils.seededRandom ? { next: THREE.MathUtils.seededRandom } : { next: Math.random };
-		
-		// Scale ring size based on planet size
-		// Start rings just outside the planet surface (1.15x planet radius)
-		const minRingRadius = planetSize * 1.15;
-		const baseStart = minRingRadius + (index * 0.25 * planetSize);
-		const thickness = (0.15 + (Math.random() * 0.2)) * planetSize;
-		
-		const style = index % 2 === 0 ? "Texture" : "Noise";
-		const hue = (0.05 + (index * 0.15)) % 1;
-		const saturation = 0.25 + Math.random() * 0.3;
-		const lightness = 0.6 + Math.random() * 0.3;
-		const color = new THREE.Color().setHSL(hue, saturation, lightness).getStyle();
-		return {
-			style,
-			color,
-			start: baseStart,
-			end: baseStart + thickness,
-			opacity: 0.5 + Math.random() * 0.3,
-			noiseScale: 2.5 + Math.random() * 2.0,
-			noiseStrength: 0.4 + Math.random() * 0.4,
-			spinSpeed: (0.02 + Math.random() * 0.08) * (index % 2 === 0 ? 1 : -1),
-			brightness: 0.8 + Math.random() * 0.4
-		};
-	}
-
 	function normalizeRingSettings() {
 		ensureParams();
 		// Get current planet size for proper scaling
@@ -58,7 +31,7 @@ export function setupRingControls({
 			: (params.planetSize || 1.0);
 			
 		while (params.rings.length < (params.ringCount || 0)) {
-			params.rings.push(createDefaultRing(params.rings.length, planetSize));
+			params.rings.push(createDefaultRing(params.rings.length, planetSize, params));
 		}
 		while (params.rings.length > (params.ringCount || 0)) {
 			params.rings.pop();

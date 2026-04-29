@@ -5,9 +5,10 @@ import {
     gasPlanetVertexShader,
     gasPlanetFragmentShader,
     atmosphereVertexShader,
-    atmosphereFragmentShader
+    atmosphereFragmentShader,
+    ringVertexShader,
+    ringFragmentShader
 } from "./shaders/planetShaders.js";
-import { generateRingTexture, generateAnnulusTexture } from "./textures.js";
 
 const ROCKY_NOISE_TYPES = {
     classic: 0,
@@ -47,7 +48,6 @@ export class Planet {
         this.ringGroup = new THREE.Group();
         this.spinGroup.add(this.ringGroup);
         this.ringMeshes = [];
-        this.ringTextures = [];
 
         // Create groups for moons
         this.moonsGroup = new THREE.Group();
@@ -469,6 +469,11 @@ export class Planet {
         if (this.rockyUniforms) this.rockyUniforms.uSunDirection.value.copy(sunDirection);
         if (this.gasUniforms) this.gasUniforms.uSunDirection.value.copy(sunDirection);
         if (this.atmosphereUniforms) this.atmosphereUniforms.uSunDirection.value.copy(sunDirection);
+        this.ringMeshes.forEach(mesh => {
+            if (mesh.material?.uniforms?.uSunDirection) {
+                mesh.material.uniforms.uSunDirection.value.copy(sunDirection);
+            }
+        });
     }
 
     update(delta, time) {
@@ -476,6 +481,11 @@ export class Planet {
         if (this.rockyUniforms) this.rockyUniforms.uTime.value = time;
         if (this.gasUniforms) this.gasUniforms.uTime.value = time;
         if (this.atmosphereUniforms) this.atmosphereUniforms.uTime.value = time;
+        this.ringMeshes.forEach((ringMesh) => {
+            if (ringMesh.material?.uniforms?.uTime) {
+                ringMesh.material.uniforms.uTime.value = time;
+            }
+        });
 
         // Rotate planet
         const rotationDelta = (this.params.rotationSpeed ?? 0.05) * delta * Math.PI * 2;
@@ -580,11 +590,8 @@ export class Planet {
             this.ringGroup.remove(mesh);
             mesh.geometry?.dispose();
             mesh.material?.dispose();
-            if (mesh.material.map) mesh.material.map.dispose();
         });
-        this.ringTextures.forEach(texture => texture.dispose());
         this.ringMeshes = [];
-        this.ringTextures = [];
 
         if (!this.params.ringEnabled) return;
 
@@ -594,55 +601,27 @@ export class Planet {
 
             const innerRadius = ring.start || 1.2;
             const outerRadius = ring.end || 1.5;
-            const segments = 128; // Increased for smoother rings
+            const segments = 192;
 
             const ringGeometry = new THREE.RingGeometry(innerRadius, outerRadius, segments);
 
-            let texture;
-            try {
-                const innerRatio = innerRadius / outerRadius;
-                if (ring.style === "Texture") {
-                    texture = generateRingTexture(innerRatio, {
-                        ringColor: ring.color || 0x888888,
-                        ringOpacity: ring.opacity || 0.6,
-                        ringNoiseScale: ring.noiseScale || 3.2,
-                        ringNoiseStrength: ring.noiseStrength || 0.55,
-                        seed: this.params.seed || "ring",
-                        noiseResolution: 1.0
-                    });
-                } else {
-                    texture = generateAnnulusTexture({
-                        innerRatio: innerRatio,
-                        color: ring.color || "#888888",
-                        opacity: ring.opacity || 0.6,
-                        noiseScale: ring.noiseScale || 3.2,
-                        noiseStrength: ring.noiseStrength || 0.55,
-                        seedKey: "ring",
-                        seed: this.params.seed || "ring",
-                        noiseResolution: 1.0
-                    });
-                }
-            } catch (e) {
-                console.warn('Ring texture generation failed:', e);
-                // Fallback to simple texture if generation fails
-                const canvas = document.createElement('canvas');
-                canvas.width = 512;
-                canvas.height = 512;
-                const ctx = canvas.getContext('2d');
-                ctx.fillStyle = ring.color || '#888888';
-                ctx.fillRect(0, 0, 512, 512);
-                texture = new THREE.CanvasTexture(canvas);
-            }
-            this.ringTextures.push(texture);
-
-            // Apply brightness to material
-            const brightness = ring.brightness || 1.0;
-            const ringMaterial = new THREE.MeshBasicMaterial({
-                map: texture,
+            const ringMaterial = new THREE.ShaderMaterial({
+                vertexShader: ringVertexShader,
+                fragmentShader: ringFragmentShader,
+                uniforms: {
+                    uTime: { value: 0 },
+                    uSunDirection: { value: this.sunDirection.clone() },
+                    uBaseColor: { value: new THREE.Color(ring.color || "#888888") },
+                    uInnerRadius: { value: innerRadius },
+                    uOuterRadius: { value: outerRadius },
+                    uOpacity: { value: THREE.MathUtils.clamp(ring.opacity ?? 0.65, 0, 1) },
+                    uNoiseScale: { value: ring.noiseScale || 3.2 },
+                    uNoiseStrength: { value: THREE.MathUtils.clamp(ring.noiseStrength ?? 0.65, 0, 1) },
+                    uBrightness: { value: ring.brightness || 1.0 },
+                    uStyle: { value: ring.style === "Noise" ? 1.0 : 0.0 }
+                },
                 side: THREE.DoubleSide,
                 transparent: true,
-                opacity: ring.opacity || 0.6,
-                color: new THREE.Color(brightness, brightness, brightness),
                 blending: THREE.NormalBlending,
                 depthWrite: false
             });

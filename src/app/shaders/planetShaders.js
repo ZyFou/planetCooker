@@ -688,6 +688,113 @@ export const gasPlanetFragmentShader = `
     }
 `;
 
+export const ringVertexShader = `
+    varying vec2 vRingPosition;
+    varying vec3 vWorldPosition;
+    varying vec3 vNormal;
+
+    void main() {
+        vRingPosition = position.xy;
+        vNormal = normalize(normalMatrix * normal);
+        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        vWorldPosition = worldPosition.xyz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+`;
+
+export const ringFragmentShader = `
+    ${glslNoise}
+
+    uniform float uTime;
+    uniform vec3 uSunDirection;
+    uniform vec3 uBaseColor;
+    uniform float uInnerRadius;
+    uniform float uOuterRadius;
+    uniform float uOpacity;
+    uniform float uNoiseScale;
+    uniform float uNoiseStrength;
+    uniform float uBrightness;
+    uniform float uStyle;
+
+    varying vec2 vRingPosition;
+    varying vec3 vWorldPosition;
+    varying vec3 vNormal;
+
+    float hash21(vec2 p) {
+        p = fract(p * vec2(123.34, 345.45));
+        p += dot(p, p + 34.345);
+        return fract(p.x * p.y);
+    }
+
+    void main() {
+        float radius = length(vRingPosition);
+        float width = max(uOuterRadius - uInnerRadius, 0.0001);
+        float ringT = clamp((radius - uInnerRadius) / width, 0.0, 1.0);
+
+        float edgeFeather = clamp(0.018 / width, 0.012, 0.12);
+        float innerFade = smoothstep(0.0, edgeFeather, ringT);
+        float outerFade = 1.0 - smoothstep(1.0 - edgeFeather, 1.0, ringT);
+        float edgeFade = innerFade * outerFade;
+
+        if (edgeFade <= 0.001) discard;
+
+        float angle = atan(vRingPosition.y, vRingPosition.x);
+        vec2 polar = vec2(ringT * max(uNoiseScale, 0.2), angle * 0.15915494);
+        vec3 radialCoord = vec3(
+            radius * max(uNoiseScale, 0.2),
+            cos(angle) * max(uNoiseScale, 0.2),
+            sin(angle) * max(uNoiseScale, 0.2)
+        );
+
+        vec3 warped = radialCoord + domainWarp(radialCoord + vec3(uTime * 0.006, 0.0, 0.0), 0.12, 1.25, 0.28);
+        float strata = sin((ringT * 56.0 + snoise(warped * 0.32) * 0.85) * 3.14159);
+        strata = strata * 0.5 + 0.5;
+
+        float ridges = fbmRidged(warped * 0.82, 4, 0.46, 1.85);
+        float slabNoise = fbm(warped * 2.2 + vec3(19.0, 47.0, 83.0), 3, 0.48, 1.75) * 0.5 + 0.5;
+        float dust = fbm(warped * 4.2 + vec3(31.0, 11.0, 67.0), 2, 0.42, 1.9) * 0.5 + 0.5;
+        float gravel = pow(hash21(floor(vec2(radius * 210.0, angle * 72.0))), 9.0);
+        float clumps = smoothstep(0.46, 0.82, ridges) * mix(0.72, 1.0, slabNoise);
+        float fineBands = smoothstep(0.28, 0.76, strata);
+
+        float styleMix = clamp(uStyle, 0.0, 1.0);
+        float rockyPattern = mix(
+            fineBands * 0.58 + clumps * 0.34 + dust * 0.12,
+            ridges * 0.52 + clumps * 0.36 + gravel * 0.18,
+            styleMix
+        );
+        rockyPattern = mix(0.56, clamp(rockyPattern, 0.0, 1.18), clamp(uNoiseStrength * 0.72, 0.0, 0.85));
+
+        float laneGap = smoothstep(0.01, 0.0, abs(fract(ringT * 22.0 + snoise(warped * 0.45) * 0.035) - 0.5) - 0.485);
+        float fracturedEdge = smoothstep(0.18, 0.78, slabNoise + ridges * 0.28);
+        float alpha = uOpacity * edgeFade * mix(0.72, 1.0, rockyPattern) * mix(0.9, 1.0, fracturedEdge);
+        alpha *= 1.0 - laneGap * 0.38;
+
+        if (alpha <= 0.015) discard;
+
+        vec3 base = uBaseColor;
+        vec3 coolShadow = base * vec3(0.46, 0.48, 0.52);
+        vec3 mineral = mix(base, vec3(0.70, 0.68, 0.62), 0.26 + slabNoise * 0.18);
+        mineral = mix(mineral, base * vec3(0.82, 0.78, 0.72), smoothstep(0.55, 0.95, strata) * 0.25);
+        vec3 highlight = mix(mineral, vec3(0.92, 0.9, 0.84), 0.10 + gravel * 0.22);
+        vec3 color = mix(coolShadow, highlight, clamp(rockyPattern, 0.0, 1.0));
+
+        vec3 normal = normalize(vNormal);
+        vec3 lightDir = normalize(uSunDirection);
+        vec3 viewDir = normalize(cameraPosition - vWorldPosition);
+        float NdotL = abs(dot(normal, lightDir));
+        float diffuse = 0.28 + NdotL * 0.82;
+        float rim = pow(1.0 - abs(dot(normal, viewDir)), 2.0);
+        float forwardScatter = pow(max(dot(viewDir, lightDir), 0.0), 4.0) * 0.18;
+
+        color *= diffuse * uBrightness;
+        color += base * rim * 0.18 * uBrightness;
+        color += highlight * forwardScatter * uBrightness;
+
+        gl_FragColor = vec4(color, clamp(alpha, 0.0, 1.0));
+    }
+`;
+
 export const spaceBackgroundVertexShader = `
     varying vec3 vWorldPosition;
 

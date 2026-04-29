@@ -41,6 +41,7 @@ import { encodeShare as encodeShareExt, decodeShare as decodeShareExt, saveConfi
 import { initOnboarding, showOnboarding } from "./app/onboarding.js";
 import { Planet } from "./app/planet.js";
 import { Sun } from "./app/sun.js";
+import { createDefaultRing, getHarmonizedRingColor } from "./app/rings.js";
 
 let planet;
 let sun;
@@ -934,25 +935,7 @@ guiControllers.ringCount = ringsFolder.add(params, "ringCount", 0, 10, 1)
     // Ensure rings array matches count
     while (params.rings.length < params.ringCount) {
       const index = params.rings.length;
-      const minRingRadius = planetSize * 1.15;
-      const baseStart = minRingRadius + (index * 0.25 * planetSize);
-      const thickness = (0.15 + (Math.random() * 0.2)) * planetSize;
-      
-      params.rings.push({
-        style: index % 2 === 0 ? "Texture" : "Noise",
-        color: new THREE.Color().setHSL(
-          (0.05 + index * 0.15) % 1,
-          0.25 + Math.random() * 0.3,
-          0.6 + Math.random() * 0.3
-        ).getStyle(),
-        start: baseStart,
-        end: baseStart + thickness,
-        opacity: 0.5 + Math.random() * 0.3,
-        noiseScale: 2.5 + Math.random() * 2.0,
-        noiseStrength: 0.4 + Math.random() * 0.4,
-        spinSpeed: (0.02 + Math.random() * 0.08) * (index % 2 === 0 ? 1 : -1),
-        brightness: 0.8 + Math.random() * 0.4
-      });
+      params.rings.push(createDefaultRing(index, planetSize, params));
     }
     while (params.rings.length > params.ringCount) {
       params.rings.pop();
@@ -3625,18 +3608,14 @@ function surpriseMe() {
             const thickness = THREE.MathUtils.lerp(0.1, 0.4, Math.random()) * planetSize;
             const end = start + thickness;
             
-            const hue = (0.05 + i * 0.12 + Math.random() * 0.1) % 1;
-            const saturation = 0.2 + Math.random() * 0.3;
-            const lightness = 0.5 + Math.random() * 0.4;
-            
             params.rings.push({
                 style: Math.random() > 0.5 ? "Texture" : "Noise",
-                color: new THREE.Color().setHSL(hue, saturation, lightness).getStyle(),
+                color: getHarmonizedRingColor(params, i),
                 start: start,
                 end: end,
                 opacity: THREE.MathUtils.lerp(0.4, 0.9, Math.random()),
-                noiseScale: THREE.MathUtils.lerp(2.0, 5.0, Math.random()),
-                noiseStrength: THREE.MathUtils.lerp(0.3, 0.7, Math.random()),
+                noiseScale: THREE.MathUtils.lerp(2.0, 4.2, Math.random()),
+                noiseStrength: THREE.MathUtils.lerp(0.2, 0.5, Math.random()),
                 spinSpeed: THREE.MathUtils.lerp(-0.08, 0.08, Math.random()),
                 brightness: THREE.MathUtils.lerp(0.7, 1.3, Math.random())
             });
@@ -3814,10 +3793,10 @@ function surpriseMe() {
           const end = start + THREE.MathUtils.lerp(0.1, 0.5, rng.next());
           params.rings.push({
             style: rng.next() > 0.5 ? "Texture" : "Noise",
-            color: `#${new THREE.Color().setHSL(rng.next(), 0.15, 0.6).getHexString()}`,
+            color: getHarmonizedRingColor(params, i, () => rng.next()),
             start, end, opacity: THREE.MathUtils.lerp(0.4, 0.9, rng.next()),
-            noiseScale: THREE.MathUtils.lerp(1.5, 6.0, rng.next()),
-            noiseStrength: THREE.MathUtils.lerp(0.1, 0.6, rng.next()),
+            noiseScale: THREE.MathUtils.lerp(1.5, 4.5, rng.next()),
+            noiseStrength: THREE.MathUtils.lerp(0.12, 0.48, rng.next()),
             spinSpeed: THREE.MathUtils.lerp(-0.1, 0.1, rng.next()),
             brightness: 1
           });
