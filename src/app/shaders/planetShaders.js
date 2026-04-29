@@ -880,17 +880,19 @@ export const sunVertexShader = `
     uniform float uPulseSpeed;
 
     varying vec3 vWorldPosition;
+    varying vec3 vLocalPosition;
     varying vec3 vNormal;
     varying float vNoise;
 
     void main() {
         vec3 pos = position;
         float pulse = sin(uTime * uPulseSpeed) * 0.5 + 0.5;
-        float noiseValue = snoise(pos * uNoiseScale + vec3(uTime * 0.4, uTime * 0.31, -uTime * 0.27));
-        float displacement = noiseValue * uNoiseStrength * (0.6 + pulse * uPulseAmplitude);
+        float noiseValue = snoise(pos * uNoiseScale + vec3(uTime * 0.16, uTime * 0.11, -uTime * 0.09));
+        float displacement = noiseValue * min(uNoiseStrength, 0.08) * (0.35 + pulse * min(uPulseAmplitude, 0.2));
         vec3 displaced = pos + normal * displacement;
 
         vNoise = noiseValue;
+        vLocalPosition = normalize(displaced);
         vec4 worldPosition = modelMatrix * vec4(displaced, 1.0);
         vWorldPosition = worldPosition.xyz;
         vNormal = normalize(normalMatrix * normal);
@@ -911,6 +913,7 @@ export const sunFragmentShader = `
     uniform vec3 uRimColor;
 
     varying vec3 vWorldPosition;
+    varying vec3 vLocalPosition;
     varying vec3 vNormal;
     varying float vNoise;
 
@@ -918,25 +921,27 @@ export const sunFragmentShader = `
         vec3 normal = normalize(vNormal);
         vec3 viewDir = normalize(cameraPosition - vWorldPosition);
 
-        vec3 dir = normalize(vWorldPosition);
-        vec3 coord = dir * 3.2 + vec3(uTime * 0.12, uTime * 0.07, -uTime * 0.05);
-        vec3 warped = domainWarp(coord, 0.45, 2.1, 0.4);
-        float flow = fbm(coord + warped, 4, 0.52, 2.1);
+        vec3 dir = normalize(vLocalPosition);
+        vec3 coord = dir * 4.4 + vec3(uTime * 0.045, uTime * 0.026, -uTime * 0.018);
+        vec3 warped = domainWarp(coord, 0.18, 1.45, 0.16);
+        float flow = fbm(coord + warped, 5, 0.55, 1.85);
         flow = clamp((flow + 1.0) * 0.5, 0.0, 1.0);
 
         float noiseFactor = clamp(vNoise * 0.5 + 0.5, 0.0, 1.0);
-        float heat = mix(noiseFactor, flow, 0.6);
+        float heat = mix(noiseFactor, flow, 0.78);
 
-        vec3 surfaceColor = mix(uBaseColor, uHighlightColor, pow(heat, 1.3));
+        vec3 granular = mix(uBaseColor * 0.82, uHighlightColor, pow(heat, 1.45));
+        vec3 surfaceColor = mix(uBaseColor, granular, 0.62);
 
-        float fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 3.0);
-        vec3 rim = uRimColor * (0.6 + heat * 0.4) * fresnel;
+        float limb = 1.0 - max(dot(normal, viewDir), 0.0);
+        float fresnel = pow(limb, 2.2);
+        vec3 rim = uHighlightColor * (0.45 + heat * 0.35) * fresnel;
 
-        float hotspot = pow(max(dot(normal, normalize(viewDir + normal * 0.35)), 0.0), 12.0);
-        surfaceColor += uHighlightColor * hotspot * uHotspotStrength;
+        float hotspot = pow(max(dot(normal, normalize(viewDir + normal * 0.22)), 0.0), 18.0);
+        surfaceColor += vec3(1.0, 0.96, 0.82) * hotspot * uHotspotStrength;
 
-        float pulse = sin(uTime * uPulseSpeed * 0.6 + heat * 3.14159) * 0.5 + 0.5;
-        surfaceColor *= mix(0.9, 1.15, pulse);
+        float pulse = sin(uTime * uPulseSpeed * 0.45 + heat * 3.14159) * 0.5 + 0.5;
+        surfaceColor *= mix(0.96, 1.05, pulse);
 
         vec3 finalColor = (surfaceColor + rim) * uBrightness;
         gl_FragColor = vec4(finalColor, 1.0);

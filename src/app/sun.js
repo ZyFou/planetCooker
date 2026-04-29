@@ -4,14 +4,14 @@ import { sunVertexShader, sunFragmentShader } from "./shaders/planetShaders.js";
 export const DEFAULT_SUN_PARAMS = {
     sunColor: "#ffd27f",
     sunIntensity: 1.6,
-    sunDistance: 48,
-    sunSize: 1.1,
-    sunPulseSpeed: 0.6,
-    sunGlowStrength: 1.3,
-    sunNoiseScale: 2.2,
-    sunNoiseStrength: 0.18,
-    sunPulseAmplitude: 0.4,
-    sunHotspotStrength: 0.55
+    sunDistance: 96,
+    sunSize: 1.7,
+    sunPulseSpeed: 0.28,
+    sunGlowStrength: 1.45,
+    sunNoiseScale: 1.35,
+    sunNoiseStrength: 0.045,
+    sunPulseAmplitude: 0.08,
+    sunHotspotStrength: 0.28
 };
 
 function createPalette(baseColor) {
@@ -39,10 +39,13 @@ function createSunUniforms(params, palette) {
 export function createSunComponents(params = {}, options = {}) {
     const merged = { ...DEFAULT_SUN_PARAMS, ...params };
     const palette = createPalette(merged.sunColor);
-    const detail = options.detail ?? 6;
     const geometry = options.geometry instanceof THREE.BufferGeometry
         ? options.geometry
-        : new THREE.IcosahedronGeometry(1, detail);
+        : new THREE.SphereGeometry(
+            1,
+            options.widthSegments ?? 96,
+            options.heightSegments ?? 48
+        );
     const uniforms = createSunUniforms(merged, palette);
 
     const material = new THREE.ShaderMaterial({
@@ -55,6 +58,7 @@ export function createSunComponents(params = {}, options = {}) {
         depthTest: true,
         fog: false
     });
+    material.toneMapped = false;
 
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = options.meshName ?? "SunVisual";
@@ -188,7 +192,7 @@ export class Sun {
         this.components = createSunComponents(this.params, {
             ...options,
             lightType: options.lightType ?? "spot",
-            sizeMultiplier: options.sizeMultiplier ?? 0.38,
+            sizeMultiplier: options.sizeMultiplier ?? 0.9,
             lightTarget: target
         });
 
@@ -242,7 +246,7 @@ export class Sun {
     }
 
     _applyDistance() {
-        const dist = (this.params.sunDistance ?? DEFAULT_SUN_PARAMS.sunDistance) / 6.0;
+        const dist = (this.params.sunDistance ?? DEFAULT_SUN_PARAMS.sunDistance) / 4.0;
         this.light.position.copy(this.sunDirection.clone().multiplyScalar(dist));
         if (this.sunVisual) {
             this.sunVisual.position.copy(this.light.position);

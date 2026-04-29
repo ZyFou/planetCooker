@@ -616,14 +616,14 @@ const params = {
   // Sun & background
   sunColor: "#ffd27f",
   sunIntensity: 1.6,
-  sunDistance: 48,
-  sunSize: 1.1,
-  sunNoiseScale: 2.2,
-  sunNoiseStrength: 0.18,
-  sunPulseSpeed: 0.6,
-  sunPulseAmplitude: 0.4,
-  sunGlowStrength: 1.3,
-  sunHotspotStrength: 0.55,
+  sunDistance: 96,
+  sunSize: 1.7,
+  sunNoiseScale: 1.35,
+  sunNoiseStrength: 0.045,
+  sunPulseSpeed: 0.28,
+  sunPulseAmplitude: 0.08,
+  sunGlowStrength: 1.45,
+  sunHotspotStrength: 0.28,
   // Gas Planet Params
   gasPlanetSize: 1.0,
   gasStripeSpeed: 0.02,
@@ -677,7 +677,7 @@ const presets = {
 };
 
 const starPresets = {
-  Sol: { sunColor: "#ffd27f", sunIntensity: 1.6, sunDistance: 48, sunSize: 1.1, sunHaloSize: 5.4, sunGlowStrength: 1.3, sunPulseSpeed: 0.6, sunNoiseScale: 1.45, sunParticleCount: 240, sunParticleSpeed: 0.65, sunParticleSize: 0.14, sunParticleColor: "#ffbf7a", sunParticleLifetime: 4.2 },
+  Sol: { sunColor: "#ffd27f", sunIntensity: 1.6, sunDistance: 96, sunSize: 1.7, sunHaloSize: 5.4, sunGlowStrength: 1.45, sunPulseSpeed: 0.28, sunNoiseScale: 1.35, sunNoiseStrength: 0.045, sunPulseAmplitude: 0.08, sunHotspotStrength: 0.28, sunParticleCount: 240, sunParticleSpeed: 0.65, sunParticleSize: 0.14, sunParticleColor: "#ffbf7a", sunParticleLifetime: 4.2 },
   "Red Dwarf": { sunColor: "#ff7750", sunIntensity: 0.9, sunDistance: 36, sunSize: 0.8, sunHaloSize: 4.1, sunGlowStrength: 1.1, sunPulseSpeed: 0.85, sunNoiseScale: 1.9, sunParticleCount: 180, sunParticleSpeed: 0.42, sunParticleSize: 0.12, sunParticleColor: "#ff6242", sunParticleLifetime: 5.0 },
   "Blue Giant": { sunColor: "#9fc4ff", sunIntensity: 2.5, sunDistance: 110, sunSize: 1.6, sunHaloSize: 8.2, sunGlowStrength: 2.0, sunPulseSpeed: 0.4, sunNoiseScale: 1.2, sunParticleCount: 320, sunParticleSpeed: 0.9, sunParticleSize: 0.18, sunParticleColor: "#8abaff", sunParticleLifetime: 3.2 },
   "White Dwarf": { sunColor: "#f2f7ff", sunIntensity: 1.9, sunDistance: 38, sunSize: 0.9, sunHaloSize: 3.6, sunGlowStrength: 0.9, sunPulseSpeed: 1.2, sunNoiseScale: 2.3, sunParticleCount: 140, sunParticleSpeed: 0.5, sunParticleSize: 0.1, sunParticleColor: "#eff6ff", sunParticleLifetime: 2.6 },
