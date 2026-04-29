@@ -8,47 +8,47 @@
     <style>
       /* Prevent flash of unstyled content */
       body {
-        background: #05070f;
+        background: #0d1014;
         margin: 0;
         padding: 0;
       }
       #scene {
-        background: #05070f;
+        background: #0d1014;
       }
     </style>
   </head>
   <body>
     <div id="app">
       <header id="header">
-        <h1>Planet Studio</h1>
+        <h1><span data-lucide="cooking-pot" aria-hidden="true"></span> Planet Studio</h1>
         <div class="header-actions">
           <!-- Desktop: Show New Planet Shape and Generate, others in burger menu -->
-          <button id="randomize-seed" class="desktop-only">New Planet Shape</button>
-          <button id="surprise-me" class="desktop-only">Generate</button>
-          <button id="desktop-menu-toggle" class="desktop-menu-toggle" aria-controls="desktop-menu" aria-expanded="false" title="Menu">&#9776;</button>
+          <button id="randomize-seed" class="desktop-only"><span data-lucide="shuffle" aria-hidden="true"></span>New Shape</button>
+          <button id="surprise-me" class="desktop-only"><span data-lucide="sparkles" aria-hidden="true"></span>Generate</button>
+          <button id="desktop-menu-toggle" class="desktop-menu-toggle" aria-controls="desktop-menu" aria-expanded="false" title="Menu"><span data-lucide="menu" aria-hidden="true"></span></button>
           
           <!-- Mobile: Always show controls and Generate -->
-          <button id="toggle-controls" class="mobile-controls-toggle" aria-controls="info" aria-expanded="false" title="Toggle controls">Controls</button>
-          <button id="surprise-me-mobile" class="mobile-surprise">Generate</button>
-          <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-controls="mobile-menu" aria-expanded="false" title="Menu">&#9776;</button>
+          <button id="toggle-controls" class="mobile-controls-toggle" aria-controls="info" aria-expanded="false" title="Toggle controls"><span data-lucide="sliders-horizontal" aria-hidden="true"></span>Controls</button>
+          <button id="surprise-me-mobile" class="mobile-surprise"><span data-lucide="sparkles" aria-hidden="true"></span>Generate</button>
+          <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-controls="mobile-menu" aria-expanded="false" title="Menu"><span data-lucide="menu" aria-hidden="true"></span></button>
         </div>
         
         <!-- Desktop burger menu -->
         <div id="desktop-menu" class="desktop-menu" hidden>
-          <button id="desktop-copy">Save Planet</button>
-          <button id="desktop-help" title="Show tutorial">Help</button>
-          <button id="desktop-visual-settings" title="Visual Settings">Visual Settings</button>
-          <button id="desktop-home">Back to Landing</button>
+          <button id="desktop-copy"><span data-lucide="save" aria-hidden="true"></span>Save Planet</button>
+          <button id="desktop-help" title="Show tutorial"><span data-lucide="circle-help" aria-hidden="true"></span>Help</button>
+          <button id="desktop-visual-settings" title="Visual Settings"><span data-lucide="settings-2" aria-hidden="true"></span>Visual Settings</button>
+          <button id="desktop-home"><span data-lucide="house" aria-hidden="true"></span>Back to Home</button>
         </div>
         
         <!-- Mobile burger menu -->
         <div id="mobile-menu" class="mobile-menu" hidden>
-          <button id="mobile-randomize">New Planet Shape</button>
-          <button id="mobile-copy">Save Planet</button>
-          <button id="mobile-reset">Reset All</button>
-          <button id="mobile-visual-settings" title="Visual Settings">Visual Settings</button>
-          <button id="mobile-help">How to Play</button>
-          <button id="mobile-home">Back to Landing</button>
+          <button id="mobile-randomize"><span data-lucide="shuffle" aria-hidden="true"></span>New Shape</button>
+          <button id="mobile-copy"><span data-lucide="save" aria-hidden="true"></span>Save Planet</button>
+          <button id="mobile-reset"><span data-lucide="rotate-ccw" aria-hidden="true"></span>Reset All</button>
+          <button id="mobile-visual-settings" title="Visual Settings"><span data-lucide="settings-2" aria-hidden="true"></span>Visual Settings</button>
+          <button id="mobile-help"><span data-lucide="circle-help" aria-hidden="true"></span>How to Play</button>
+          <button id="mobile-home"><span data-lucide="house" aria-hidden="true"></span>Back to Home</button>
         </div>
       </header>
       <main id="main">
@@ -73,8 +73,8 @@
 
             <div id="import-share-container" class="share-row">
               <input id="import-share-input" type="text" inputmode="text" spellcheck="false" autocomplete="off" placeholder="Paste share code..." aria-label="Paste share code" style="flex:1; min-width: 0;" />
-              <button id="import-share-load" class="copy-inline">Load</button>
-              <button id="import-share-cancel" class="copy-inline" title="Cancel import">Cancel</button>
+              <button id="import-share-load" class="copy-inline"><span data-lucide="download" aria-hidden="true"></span>Load</button>
+              <button id="import-share-cancel" class="copy-inline" title="Cancel import"><span data-lucide="x" aria-hidden="true"></span>Cancel</button>
             </div>
           </div>
           <div class="control-search-bar" id="control-search-bar">
@@ -110,7 +110,7 @@
               </label>
             </div>
             <ul id="debug-moon-speed-list" class="debug-moon-speed-list"></ul>
-          <button id="reset-all" title="Reset to defaults">Reset All</button>
+          <button id="reset-all" title="Reset to defaults"><span data-lucide="rotate-ccw" aria-hidden="true"></span>Reset All</button>
 
           </section>
           <p class="hint">Use the sliders on the left to tweak the planet. Press H to hide/show the panel.</p>
@@ -125,11 +125,11 @@
           <div id="loading-status" class="loading-status" hidden aria-live="polite"></div>
           
           <!-- Photo mode controls -->
-          <button id="photo-toggle" class="photo-toggle" aria-pressed="false" title="Exit photo mode">📷</button>
+          <button id="photo-toggle" class="photo-toggle" aria-pressed="false" title="Exit photo mode"><span data-lucide="camera" aria-hidden="true"></span></button>
           <button id="photo-shutter" class="photo-shutter" title="Take picture" hidden>●</button>
           
           <!-- Mobile focus mode button -->
-          <button id="mobile-focus-toggle" class="mobile-focus-toggle" aria-controls="mobile-focus-menu" aria-expanded="false" title="Focus on object">👁️</button>
+          <button id="mobile-focus-toggle" class="mobile-focus-toggle" aria-controls="mobile-focus-menu" aria-expanded="false" title="Focus on object"><span data-lucide="scan-eye" aria-hidden="true"></span></button>
           <div id="mobile-focus-menu" class="mobile-focus-menu" hidden>
             <div class="focus-menu-header">Focus on Object</div>
             <button class="focus-option" data-target="planet">🌍 Planet</button>
@@ -152,7 +152,7 @@
         <div class="visual-settings-content">
           <div class="visual-settings-header">
             <h2>Visual Settings</h2>
-            <button id="visual-settings-close" class="visual-settings-close" aria-label="Close visual settings">&times;</button>
+            <button id="visual-settings-close" class="visual-settings-close" aria-label="Close visual settings"><span data-lucide="x" aria-hidden="true"></span></button>
           </div>
           <div class="visual-settings-body">
             <div class="visual-setting">

@@ -2,6 +2,35 @@ import "./styles.css";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import GUI from "lil-gui";
+import {
+  Bug,
+  Camera,
+  Circle,
+  CircleHelp,
+  Cloud,
+  CookingPot,
+  Download,
+  Gauge,
+  House,
+  LandPlot,
+  Menu,
+  Moon,
+  Orbit,
+  Palette,
+  RotateCcw,
+  Save,
+  ScanEye,
+  Settings2,
+  Share2,
+  Shuffle,
+  SlidersHorizontal,
+  Sparkles,
+  Star,
+  Waves,
+  X,
+  Zap,
+  createIcons,
+} from "lucide";
 import { debounce, SeededRNG } from "./app/utils.js";
 import { initControlSearch } from "./app/gui/controlSearch.js";
 import { setupPlanetControls } from "./app/gui/planetControls.js";
@@ -86,6 +115,42 @@ const previewMode = new URLSearchParams(window.location.search).get("preview") =
 if (previewMode) {
   document.body.classList.add("preview-mode");
 }
+
+const STUDIO_ICONS = {
+  Bug,
+  Camera,
+  Circle,
+  CircleHelp,
+  Cloud,
+  CookingPot,
+  Download,
+  Gauge,
+  House,
+  LandPlot,
+  Menu,
+  Moon,
+  Orbit,
+  Palette,
+  RotateCcw,
+  Save,
+  ScanEye,
+  Settings2,
+  Share2,
+  Shuffle,
+  SlidersHorizontal,
+  Sparkles,
+  Star,
+  Waves,
+  X,
+  Zap,
+};
+
+function renderStudioIcons(root = document) {
+  createIcons({ icons: STUDIO_ICONS, root });
+}
+
+renderStudioIcons();
+
 if (!sceneContainer) {
   throw new Error("Missing scene container element");
 }
@@ -646,6 +711,58 @@ const { registerFolder, unregisterFolder, applyControlSearch } = initControlSear
 const gui = registerFolder(new GUI({ title: "Planet Controls", width: 320, container: controlsContainer || undefined }));
 
 const guiControllers = {};
+
+const folderIconRules = [
+  [/planet controls/i, "sliders-horizontal"],
+  [/terrain/i, "land-plot"],
+  [/rocky/i, "circle"],
+  [/gas/i, "cloud"],
+  [/colors?/i, "palette"],
+  [/atmosphere|misc/i, "waves"],
+  [/star/i, "star"],
+  [/volumetric|cloud/i, "cloud"],
+  [/physics|impact/i, "gauge"],
+  [/moon/i, "moon"],
+  [/rings?|orbit/i, "orbit"],
+  [/actions?/i, "zap"],
+  [/debug/i, "bug"],
+];
+
+function getFolderIconName(title) {
+  return folderIconRules.find(([pattern]) => pattern.test(title))?.[1] || "settings-2";
+}
+
+function decorateControlFolders(root = controlsContainer) {
+  if (!root) return;
+
+  root.querySelectorAll(".lil-gui > .title").forEach((titleElement) => {
+    if (titleElement.querySelector(".gui-title-icon")) return;
+
+    const title = titleElement.textContent?.trim() || "";
+    const icon = document.createElement("span");
+    icon.className = "gui-title-icon";
+    icon.setAttribute("data-lucide", getFolderIconName(title));
+    icon.setAttribute("aria-hidden", "true");
+    titleElement.prepend(icon);
+  });
+
+  renderStudioIcons(root);
+}
+
+let folderIconFrame = 0;
+function scheduleControlFolderDecorations() {
+  if (folderIconFrame) return;
+  folderIconFrame = requestAnimationFrame(() => {
+    folderIconFrame = 0;
+    decorateControlFolders();
+  });
+}
+
+new MutationObserver(scheduleControlFolderDecorations).observe(controlsContainer, {
+  childList: true,
+  subtree: true,
+});
+scheduleControlFolderDecorations();
 
 // Debug moon artifacts sync function
 guiControllers.syncDebugMoonArtifacts = () => {
