@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "lil-gui": "^0.19.1",
+    "lucide": "^1.14.0",
     "simplex-noise": "^4.0.1",
     "three": "^0.162.0"
   },

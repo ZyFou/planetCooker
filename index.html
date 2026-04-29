@@ -3,21 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Procedural Planet Studio</title>
+    <title>Planet Cooker</title>
     <link rel="icon" href="/favicon.ico" />
     <link rel="stylesheet" href="/src/landing.css" />
   </head>
   <body>
-    <div class="parallax-container">
-      <div class="parallax-layer parallax-layer--stars" data-speed="0.3"></div>
-      <div class="parallax-layer parallax-layer--nebula" data-speed="0.5"></div>
-      <div class="parallax-layer parallax-layer--planets" data-speed="0.7"></div>
-    </div>
     <div class="landing">
       <header class="landing__nav">
         <div class="landing__brand">
-          <span class="logo-dot" aria-hidden="true"></span>
-          <span class="logo-text">Procedural Planet Studio</span>
+          <span class="brand-icon" data-lucide="cooking-pot" aria-hidden="true"></span>
+          <span class="logo-text">Planet Cooker</span>
         </div>
         <!-- <nav class="landing__actions">
           <a class="btn btn-ghost" href="/explore.html">Explore Systems</a>
@@ -27,15 +22,25 @@
 
       <main class="landing__main">
         <section class="hero">
-          <h1>Craft Your Own Worlds</h1>
+          <p class="hero__eyebrow">Procedural planet design toolkit</p>
+          <h1>Build planetary systems with precise visual control.</h1>
           <p>
-            Dial in atmospheres, rings, moons, and stars with science-inspired controls. Share fully
-            reproducible planets in a single code.
+            Shape terrain, atmospheres, oceans, rings, moons, and stars in a focused studio built for
+            reproducible systems and fast iteration.
           </p>
           <div class="hero__actions">
-            <a class="btn btn-primary" href="/studio.html" data-launch-studio>Launch The Studio</a>
-            <a class="btn btn-secondary" href="/universe.html">Infinite Exploration</a>
-            <a class="btn btn-ghost" href="/explore.html">Explore Systems</a>
+            <a class="btn btn-primary" href="/studio.html" data-launch-studio>
+              <span data-lucide="monitor-cog" aria-hidden="true"></span>
+              Open Studio
+            </a>
+            <a class="btn btn-secondary" href="/universe.html">
+              <span data-lucide="orbit" aria-hidden="true"></span>
+              Explore Universe
+            </a>
+            <a class="btn btn-ghost" href="/explore.html">
+              <span data-lucide="share-2" aria-hidden="true"></span>
+              Shared Systems
+            </a>
             <!-- <a
               class="btn btn-ghost"
               href="https://github.com/zyfod/planetCooker"
@@ -46,62 +51,56 @@
           </div>
           <div class="hero__meta" aria-live="polite">
             <dl class="hero__stat">
-              <dt>Total Systems Shared</dt>
+              <dt>Shared systems</dt>
               <dd id="systems-count" data-loaded="false">—</dd>
             </dl>
           </div>
           
           <div class="hero__updates">
-            <h3>Latest Updates</h3>
+            <h3>Product Notes</h3>
             <div class="updates__carousel">
               <div class="updates__track">
                 
-                <div class="hero__update">
+                <div class="hero__update active">
                   <h4>Advanced Performance Settings</h4>
                   <p>
-                    <strong>New Visual Settings Panel:</strong> Added comprehensive performance controls with 5 preset levels from Ultra to Potato mode! 
-                    Adjust frame rate caps (15-60 FPS), resolution scaling (25%-200%), particle limits, noise resolution, and starfield density. 
-                    Fine-tune gas giant detail, ring geometry, and lighting intensity for optimal performance on any device.
+                    <strong>Visual settings panel:</strong> Tune frame caps, resolution scale, particle limits,
+                    noise resolution, starfield density, gas giant detail, ring geometry, and lighting from one place.
                   </p>
                 </div>
                 <div class="hero__update">
                   <h4>Gas Giant Planet Type</h4>
                   <p>
-                    <strong>New Planet Type:</strong> Create stunning gas giants with multiple atmospheric strata layers! 
-                    Control strata count, colors, sizes, and add realistic warping effects. 
-                    Gas giants feature independent noise controls and atmospheric depth for more realistic outer planet rendering.
+                    <strong>Layered atmospheres:</strong> Build gas giants with configurable strata count,
+                    color bands, scale, warp, noise, and atmospheric depth.
                   </p>
                 </div>
                 <div class="hero__update">
                   <h4>Advanced Water Rendering</h4>
                   <p>
-                    <strong>Realistic Ocean Shader:</strong> Experience stunning water rendering with animated waves, light refraction, and Fresnel effects! 
-                    The new shader system features multi-octave wave displacement, dynamic lighting integration, and proper transparency that reacts to viewing angles. 
-                    Water now looks truly transparent with realistic depth and no glowing artifacts.
+                    <strong>Ocean shader:</strong> Animated waves, light refraction, Fresnel response, and
+                    depth-aware transparency now work together for cleaner water surfaces.
                   </p>
                 </div>
                 <div class="hero__update">
                   <h4>Independent Atmosphere Controls</h4>
                   <p>
-                    <strong>Separated Controls:</strong> Atmosphere and cloud opacity are now completely independent! 
-                    Create subtle atmospheres with thick clouds, or dramatic atmospheres with light clouds. 
-                    Full control over both layers for more realistic planet rendering.
+                    <strong>Separated controls:</strong> Atmosphere opacity and cloud opacity can now be
+                    balanced independently for subtler or more dramatic planetary profiles.
                   </p>
                 </div>
                 <div class="hero__update">
                   <h4>Enhanced Mobile Experience</h4>
                   <p>
-                    <strong>Mobile Focus System:</strong> Enhanced mobile layout with intuitive controls and a new focus system! 
-                    Use the eye button (👁️) in the bottom right to focus on planets, moons, and stars. 
-                    The mobile interface now provides easy access to all celestial elements with optimized touch controls.
+                    <strong>Mobile focus system:</strong> Touch controls now provide faster access to planets,
+                    moons, and stars with a dedicated focus control for smaller screens.
                   </p>
                 </div>
                 <div class="hero__update">
                   <h4>Advanced Physics & Collisions</h4>
                   <p>
-                    <strong>Realistic Interactions:</strong> Improved moon physics with proper orbital mechanics, collision detection, and impact deformation. 
-                    Moons now create realistic craters and surface changes when they collide with planets. 
-                    Two-way gravitational interactions for more dynamic systems.
+                    <strong>Orbital interactions:</strong> Moon physics, collision detection, impact
+                    deformation, crater generation, and two-way gravity now produce more dynamic systems.
                   </p>
                 </div>
               </div>
@@ -116,8 +115,8 @@
 
         <section class="preview" aria-labelledby="preview-title">
           <div class="preview__header">
-            <h2 id="preview-title">Live Preview</h2>
-            <p>Glance at a generated system—open the studio to make it your own.</p>
+            <h2 id="preview-title">Studio Preview</h2>
+            <p>A generated system rendered directly from the studio pipeline.</p>
           </div>
           <div class="preview__frame">
             <iframe
@@ -126,24 +125,23 @@
               loading="lazy"
               allow="accelerometer; fullscreen"
             ></iframe>
-            <div class="preview__label">Preview Mode</div>
+            <div class="preview__label">Read-only preview</div>
           </div>
         </section>
 
         <section class="recent" aria-labelledby="recent-title">
           <div class="recent__header">
             <h2 id="recent-title">Latest Shared Systems</h2>
-            <a class="recent__view" href="/explore.html">See All Systems →</a>
+            <a class="recent__view" href="/explore.html">View all</a>
           </div>
           <ul class="recent__list" id="recent-systems" aria-live="polite"></ul>
-          <p class="recent__empty" id="recent-empty" hidden>No shared systems yet—save one from the studio to appear here.</p>
+          <p class="recent__empty" id="recent-empty" hidden>No shared systems yet. Save one from the studio to list it here.</p>
         </section>
       </main>
 
       <footer class="landing__footer">
         <p>
-          Need to jump straight in? <a href="/studio.html" data-launch-studio>Launch the full experience</a> or explore the
-          presets awaiting inside.
+          Start from the <a href="/studio.html" data-launch-studio>studio</a> or browse systems already shared by the community.
         </p>
       </footer>
     </div>
@@ -236,29 +234,6 @@
           });
         }
         
-        // Parallax effect on scroll
-        let parallaxElements = document.querySelectorAll('.parallax-layer');
-        let ticking = false;
-        
-        function updateParallax() {
-          const scrolled = window.pageYOffset;
-          parallaxElements.forEach(element => {
-            const speed = parseFloat(element.dataset.speed || 0.5);
-            const yPos = -(scrolled * speed);
-            element.style.transform = `translate3d(0, ${yPos}px, 0)`;
-          });
-          ticking = false;
-        }
-        
-        function requestParallaxTick() {
-          if (!ticking) {
-            requestAnimationFrame(updateParallax);
-            ticking = true;
-          }
-        }
-        
-        window.addEventListener('scroll', requestParallaxTick, { passive: true });
-        
         // Touch/swipe support
         let startX = 0;
         let isDragging = false;
@@ -291,7 +266,17 @@
       })();
     </script>
     <script type="module">
+      import { createIcons, CookingPot, MonitorCog, Orbit, Share2 } from 'lucide';
       import { API_BASE_URL } from './src/app/config.js';
+
+      createIcons({
+        icons: {
+          CookingPot,
+          MonitorCog,
+          Orbit,
+          Share2,
+        },
+      });
 
       const countTarget = document.getElementById('systems-count');
       if (countTarget) {
