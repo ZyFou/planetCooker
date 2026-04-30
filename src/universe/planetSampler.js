@@ -38,6 +38,21 @@ export function sphericalToCartesian(lat, lon) {
   ).normalize();
 }
 
+export function buildTangentBasis(baseLatitude, baseLongitude) {
+  const origin = sphericalToCartesian(baseLatitude, baseLongitude);
+  const worldUp = new THREE.Vector3(0, 1, 0);
+  const east = new THREE.Vector3().crossVectors(worldUp, origin);
+
+  if (east.lengthSq() < 1e-8) {
+    east.set(0, 0, 1);
+  } else {
+    east.normalize();
+  }
+
+  const north = new THREE.Vector3().crossVectors(origin, east).normalize();
+  return { origin, east, north };
+}
+
 function permuteScalar(x) {
   return ((x * 34.0 + 1.0) * x) % 289.0;
 }
@@ -298,6 +313,10 @@ export class TerrainSampler {
     this.baseLongitude = baseLongitude;
     this.radius = radius;
     this.planetScale = radius;
+    const basis = buildTangentBasis(baseLatitude, baseLongitude);
+    this.surfaceOrigin = basis.origin;
+    this.surfaceEast = basis.east;
+    this.surfaceNorth = basis.north;
 
     this.tempDir = new THREE.Vector3();
     this.tempArray = [0, 0, 0];
@@ -325,10 +344,6 @@ export class TerrainSampler {
     this.tempColor = new THREE.Color();
     this.tempColorB = new THREE.Color();
 
-    // Limit latitude to avoid pole issues (stay away from ±90 degrees)
-    // Match shader limit of ~80 degrees (1.4 radians)
-    this.minLatitude = -1.4;
-    this.maxLatitude = 1.4;
   }
 
   computeFinalHeight(dir) {
@@ -412,30 +427,12 @@ export class TerrainSampler {
   }
 
   sampleAtPlane(x, z) {
-    // Terrain scale factor: converts world units to angular displacement
-    // Must match the shader's terrainScale for consistent height sampling
-    const terrainScale = 0.002 / Math.max(this.radius, 0.1);
-    
-    // Calculate angular displacement from spawn point
-    const latDelta = z * terrainScale;
-    const lonDelta = x * terrainScale;
-    
-    // Apply latitude bounds to prevent pole singularities
-    const lat = clamp(
-      this.baseLatitude + latDelta,
-      this.minLatitude,
-      this.maxLatitude
-    );
-    
-    // For longitude, account for latitude
-    const avgLat = clamp((this.baseLatitude + lat) * 0.5, -1.3, 1.3);
-    const cosLat = Math.max(0.15, Math.cos(avgLat));
-    let lon = this.baseLongitude + lonDelta / cosLat;
-    
-    // Wrap longitude to [-PI, PI]
-    lon = ((lon + Math.PI) % (2 * Math.PI)) - Math.PI;
-
-    const dir = sphericalToCartesian(lat, lon);
+    const dir = this.tempDir
+      .copy(this.surfaceOrigin)
+      .multiplyScalar(Math.max(this.radius, 0.0001))
+      .addScaledVector(this.surfaceEast, x)
+      .addScaledVector(this.surfaceNorth, z)
+      .normalize();
     const finalHeight = this.computeFinalHeight(dir);
     const relief = finalHeight - this.seaLevel;
     // Match shader displacement calculation for consistent height sampling

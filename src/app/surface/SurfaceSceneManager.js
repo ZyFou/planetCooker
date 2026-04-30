@@ -1,23 +1,25 @@
 import * as THREE from "three";
 import { flatTerrainVertexShader, flatTerrainFragmentShader } from "../shaders/planetShaders.js";
-import { resolveRockyNoiseType } from "../../universe/planetSampler.js";
+import { buildTangentBasis, resolveRockyNoiseType } from "../../universe/planetSampler.js";
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
 const FALLBACK_COLOR = new THREE.Color("#475569");
 const FALLBACK_ATMOSPHERE = new THREE.Color("#1d4ed8");
+const PLANET_WORLD_SCALE = 5;
 
 const getEffectiveRadius = (params = {}) => {
+  const worldScale = params.worldScale ?? PLANET_WORLD_SCALE;
   if (typeof params.radius === "number" && !Number.isNaN(params.radius)) {
-    return params.radius;
+    return params.radius * worldScale;
   }
   if (typeof params.planetSize === "number" && !Number.isNaN(params.planetSize)) {
-    return params.planetSize;
+    return params.planetSize * worldScale;
   }
   if (typeof params.gasPlanetSize === "number" && !Number.isNaN(params.gasPlanetSize)) {
-    return params.gasPlanetSize;
+    return params.gasPlanetSize * worldScale;
   }
-  return 1;
+  return worldScale;
 };
 
 const buildChunkOffsets = (range) => {
@@ -176,13 +178,20 @@ export class SurfaceSceneManager {
     this.scene = scene;
     this.renderer = renderer;
 
-    this.radius = getEffectiveRadius(planetParams);
+    this.radius = sampler?.radius ?? getEffectiveRadius(planetParams);
     // Much larger chunks for realistic walking experience (increased by 3x)
     this.chunkSize = Math.max(this.radius * 30.0, 150.0);
     this.chunkResolution = 128; // Higher resolution for larger chunks
     this.chunkRange = 8; // Slightly reduced range since chunks are larger
     this.chunkOffsets = buildChunkOffsets(this.chunkRange);
     this.palette = buildPlanetPalette(planetParams);
+    const surfaceBasis = sampler?.surfaceOrigin
+      ? {
+          origin: sampler.surfaceOrigin,
+          east: sampler.surfaceEast,
+          north: sampler.surfaceNorth
+        }
+      : buildTangentBasis(sampler?.baseLatitude ?? 0, sampler?.baseLongitude ?? 0);
 
     this.terrainGroup = new THREE.Group();
     this.scene.add(this.terrainGroup);
@@ -209,6 +218,9 @@ export class SurfaceSceneManager {
         uBaseLatitude: { value: sampler.baseLatitude },
         uBaseLongitude: { value: sampler.baseLongitude },
         uRadius: { value: this.radius },
+        uSurfaceOrigin: { value: surfaceBasis.origin.clone() },
+        uSurfaceEast: { value: surfaceBasis.east.clone() },
+        uSurfaceNorth: { value: surfaceBasis.north.clone() },
         uColorDeepWater: { value: new THREE.Color(planetParams.colorDeepWater ?? "#002b4d") },
         uColorShallowWater: { value: new THREE.Color(planetParams.colorShallowWater ?? "#006994") },
         uColorBeach: { value: new THREE.Color(planetParams.colorBeach ?? "#d4c6a3") },
@@ -241,7 +253,6 @@ export class SurfaceSceneManager {
     this.oceanMesh = null;
 
     this.setupSky();
-    this.setupOcean();
   }
 
   scheduleRebuild(chunk) {

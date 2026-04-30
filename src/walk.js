@@ -99,6 +99,7 @@ function bootstrap() {
   const loadingScreen = document.getElementById("loading-screen");
   const hud = document.getElementById("hud");
   const fpsDisplay = document.getElementById("hud-fps");
+  const flyModeButton = document.getElementById("hud-fly");
   const pointerInstructions = document.getElementById("pointer-instructions");
   const crosshair = document.getElementById("crosshair");
   const returnButton = document.getElementById("hud-exit");
@@ -136,6 +137,12 @@ function bootstrap() {
     renderer
   });
 
+  const setFlyModeHud = (enabled) => {
+    if (!flyModeButton) return;
+    flyModeButton.textContent = enabled ? "Fly" : "Walk";
+    flyModeButton.setAttribute("aria-pressed", enabled ? "true" : "false");
+  };
+
   const eyeHeight = Math.max(radius * 0.04, 0.06 * radius + 0.04);
   const controller = new FPSController(camera, {
     domElement: renderer.domElement,
@@ -145,9 +152,17 @@ function bootstrap() {
       if (pointerInstructions) pointerInstructions.hidden = locked;
       if (crosshair) crosshair.hidden = !locked;
     },
+    onFlyModeChange: setFlyModeHud,
     baseWalkSpeed: 0.6, // Reduced by 10
     playerHeight: eyeHeight
   });
+  setFlyModeHud(controller.isFlying());
+
+  if (flyModeButton) {
+    flyModeButton.addEventListener("click", () => {
+      controller.setFlying(!controller.isFlying());
+    });
+  }
 
   const spawnNormal = sphericalToCartesian(spawnLat, spawnLon);
   const east = new THREE.Vector3().crossVectors(WORLD_UP, spawnNormal).normalize();

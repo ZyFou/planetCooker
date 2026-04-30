@@ -451,6 +451,9 @@ export const flatTerrainVertexShader = `
     uniform float uBaseLatitude;
     uniform float uBaseLongitude;
     uniform float uRadius;
+    uniform vec3 uSurfaceOrigin;
+    uniform vec3 uSurfaceEast;
+    uniform vec3 uSurfaceNorth;
 
     varying vec3 vNormal;
     varying vec3 vPosition;
@@ -458,42 +461,13 @@ export const flatTerrainVertexShader = `
     varying float vLatitude;
 
     void main() {
-        vNormal = normalize(normalMatrix * normal);
-        
-        // Get world position (plane coordinates: x, y=0, z)
         vec3 worldPos = (modelMatrix * vec4(position, 1.0)).xyz;
-        
-        // Terrain scale factor: converts world units to angular displacement
-        // This ensures terrain features are properly scaled for walking
-        // A larger factor means more terrain variation per world unit
-        float terrainScale = 0.002 / max(uRadius, 0.1);
-        
-        // Calculate angular displacement from spawn point
-        // Scale world coordinates to get reasonable lat/lon deltas
-        float latDelta = worldPos.z * terrainScale;
-        float lonDelta = worldPos.x * terrainScale;
-        
-        // Apply latitude bounds to prevent pole singularities
-        float maxLat = 1.4; // ~80 degrees
-        float lat = clamp(uBaseLatitude + latDelta, -maxLat, maxLat);
-        
-        // For longitude, account for latitude (distance per longitude shrinks at poles)
-        float avgLat = clamp((uBaseLatitude + lat) * 0.5, -1.3, 1.3);
-        float cosLat = max(0.15, cos(avgLat));
-        float lon = uBaseLongitude + lonDelta / cosLat;
-        
-        // Wrap longitude to [-PI, PI]
-        lon = mod(lon + 3.14159, 6.28318) - 3.14159;
-        
-        // Convert spherical to cartesian (3D direction vector for noise sampling)
-        float cosLat2 = max(0.15, cos(lat));
-        vec3 dir = normalize(vec3(
-            cosLat2 * cos(lon),
-            sin(lat),
-            cosLat2 * sin(lon)
-        ));
-        
-        // Use direction for noise sampling
+        vec3 spherePoint = uSurfaceOrigin * max(uRadius, 0.0001)
+            + uSurfaceEast * worldPos.x
+            + uSurfaceNorth * worldPos.z;
+        vec3 dir = normalize(spherePoint);
+
+        vNormal = normalize(dir);
         vec3 pos = dir;
         float variant = clamp(uNoiseVariant, 0.0, 1.0);
 

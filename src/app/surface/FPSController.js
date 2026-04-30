@@ -9,6 +9,7 @@ export class FPSController {
     this.domElement = options.domElement;
     this.getHeightAt = options.getHeightAt;
     this.onLockChange = options.onLockChange;
+    this.onFlyModeChange = options.onFlyModeChange;
 
     const gravityG = clamp(options.gravityG ?? 1, 0.3, 3);
     const earthGravity = 9.81;
@@ -125,12 +126,7 @@ export class FPSController {
         }
         break;
       case "KeyF":
-        this.movement.flying = !this.movement.flying;
-        if (!this.movement.flying) {
-          this.movement.ascend = false;
-          this.movement.descend = false;
-          this.velocity.y = 0;
-        }
+        this.setFlying(!this.movement.flying);
         break;
       default:
         break;
@@ -180,6 +176,28 @@ export class FPSController {
     return THREE.MathUtils.damp(value, target, lambda, delta);
   }
 
+  setFlying(enabled) {
+    const next = Boolean(enabled);
+    if (this.movement.flying === next) {
+      return;
+    }
+
+    this.movement.flying = next;
+    if (!next) {
+      this.movement.ascend = false;
+      this.movement.descend = false;
+      this.velocity.y = 0;
+    }
+
+    if (typeof this.onFlyModeChange === "function") {
+      this.onFlyModeChange(next);
+    }
+  }
+
+  isFlying() {
+    return this.movement.flying;
+  }
+
   update(delta) {
     if (!this.isLocked) {
       return;
@@ -197,7 +215,9 @@ export class FPSController {
     }
 
     this.forward.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
-    this.forward.y = 0;
+    if (!this.movement.flying) {
+      this.forward.y = 0;
+    }
     if (this.forward.lengthSq() > 1e-6) {
       this.forward.normalize();
     } else {
