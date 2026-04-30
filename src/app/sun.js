@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { sunVertexShader, sunFragmentShader } from "./shaders/planetShaders.js";
 
+const PLANET_WORLD_SCALE = 5;
+
 export const DEFAULT_SUN_PARAMS = {
     sunColor: "#ffd27f",
     sunIntensity: 1.6,
@@ -246,7 +248,8 @@ export class Sun {
     }
 
     _applyDistance() {
-        const dist = (this.params.sunDistance ?? DEFAULT_SUN_PARAMS.sunDistance) / 4.0;
+        const worldScale = this.params.worldScale ?? PLANET_WORLD_SCALE;
+        const dist = ((this.params.sunDistance ?? DEFAULT_SUN_PARAMS.sunDistance) / 4.0) * worldScale;
         this.light.position.copy(this.sunDirection.clone().multiplyScalar(dist));
         if (this.sunVisual) {
             this.sunVisual.position.copy(this.light.position);

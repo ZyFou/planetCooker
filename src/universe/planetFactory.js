@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { Planet } from "../app/planet.js";
 
+export const PLANET_WORLD_SCALE = 5;
+
 export function createPlanet(parentGroup, params, options = {}) {
   const {
     guiControllers = null,
@@ -24,16 +26,17 @@ export function createPlanet(parentGroup, params, options = {}) {
 }
 
 export function getPlanetRadiusFromParams(params = {}) {
+  const worldScale = params.worldScale ?? PLANET_WORLD_SCALE;
   if (typeof params.gasPlanetSize === "number" && !Number.isNaN(params.gasPlanetSize)) {
-    return params.gasPlanetSize;
+    return params.gasPlanetSize * worldScale;
   }
   if (typeof params.planetSize === "number" && !Number.isNaN(params.planetSize)) {
-    return params.planetSize;
+    return params.planetSize * worldScale;
   }
   if (typeof params.radius === "number" && !Number.isNaN(params.radius)) {
-    return params.radius;
+    return params.radius * worldScale;
   }
-  return 1.0;
+  return worldScale;
 }
 
 export function getEffectivePlanetRadius(planet) {

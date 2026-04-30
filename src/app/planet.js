@@ -17,6 +17,8 @@ const ROCKY_NOISE_TYPES = {
     warped: 3
 };
 
+const PLANET_WORLD_SCALE = 5;
+
 function resolveRockyNoiseType(value) {
     if (typeof value === 'number') {
         return THREE.MathUtils.clamp(value, 0, 3);
@@ -144,7 +146,7 @@ export class Planet {
         this.spinGroup.add(this.planetMesh);
 
         // Initialize planet scale
-        this.planetMesh.scale.setScalar(params.planetSize ?? 1.0);
+        this.planetMesh.scale.setScalar(this._getScaledRadius(params.planetSize ?? 1.0));
 
         // Create atmosphere
         const atmosphereHeight = params.atmosphereHeight ?? 1.15;
@@ -170,7 +172,7 @@ export class Planet {
         });
         this.atmosphereMesh = new THREE.Mesh(atmoGeometry, atmoMaterial);
         this.spinGroup.add(this.atmosphereMesh);
-        this.atmosphereMesh.scale.setScalar((params.planetSize ?? 1.0) * atmosphereHeight);
+        this.atmosphereMesh.scale.setScalar(this._getScaledRadius(params.planetSize ?? 1.0) * atmosphereHeight);
 
         // Create clouds (simple CanvasTexture as in planet.html)
         this.cloudTexture = this._generateCloudTexture();
@@ -184,7 +186,7 @@ export class Planet {
         });
         this.cloudMesh = new THREE.Mesh(new THREE.SphereGeometry(1.03, 64, 64), cloudMaterial);
         this.spinGroup.add(this.cloudMesh);
-        this.cloudMesh.scale.setScalar((params.planetSize ?? 1.0) * 1.03);
+        this.cloudMesh.scale.setScalar(this._getScaledRadius(params.planetSize ?? 1.0) * 1.03);
 
         this.volumetricCloudSprite = this._createVolumetricCloudTexture();
         this.volumetricCloudMaterial = new THREE.PointsMaterial({
@@ -202,6 +204,21 @@ export class Planet {
 
         // Set initial planet type
         this.setPlanetType(params.planetType ?? 'earth');
+    }
+
+    _getWorldScale() {
+        return this.params.worldScale ?? PLANET_WORLD_SCALE;
+    }
+
+    _getScaledRadius(radius) {
+        return (radius ?? 1.0) * this._getWorldScale();
+    }
+
+    _getLogicalRadius() {
+        const size = this.params.planetType === 'gas'
+            ? (this.params.gasPlanetSize ?? 1.0)
+            : (this.params.planetSize ?? 1.0);
+        return size;
     }
 
     _generateCloudTexture() {
@@ -303,9 +320,9 @@ export class Planet {
 
         if (type === 'gas') {
             this.planetMesh.material = this.gasMaterial;
-            this.planetMesh.scale.setScalar(this.params.gasPlanetSize ?? 1.0);
+            this.planetMesh.scale.setScalar(this._getScaledRadius(this.params.gasPlanetSize ?? 1.0));
             const atmosphereHeight = this.params.atmosphereHeight ?? 1.15;
-            this.atmosphereMesh.scale.setScalar((this.params.gasPlanetSize ?? 1.0) * atmosphereHeight);
+            this.atmosphereMesh.scale.setScalar(this._getScaledRadius(this.params.gasPlanetSize ?? 1.0) * atmosphereHeight);
             this.cloudMesh.visible = false;
             this.atmosphereMesh.visible = false;
             if (this.volumetricCloudGroup) {
@@ -313,10 +330,10 @@ export class Planet {
             }
         } else {
             this.planetMesh.material = this.rockyMaterial;
-            this.planetMesh.scale.setScalar(this.params.planetSize ?? 1.0);
+            this.planetMesh.scale.setScalar(this._getScaledRadius(this.params.planetSize ?? 1.0));
             const atmosphereHeight = this.params.atmosphereHeight ?? 1.15;
-            this.atmosphereMesh.scale.setScalar((this.params.planetSize ?? 1.0) * atmosphereHeight);
-            this.cloudMesh.scale.setScalar((this.params.planetSize ?? 1.0) * 1.03);
+            this.atmosphereMesh.scale.setScalar(this._getScaledRadius(this.params.planetSize ?? 1.0) * atmosphereHeight);
+            this.cloudMesh.scale.setScalar(this._getScaledRadius(this.params.planetSize ?? 1.0) * 1.03);
             this.cloudMesh.visible = this.params.surfaceCloudsEnabled !== false;
             this.atmosphereMesh.visible = true;
             if (this.volumetricCloudGroup) {
@@ -419,22 +436,22 @@ export class Planet {
         const atmosphereHeight = this.params.atmosphereHeight ?? 1.15;
         if (newParams.planetType === 'gas') {
             if (newParams.gasPlanetSize !== undefined) {
-                this.planetMesh.scale.setScalar(newParams.gasPlanetSize);
-                this.atmosphereMesh.scale.setScalar(newParams.gasPlanetSize * atmosphereHeight);
+                this.planetMesh.scale.setScalar(this._getScaledRadius(newParams.gasPlanetSize));
+                this.atmosphereMesh.scale.setScalar(this._getScaledRadius(newParams.gasPlanetSize) * atmosphereHeight);
             }
             if (newParams.atmosphereHeight !== undefined) {
                 const height = newParams.atmosphereHeight;
-                this.atmosphereMesh.scale.setScalar((this.params.gasPlanetSize ?? 1.0) * height);
+                this.atmosphereMesh.scale.setScalar(this._getScaledRadius(this.params.gasPlanetSize ?? 1.0) * height);
             }
         } else {
             if (newParams.planetSize !== undefined) {
-                this.planetMesh.scale.setScalar(newParams.planetSize);
-                this.atmosphereMesh.scale.setScalar(newParams.planetSize * atmosphereHeight);
-                this.cloudMesh.scale.setScalar(newParams.planetSize * 1.03);
+                this.planetMesh.scale.setScalar(this._getScaledRadius(newParams.planetSize));
+                this.atmosphereMesh.scale.setScalar(this._getScaledRadius(newParams.planetSize) * atmosphereHeight);
+                this.cloudMesh.scale.setScalar(this._getScaledRadius(newParams.planetSize) * 1.03);
             }
             if (newParams.atmosphereHeight !== undefined) {
                 const height = newParams.atmosphereHeight;
-                this.atmosphereMesh.scale.setScalar((this.params.planetSize ?? 1.0) * height);
+                this.atmosphereMesh.scale.setScalar(this._getScaledRadius(this.params.planetSize ?? 1.0) * height);
             }
         }
 
@@ -536,20 +553,21 @@ export class Planet {
         for (let i = 0; i < moonCount; i++) {
             const moon = this.params.moonSettings[i];
             if (!moon) continue;
+            const worldScale = this._getWorldScale();
 
             // Create moon pivot (for orbit)
             const moonPivot = new THREE.Group();
             moonPivot.userData.moonIndex = i;
 
             // Create moon mesh
-            const moonGeometry = new THREE.SphereGeometry(moon.size || 0.2, 16, 16);
+            const moonGeometry = new THREE.SphereGeometry((moon.size || 0.2) * worldScale, 16, 16);
             const moonMaterial = new THREE.MeshStandardMaterial({
                 color: moon.color || "#cccccc",
                 roughness: 0.8,
                 metalness: 0.1
             });
             const moonMesh = new THREE.Mesh(moonGeometry, moonMaterial);
-            moonMesh.position.set(moon.distance || 3.0, 0, 0);
+            moonMesh.position.set((moon.distance || 3.0) * worldScale, 0, 0);
             moonPivot.add(moonMesh);
             moonPivot.userData.mesh = moonMesh;
 
@@ -561,7 +579,7 @@ export class Planet {
             // Create orbit line
             const orbitPoints = [];
             const segments = 64;
-            const semiMajor = Math.max(0.5, moon.distance || 3.5);
+            const semiMajor = Math.max(0.5, moon.distance || 3.5) * worldScale;
             const eccentricity = THREE.MathUtils.clamp(moon.eccentricity ?? 0, 0, 0.95);
             for (let j = 0; j <= segments; j++) {
                 const angle = (j / segments) * Math.PI * 2;
@@ -598,9 +616,10 @@ export class Planet {
         // Create rings
         this.params.rings.forEach((ring, index) => {
             if (!ring) return;
+            const worldScale = this._getWorldScale();
 
-            const innerRadius = ring.start || 1.2;
-            const outerRadius = ring.end || 1.5;
+            const innerRadius = (ring.start || 1.2) * worldScale;
+            const outerRadius = (ring.end || 1.5) * worldScale;
             const segments = 192;
 
             const ringGeometry = new THREE.RingGeometry(innerRadius, outerRadius, segments);
@@ -715,7 +734,7 @@ export class Planet {
 
     _updateVolumetricCloudMaterial() {
         if (!this.volumetricCloudMaterial) return;
-        const baseRadius = this.planetMesh.scale.x || 1;
+        const baseRadius = this._getLogicalRadius();
         const sizeRatio = THREE.MathUtils.clamp(this.params.volumetricCloudParticleSize ?? 0.16, 0.02, 0.6);
         this.volumetricCloudMaterial.size = sizeRatio * baseRadius;
         this.volumetricCloudMaterial.opacity = THREE.MathUtils.clamp(this.params.volumetricCloudParticleOpacity ?? 0.06, 0.02, 0.25);
@@ -737,19 +756,20 @@ export class Planet {
         this._clearVolumetricClouds();
 
         const baseRadius = this.planetMesh.scale.x || 1;
+        const cloudFeatureRadius = this._getLogicalRadius();
         // Apply cloud resolution scaling
         const cloudResolution = this.guiControllers?.visualSettings?.cloudResolution ?? 1.0;
         const sizeMul = THREE.MathUtils.clamp(this.params.volumetricCloudSize ?? 1.0, 0.4, 2.4);
-        const spread = THREE.MathUtils.clamp(this.params.volumetricCloudSpread ?? 0.4, 0.05, 1.8) * baseRadius * sizeMul;
-        const puffSize = THREE.MathUtils.clamp(this.params.volumetricCloudPuffSize ?? 0.28, 0.05, 1.6) * baseRadius * sizeMul;
+        const spread = THREE.MathUtils.clamp(this.params.volumetricCloudSpread ?? 0.4, 0.05, 1.8) * cloudFeatureRadius * sizeMul;
+        const puffSize = THREE.MathUtils.clamp(this.params.volumetricCloudPuffSize ?? 0.28, 0.05, 1.6) * cloudFeatureRadius * sizeMul;
         const puffCount = Math.max(1, Math.floor((this.params.volumetricCloudPuffCount ?? 8) * cloudResolution));
         const count = Math.max(0, Math.floor((this.params.volumetricCloudCount ?? 18) * cloudResolution));
         const flatness = THREE.MathUtils.clamp(this.params.volumetricCloudFlatness ?? 0.45, 0.0, 0.95);
         const heightMul = THREE.MathUtils.clamp(this.params.volumetricCloudHeight ?? 1.0, 0.5, 2.0);
         const innerBase = this._volumetricCloudBaseShell?.inner ?? 0.05;
         const outerBase = this._volumetricCloudBaseShell?.outer ?? 0.12;
-        const inner = baseRadius * (1 + innerBase * heightMul);
-        const outer = baseRadius * (1 + outerBase * heightMul);
+        const inner = baseRadius + cloudFeatureRadius * innerBase * heightMul;
+        const outer = baseRadius + cloudFeatureRadius * outerBase * heightMul;
 
         const up = new THREE.Vector3(0, 1, 0);
         const allPositions = [];

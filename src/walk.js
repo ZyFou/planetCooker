@@ -6,14 +6,16 @@ import { FPSController } from "./app/surface/FPSController.js";
 import { TerrainSampler, sphericalToCartesian } from "./universe/planetSampler.js";
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
+const PLANET_WORLD_SCALE = 5;
 
 const getEffectiveRadius = (params) => {
+  const worldScale = params.worldScale ?? PLANET_WORLD_SCALE;
   if (params.planetType === "gas" && typeof params.gasPlanetSize === "number") {
-    return params.gasPlanetSize;
+    return params.gasPlanetSize * worldScale;
   }
-  if (typeof params.radius === "number") return params.radius;
-  if (typeof params.planetSize === "number") return params.planetSize;
-  return 1;
+  if (typeof params.radius === "number") return params.radius * worldScale;
+  if (typeof params.planetSize === "number") return params.planetSize * worldScale;
+  return worldScale;
 };
 
 function showFatal(message) {

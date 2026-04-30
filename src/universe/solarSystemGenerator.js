@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { SeededRNG } from "../app/utils.js";
 import { createStar } from "./starFactory.js";
-import { createPlanet, getPlanetRadiusFromParams } from "./planetFactory.js";
+import { createPlanet, getPlanetRadiusFromParams, PLANET_WORLD_SCALE } from "./planetFactory.js";
 import { generatePlanetParams } from "./planetParamGenerator.js";
 
 function ensureRng(seedOrRng) {
@@ -53,7 +53,8 @@ export function createSolarSystem(parentGroup, seedOrRng, options = {}) {
   const planetCount = options.planetCount ?? Math.floor(rng.nextFloat(2, 7));
   const planets = [];
 
-  const baseOrbit = options.startingOrbit ?? star.radius * rng.nextFloat(4.5, 6.5);
+  const worldScale = options.worldScale ?? PLANET_WORLD_SCALE;
+  const baseOrbit = (options.startingOrbit ?? star.radius * rng.nextFloat(4.5, 6.5)) * worldScale;
   const starOffset = new THREE.Vector3(
     (rng.next() - 0.5) * baseOrbit * 0.25,
     (rng.next() - 0.5) * baseOrbit * 0.12,
@@ -102,7 +103,7 @@ export function createSolarSystem(parentGroup, seedOrRng, options = {}) {
     const params = generatePlanetParams(rng.fork?.() ?? rng, {
       seed: `${options.name ?? "SYS"}-P${i}`,
       starLuminosity: star.luminosity,
-      orbitalDistance: currentOrbit
+      orbitalDistance: currentOrbit / worldScale
     });
     if (params.axisTilt == null) {
       params.axisTilt = rng.nextFloat(-28, 28);
