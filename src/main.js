@@ -197,11 +197,12 @@ let ship = null;
 let fpsController = {
   position: new THREE.Vector3(),
   rotation: new THREE.Euler(0, 0, 0, 'YXZ'),
+  quaternion: new THREE.Quaternion(),
   velocity: new THREE.Vector3(),
-  speed: 0.056, // Base speed (divided by 10)
-  baseSpeed: 0.056, // Base speed reference (divided by 10)
-  minSpeed: 0.007, // Minimum speed when very close to planet (divided by 10)
-  maxSpeed: 0.112, // Maximum speed when far from planet (divided by 10)
+  speed: 0.12,
+  baseSpeed: 0.12,
+  minSpeed: 0.025,
+  maxSpeed: 1.8,
   accelerationMultiplier: 2.6,
   slowMultiplier: 0.3,
   dashBoost: 1.0,
@@ -212,7 +213,12 @@ let fpsController = {
   yaw: 0,
   roll: 0,
   rollSpeed: 1.6,
-  isPointerLocked: false
+  isPointerLocked: false,
+  atmosphereAssist: {
+    inside: false,
+    autoLevelDone: false,
+    manualOverride: false
+  }
 };
 
 const walkController = {
@@ -244,6 +250,7 @@ const tempQuat2 = new THREE.Quaternion();
 const tempMat4 = new THREE.Matrix4();
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const WORLD_RIGHT = new THREE.Vector3(1, 0, 0);
+const SHIP_MESH_FORWARD_FIX = new THREE.Quaternion().setFromAxisAngle(WORLD_RIGHT, Math.PI / 2);
 
 // Keyboard input state
 const keys = {};
@@ -317,6 +324,141 @@ function getPlanetCenter(target = planetCenterCache) {
     planet.planetRoot.getWorldPosition(target);
   }
   return target;
+}
+
+function getEffectiveAtmosphereRadius() {
+  const planetRadius = getEffectivePlanetRadius();
+  if (planet?.atmosphereMesh?.scale?.x) {
+    return Math.max(planetRadius, planet.atmosphereMesh.scale.x);
+  }
+  return planetRadius * Math.max(1.0, params.atmosphereHeight ?? 1.15);
+}
+
+function getTerrainSurfaceRadius(worldNormal, planetCenter) {
+  const planetRadius = getEffectivePlanetRadius();
+  const isGasPlanet = params.planetType === 'gas' || params.planetType === 'gas_giant';
+
+  if (isGasPlanet) {
+    return planetRadius * 1.02;
+  }
+
+  tempVec6.copy(planetCenter).add(worldNormal);
+  if (planet?.spinGroup) {
+    planet.spinGroup.worldToLocal(tempVec6);
+  } else if (planet?.planetRoot) {
+    planet.planetRoot.worldToLocal(tempVec6);
+  }
+
+  if (tempVec6.lengthSq() < 1e-8) {
+    tempVec6.copy(worldNormal);
+  }
+  tempVec6.normalize();
+
+  const terrainHeight = getTerrainHeightAtPosition([tempVec6.x, tempVec6.y, tempVec6.z]);
+  return planetRadius + Math.max(0, terrainHeight) * planetRadius;
+}
+
+function getShipAltitudeInfo(position) {
+  const center = new THREE.Vector3();
+  getPlanetCenter(center);
+
+  const offset = new THREE.Vector3().subVectors(position, center);
+  let distance = offset.length();
+  if (distance < 1e-6) {
+    offset.set(0, 1, 0);
+    distance = 1;
+  }
+
+  const normal = offset.clone().divideScalar(distance);
+  const surfaceRadius = getTerrainSurfaceRadius(normal, center);
+  const atmosphereRadius = Math.max(getEffectiveAtmosphereRadius(), surfaceRadius * 1.08);
+  const atmosphereDepth = Math.max(atmosphereRadius - surfaceRadius, surfaceRadius * 0.12);
+  const altitude = distance - surfaceRadius;
+  const atmosphereInfluence = 1 - THREE.MathUtils.smoothstep(distance, atmosphereRadius, atmosphereRadius + surfaceRadius * 0.7);
+  const lowAltitudeInfluence = 1 - THREE.MathUtils.smoothstep(distance, surfaceRadius + atmosphereDepth * 0.35, atmosphereRadius);
+  const curveInfluence = atmosphereInfluence * lowAltitudeInfluence;
+
+  return {
+    center,
+    normal,
+    distance,
+    surfaceRadius,
+    atmosphereRadius,
+    atmosphereDepth,
+    altitude,
+    atmosphereInfluence: THREE.MathUtils.clamp(atmosphereInfluence, 0, 1),
+    curveInfluence: THREE.MathUtils.clamp(curveInfluence, 0, 1)
+  };
+}
+
+function syncShipEulerFromQuaternion() {
+  fpsController.rotation.setFromQuaternion(fpsController.quaternion, 'YXZ');
+  fpsController.pitch = fpsController.rotation.x;
+  fpsController.yaw = fpsController.rotation.y;
+  fpsController.roll = fpsController.rotation.z;
+}
+
+function applyShipMouseLook(movementX, movementY) {
+  if (!fpsController.quaternion) {
+    fpsController.quaternion = new THREE.Quaternion();
+  }
+
+  if (Math.abs(movementX) + Math.abs(movementY) > 0.5) {
+    fpsController.atmosphereAssist.manualOverride = true;
+  }
+
+  const sensitivity = fpsController.mouseSensitivity;
+  const yawDelta = -movementX * sensitivity;
+  const pitchDelta = -movementY * sensitivity;
+
+  if (Math.abs(yawDelta) > 1e-8) {
+    tempVec4.set(0, 1, 0).applyQuaternion(fpsController.quaternion).normalize();
+    tempQuat1.setFromAxisAngle(tempVec4, yawDelta);
+    fpsController.quaternion.premultiply(tempQuat1);
+  }
+
+  if (Math.abs(pitchDelta) > 1e-8) {
+    tempVec5.set(1, 0, 0).applyQuaternion(fpsController.quaternion).normalize();
+    tempQuat2.setFromAxisAngle(tempVec5, pitchDelta);
+    fpsController.quaternion.premultiply(tempQuat2);
+  }
+
+  fpsController.quaternion.normalize();
+  syncShipEulerFromQuaternion();
+}
+
+function autoLevelShipAboveSurfaceOnce(altitudeInfo) {
+  const curveInfluence = altitudeInfo.curveInfluence;
+  if (curveInfluence <= 0.001) return;
+
+  const forward = tempVec4.set(0, 0, -1).applyQuaternion(fpsController.quaternion).normalize();
+  const tangentForward = tempVec5.copy(forward).projectOnPlane(altitudeInfo.normal);
+
+  if (tangentForward.lengthSq() < 1e-6) {
+    const right = tempVec6.set(1, 0, 0).applyQuaternion(fpsController.quaternion).projectOnPlane(altitudeInfo.normal);
+    if (right.lengthSq() > 1e-6) {
+      tangentForward.crossVectors(altitudeInfo.normal, right.normalize());
+    } else {
+      tangentForward.crossVectors(WORLD_RIGHT, altitudeInfo.normal);
+      if (tangentForward.lengthSq() < 1e-6) {
+        tangentForward.crossVectors(WORLD_UP, altitudeInfo.normal);
+      }
+    }
+  }
+  tangentForward.normalize();
+
+  const targetForward = forward.lerp(tangentForward, curveInfluence * 0.78).normalize();
+  const targetRight = tempVec6.crossVectors(targetForward, altitudeInfo.normal).normalize();
+  if (targetRight.lengthSq() < 1e-6) return;
+
+  const targetUp = tempVec7.copy(altitudeInfo.normal).normalize();
+  const targetBack = tempVec3.copy(targetForward).multiplyScalar(-1);
+  tempMat4.makeBasis(targetRight, targetUp, targetBack);
+  tempQuat2.setFromRotationMatrix(tempMat4);
+
+  const alignAmount = THREE.MathUtils.clamp(0.12 + curveInfluence * 0.18, 0, 0.3);
+  fpsController.quaternion.slerp(tempQuat2, alignAmount).normalize();
+  syncShipEulerFromQuaternion();
 }
 
 // Removed - now handled inline in updateWalkMovement
@@ -1886,19 +2028,7 @@ function handleMouseMove(event) {
   const movementY = event.movementY || event.mozMovementY || event.webkitMovementY || 0;
 
   if (fpsModeType === 'ship') {
-    // Transform mouse movement by current roll angle so it's relative to ship orientation
-    // Rotate mouse delta by -roll to compensate for ship's roll
-    const roll = fpsController.roll || 0;
-    const cosRoll = Math.cos(-roll);
-    const sinRoll = Math.sin(-roll);
-    
-    // Rotate mouse delta to be relative to ship's local orientation
-    const rotatedX = movementX * cosRoll - movementY * sinRoll;
-    const rotatedY = movementX * sinRoll + movementY * cosRoll;
-    
-    fpsController.yaw -= rotatedX * fpsController.mouseSensitivity;
-    fpsController.pitch -= rotatedY * fpsController.mouseSensitivity;
-    fpsController.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, fpsController.pitch));
+    applyShipMouseLook(movementX, movementY);
   } else if (fpsModeType === 'walk') {
     walkController.yaw -= movementX * walkController.mouseSensitivity;
     walkController.pitch -= movementY * walkController.mouseSensitivity;
@@ -1961,6 +2091,11 @@ function enterShipMode() {
     camera.rotation.copy(euler);
 
     tempQuat1.setFromEuler(euler);
+    fpsController.quaternion.copy(camera.quaternion).normalize();
+    syncShipEulerFromQuaternion();
+    fpsController.atmosphereAssist.inside = false;
+    fpsController.atmosphereAssist.autoLevelDone = false;
+    fpsController.atmosphereAssist.manualOverride = false;
     tempVec2.set(0, 0.0005, 0.001).applyQuaternion(tempQuat1);
     camera.position.copy(fpsController.position).add(tempVec2);
   }
@@ -2051,57 +2186,65 @@ function requestPointerLockOnClick() {
 function updateShipMovement(delta) {
   if (!ship || !isFpsMode || !planet || fpsModeType !== 'ship') return;
 
-  const planetCenter = getPlanetCenter(tempVec1);
-  const distanceToPlanet = fpsController.position.distanceTo(planetCenter);
+  const altitudeInfo = getShipAltitudeInfo(fpsController.position);
   const planetRadius = getEffectivePlanetRadius();
-
-  let distanceSpeedMultiplier = 1.0;
-  const closeDistance = planetRadius * 2.0;
-  const farDistance = planetRadius * 10.0;
-
-  if (distanceToPlanet < closeDistance) {
-    const closeFactor = distanceToPlanet / closeDistance;
-    distanceSpeedMultiplier = THREE.MathUtils.lerp(0.1, 0.5, closeFactor);
-  } else if (distanceToPlanet < farDistance) {
-    const t = (distanceToPlanet - closeDistance) / (farDistance - closeDistance);
-    distanceSpeedMultiplier = THREE.MathUtils.lerp(0.5, 1.0, t);
-  } else {
-    distanceSpeedMultiplier = 1.0;
+  const insideAtmosphere = altitudeInfo.distance <= altitudeInfo.atmosphereRadius;
+  if (!insideAtmosphere) {
+    fpsController.atmosphereAssist.inside = false;
+    fpsController.atmosphereAssist.autoLevelDone = false;
+  } else if (!fpsController.atmosphereAssist.inside) {
+    fpsController.atmosphereAssist.inside = true;
+    fpsController.atmosphereAssist.autoLevelDone = false;
   }
 
-  fpsController.speed = THREE.MathUtils.lerp(
-    fpsController.minSpeed,
-    fpsController.maxSpeed,
-    distanceSpeedMultiplier
+  const surfaceSpeedT = THREE.MathUtils.smoothstep(
+    altitudeInfo.altitude,
+    planetRadius * 0.04,
+    altitudeInfo.atmosphereDepth * 0.85
   );
+  const spaceSpeedT = THREE.MathUtils.smoothstep(
+    altitudeInfo.distance,
+    altitudeInfo.atmosphereRadius,
+    planetRadius * 14.0
+  );
+  const atmosphereSpeed = THREE.MathUtils.lerp(fpsController.minSpeed, fpsController.baseSpeed, surfaceSpeedT);
+  fpsController.speed = THREE.MathUtils.lerp(atmosphereSpeed, fpsController.maxSpeed, spaceSpeedT);
 
-  // Roll control with A/E (A = roll right, E = roll left)
   let rollInput = 0;
-  if (keys['a']) rollInput += 1;  // A rolls right (positive)
-  if (keys['e']) rollInput -= 1;  // E rolls left (negative)
+  if (keys['a'] || keys['KeyA']) rollInput += 1;
+  if (keys['e'] || keys['KeyE']) rollInput -= 1;
   if (rollInput !== 0) {
+    fpsController.atmosphereAssist.manualOverride = true;
     const rollSpeed = fpsController.rollSpeed || 1.6;
-    fpsController.roll += rollInput * rollSpeed * delta;
+    tempVec4.set(0, 0, -1).applyQuaternion(fpsController.quaternion).normalize();
+    tempQuat1.setFromAxisAngle(tempVec4, rollInput * rollSpeed * delta);
+    fpsController.quaternion.premultiply(tempQuat1).normalize();
+    syncShipEulerFromQuaternion();
   }
 
-  const euler = new THREE.Euler(fpsController.pitch, fpsController.yaw, fpsController.roll, 'YXZ');
-  const quaternion = new THREE.Quaternion().setFromEuler(euler);
+  if (
+    insideAtmosphere &&
+    !fpsController.atmosphereAssist.autoLevelDone &&
+    !fpsController.atmosphereAssist.manualOverride
+  ) {
+    autoLevelShipAboveSurfaceOnce(altitudeInfo);
+    fpsController.atmosphereAssist.autoLevelDone = true;
+  }
 
-  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion);
-  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(quaternion);
+  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(fpsController.quaternion).normalize();
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(fpsController.quaternion).normalize();
 
   const moveDirection = new THREE.Vector3();
-  if (keys['z'] || keys['w']) {
+  if (keys['z'] || keys['w'] || keys['KeyZ'] || keys['KeyW'] || keys['ArrowUp']) {
     moveDirection.add(forward);
   }
-  if (keys['s']) {
+  if (keys['s'] || keys['KeyS'] || keys['ArrowDown']) {
     moveDirection.sub(forward);
   }
-  // Strafe left uses Q (AZERTY). A is reserved for roll.
-  if (keys['q']) {
+  if (keys['q'] || keys['KeyQ'] || keys['ArrowLeft']) {
     moveDirection.sub(right);
   }
-  if (keys['d']) {
+  if (keys['d'] || keys['KeyD'] || keys['ArrowRight']) {
     moveDirection.add(right);
   }
 
@@ -2129,13 +2272,15 @@ function updateShipMovement(delta) {
   }
 
   const targetVelocity = moveDirection.multiplyScalar(fpsController.speed * speedMultiplier);
-  fpsController.velocity.lerp(targetVelocity, delta * 10);
+  fpsController.velocity.lerp(targetVelocity, THREE.MathUtils.clamp(delta * 7.5, 0, 1));
 
   tempVec3.copy(fpsController.velocity).multiplyScalar(delta);
   fpsController.position.add(tempVec3);
 
-  const minDistanceFromSurface = planetRadius * 1.01;
-  tempVec2.copy(fpsController.position).sub(planetCenter);
+  const postMoveInfo = getShipAltitudeInfo(fpsController.position);
+  const clearance = Math.max(planetRadius * 0.006, 0.015);
+  const minDistanceFromSurface = postMoveInfo.surfaceRadius + clearance;
+  tempVec2.copy(fpsController.position).sub(postMoveInfo.center);
   const currentDistance = tempVec2.length();
 
   if (currentDistance < minDistanceFromSurface) {
@@ -2145,7 +2290,7 @@ function updateShipMovement(delta) {
       tempVec2.divideScalar(currentDistance);
     }
 
-    tempVec4.copy(tempVec2).multiplyScalar(minDistanceFromSurface).add(planetCenter);
+    tempVec4.copy(tempVec2).multiplyScalar(minDistanceFromSurface).add(postMoveInfo.center);
     fpsController.position.copy(tempVec4);
 
     const inwardSpeed = fpsController.velocity.dot(tempVec2);
@@ -2156,13 +2301,11 @@ function updateShipMovement(delta) {
 
   ship.position.copy(fpsController.position);
 
-  const cameraOffset = new THREE.Vector3(0, 0.005, 0.01).applyQuaternion(quaternion);
+  const cameraOffset = new THREE.Vector3(0, 0.005, 0.01).applyQuaternion(fpsController.quaternion);
   camera.position.copy(fpsController.position).add(cameraOffset);
 
-  camera.rotation.copy(euler);
-
-  ship.rotation.y = fpsController.yaw;
-  ship.rotation.x = fpsController.pitch + Math.PI / 2;
+  camera.quaternion.copy(fpsController.quaternion);
+  ship.quaternion.copy(fpsController.quaternion).multiply(SHIP_MESH_FORWARD_FIX);
 }
 
 // Terrain height sampling functions (ported from GLSL shader)
